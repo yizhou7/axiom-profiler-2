@@ -1,6 +1,6 @@
 # This is a basic workflow to help you get started with Actions
 
-name: z3 trace Z3 Trace Log Generator
+name: Z3 Trace Log Generator
 
 # Controls when the workflow will run
 on:
