@@ -22,9 +22,11 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v3
-      - uses: pavpanchekha/setup-z3@v1
-        with:
-          version: 4.8.5
+
+      - name: Install Z3
+        uses: pavpanchekha/setup-z3@v1.3
+          with:
+            version: 4.8.5
 
       # Runs a single command using the runners shell
       - name: Run a one-line script
