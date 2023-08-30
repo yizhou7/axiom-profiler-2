@@ -26,7 +26,7 @@ jobs:
       - name: Install Z3
         uses: pavpanchekha/setup-z3@v1.3
         with:
-          version: 4.8.5
+          version: "4.8.5"
 
       # Runs a single command using the runners shell
       - name: Run a one-line script
