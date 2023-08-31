@@ -30,7 +30,7 @@ jobs:
             smt:
               - '**/*.smt2'
 
-      - name: Run Z3 Solver on 
+      - name: Run Z3 Solver 
         id: run_z3_and_upload
         run: |
           echo "List all the files that have changed: ${{ steps.changed-smt2-files.outputs.smt_all_changed_files }}" 
@@ -38,13 +38,12 @@ jobs:
           for file in ${{ steps.changed-smt2-files.outputs.smt_all_changed_files }}; do
             echo "Processing $file"
             # Run Z3 solver here for $file
-            # z3 trace=true proof=true trace-file-name=${file%.smt2}.log ./$file
-            # gzip -c ${file%.smt2} > logs
+            z3 trace=true proof=true trace-file-name=${file%.smt2}.log ./$file
             # Get the filename without extension
-            # base_name=$(basename "${file%.*}")
+            base_name=$(basename "${file%.*}")
             # Compress the file and save it to logs directory
-            # gzip -c "$file" > "$logs/${base_name}.log.gz"
-            # echo "Compressed $file and saved to $logs/${base_name}.log.gz"
+            gzip -c "$file" > "$logs/${base_name}.log.gz"
+            echo "Compressed $file and saved to $logs/${base_name}.log.gz"
           done
           echo "::set-output name=logs_path::$(realpath logs)"
 
