@@ -22,7 +22,7 @@ jobs:
         with:
           version: "4.8.7"
 
-      - name: Changed SMT2 Files
+      - name: Fetch Changed smt2 Files
         id: changed-smt2-files
         uses: tj-actions/changed-files@v38.2.0
         with: 
@@ -30,10 +30,9 @@ jobs:
             smt:
               - '**/*.smt2'
 
-      - name: Run Z3 Solver 
+      - name: Run Z3 Solver On Changed smt2 Files 
         id: run_z3_and_upload
         run: |
-          echo "List all the files that have changed: ${{ steps.changed-smt2-files.outputs.smt_all_changed_files }}" 
           mkdir logs
           for file in ${{ steps.changed-smt2-files.outputs.smt_all_changed_files }}; do
             echo "Processing $file"
