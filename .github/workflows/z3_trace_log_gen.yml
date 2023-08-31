@@ -37,12 +37,12 @@ jobs:
           mkdir logs
           for file in ${{ steps.changed-smt2-files.outputs.smt_all_changed_files }}; do
             echo "Processing $file"
-            # Run Z3 solver here for $file
-            z3 trace=true proof=true trace-file-name=${file%.smt2}.log ./$file
             # Get the filename without extension
             base_name=$(basename "${file%.*}")
+            # Run Z3 solver for $file
+            z3 trace=true proof=true trace-file-name=${base_name}.log ./$file
             # Compress the file and save it to logs directory
-            gzip -c "$file" > "$logs/${base_name}.log.gz"
+            gzip -c ${base_name}.log > logs/${base_name}.log.gz
             echo "Compressed $file and saved to $logs/${base_name}.log.gz"
           done
           echo "::set-output name=logs_path::$(realpath logs)"
