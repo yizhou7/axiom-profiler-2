@@ -44,16 +44,17 @@ jobs:
       #     name: z3_trace_log 
       #     path: /home/runner/work/Axiom-Profiler/small_forall_example.lo
       
-      - name: Run a multi-line script
+      - name: Run Z3 Solver
         id: run_script
         run: |
           pwd
           echo "$(ls)"
           cd smt-problems
           z3 trace=true proof=true trace-file-name=small_forall_example.log ./small_forall_example.smt2
+          gzip small_forall_example.log
           echo "$(ls)"
-          echo "::set-output name=log_path::$(realpath small_forall_example.log)"
-
+          echo "::set-output name=log_path::$(realpath small_forall_example.log.gz)"
+      
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v3.1.2
         with:
