@@ -36,4 +36,10 @@ jobs:
           cd smt-problems
           z3 trace=true proof=true trace-file-name=small_forall_example.log ./small_forall_example.smt2
           echo "$(ls)" 
+      
+      - name: Upload a Build Artifact
+        uses: actions/upload-artifact@v3.1.2
+        with:
+          name: z3_trace_log 
+          path: ./small_forall_example.log
 
