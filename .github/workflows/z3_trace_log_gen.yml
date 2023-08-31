@@ -14,24 +14,27 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Install Z3
         uses: pavpanchekha/setup-z3@1.2.2
         with:
           version: "4.8.7"
 
-      - name: Determine New SMT2 Files
-        id: find_new_smt2
-        run: |
-          echo "New SMT2 files:"
-          git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep '\.smt2$' || true
-          echo "::set-output name=new_smt2_files::$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep '\.smt2$' || true)"
+      - name: Changed SMT2 Files
+        id: changed-smt2-files
+        uses: tj-actions/changed-files@v38.2.0
+        with: 
+          files_yaml: |
+            smt:
+              - '**/*.smt2'
 
-      - name: Run Z3 Solver
+      - name: Run Z3 Solver on 
         id: run_z3_and_upload
         run: |
           mkdir logs
-          for file in ${{ steps.find_new_smt2.outputs.new_smt2_files }}; do
+          for file in ${{ steps.changed-smt2-files.outputs.smt_all_changed_files }}; do
             echo "Processing $file"
             # Run Z3 solver here for $file
             # z3 trace=true proof=true trace-file-name=${file%.smt2}.log ./$file
