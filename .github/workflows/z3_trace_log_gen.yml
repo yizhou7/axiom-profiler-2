@@ -34,6 +34,6 @@ jobs:
           pwd
           echo "$(ls)" 
           cd smt-problems
-          z3 trace=true proof=true trace-file-name=running-example-orig.log ./running-example-orig.smt2
+          z3 trace=true proof=true trace-file-name=small_forall_example.log ./small_forall_example.smt2
           echo "$(ls)" 
 
