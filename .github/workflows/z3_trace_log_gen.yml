@@ -41,5 +41,5 @@ jobs:
         uses: actions/upload-artifact@v3.1.2
         with:
           name: z3_trace_log 
-          path: ./small_forall_example.log
+          path: /home/runner/work/Axiom-Profiler/Axiom-Profiler/small_forall_example.log
 
