@@ -93,11 +93,9 @@ impl Component for FileDataComponent {
 
 impl FileDataComponent {
     fn view_file(data: &str) -> Html {
-        // let img = format!("data:image/png;base64,{}", data.to_string());
         log::debug!("Viewing file");
         html! {
             <div>
-            // <textarea rows="50" cols="100" value={format!("{}", data)} />
             <SVGResult trace_file_text={AttrValue::from(data.to_string())}/>
             </div>
         }
@@ -121,14 +119,11 @@ fn svg_result(props: &SVGProps) -> Html {
         let g_selector = g_selector.clone();
         let svg_selector = svg_selector.clone();
         Callback::from(move |_| {
-            // let svg_text = svg_text.clone();
             let text = text.to_string();
             let svg_text = svg_text.clone();
             let g_selector = g_selector.clone();
             let svg_selector = svg_selector.clone();
-            // use_effect_with_deps(
             log::debug!("use effect");
-            // let text = props.trace_file_text.clone().to_string();
             wasm_bindgen_futures::spawn_local(
                 async move {
                     log::debug!("put request");
@@ -165,21 +160,10 @@ fn svg_result(props: &SVGProps) -> Html {
                     let _height = node.attr("height").unwrap().to_string();
                     let _view_box = node.attr("viewBox").unwrap().to_string();
                     log::debug!("made nodes");
-                    // let svg_result = AttrValue::from(fetched_svg);
-                    // svg_text.set(html! { 
-                    //     <svg width={width} height={height} viewBox={view_box} xmlns="http://www.w3.org/2000/svg">
-                    //     <g id="graph0" class={classes!("graph")} transform="scale(1 1) rotate(0) translate(4 112)">
-                    //     <title>{"instantiations"}</title>
-                    //     <polygon fill="white" stroke="transparent" points="-4,4 -4,-112 211.19,-112 211.19,4 -4,4"/>
-                    //     {for nodes}
-                    //     </g>
-                    //     </svg>
-                    // });
                     let svg_result = AttrValue::from(fetched_svg);
                     svg_text.set(Html::from_html_unchecked(svg_result));
                     log::debug!("set state");
-                }, //     props.trace_file_text.clone()
-                   // );
+                },
                    
             );
         })
