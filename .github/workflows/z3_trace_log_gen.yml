@@ -55,14 +55,11 @@ jobs:
 
           # Compress the 'logs' directory using bzip2
           z3_v_clean=$(echo "${{ matrix.z3version }}" | sed 's/\./_/g')
-          tar -cjf logs_z3_v_${z3_v_clean}.tar.bz2 logs/
-          echo "::set-output name=logs_path::$(realpath logs_z3_v_${z3_v_clean}.tar.bz2)"
-
-        env:
-          MATRIX_Z3VERSION: ${z3_v_clean}
+          tar -cjf logs_z3_v${z3_v_clean}.tar.bz2 logs/
+          echo "::set-output name=logs_path::$(realpath logs_z3_v${z3_v_clean}.tar.bz2)"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v3.1.2
         with:
-          name: "logs_z3_${{ steps.run_z3_and_upload.env.MATRIX_Z3VERSION }}.tar.bz2"
+          name: "logs_z3_v${{ matrix.z3version }}"
           path: ${{ steps.run_z3_and_upload.outputs.logs_path }}
