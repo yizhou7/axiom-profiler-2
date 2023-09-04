@@ -49,7 +49,7 @@ jobs:
             # Compress the file and save it to logs directory
             # gzip -c ${base_name}.log > logs/${base_name}.log.gz
             # Compress the file using tar lzma
-            tar --lzma -J ${base_name}.tar.lzma ${base_name}.log
+            xz -z ${base_name}.log
           done
           echo "::set-output name=logs_path::$(realpath .)"
           # echo "::set-output name=logs_path::$(realpath logs)"
