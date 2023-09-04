@@ -56,7 +56,6 @@ jobs:
           # Compress the 'logs' directory using bzip2
           z3_v_clean=$(echo "${{ matrix.z3version }}" | sed 's/\./_/g')
           tar -cjf logs_z3_v${z3_v_clean}.tar.bz2 logs/
-          #echo "::set-output name=logs_path::$(realpath logs_z3_v${z3_v_clean}.tar.bz2)"
           echo "logs_path=$(realpath logs_z3_v${z3_v_clean}.tar.bz2)" >> $GITHUB_OUTPUT
 
       - name: Upload build artifacts
