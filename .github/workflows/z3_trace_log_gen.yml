@@ -54,7 +54,7 @@ jobs:
           done
 
           # Compress the 'logs' directory using bzip2
-          z3_v_clean = $(echo "${{ matrix.z3version }}" | sed 's/\./_/g')
+          z3_v_clean=$(echo "${{ matrix.z3version }}" | sed 's/\./_/g')
           tar -cjf logs_z3_v_${z3_v_clean}.tar.bz2 logs/
 
         env:
