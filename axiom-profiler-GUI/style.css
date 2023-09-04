@@ -1,0 +1,228 @@
+.ascii-art {
+    font-family: monospace;
+    white-space: pre;
+}
+
+#image {
+    display: inline-block;
+    overflow: auto;
+    max-width: 1500px;
+    max-height: 1000px;
+    flex: 1;
+}
+
+.node:hover {
+    opacity: 0.6
+}
+
+.edge:hover * {
+    opacity: 0.4
+}
+
+.quant_190 ellipse {
+    fill: hsl(0, 100%, 70%) !important
+}
+
+.quant_189 ellipse {
+    fill: hsl(0, 100%, 70%) !important
+}
+
+.quant_236 ellipse {
+    fill: hsl(39.69717793635368, 100%, 70%) !important
+}
+
+.quant_59 ellipse {
+    fill: hsl(131, 100%, 70%) !important
+}
+
+.quant_230 ellipse {
+    fill: hsl(222.4922359499622, 100%, 70%) !important
+}
+
+.quant_72 ellipse {
+    fill: hsl(294, 100%, 70%) !important
+}
+
+.quant_2617 ellipse {
+    fill: hsl(0, 100%, 70%) !important
+}
+
+.quant_1170 ellipse {
+    fill: hsl(222.4922359499622, 100%, 70%) !important
+}
+
+.quant_2567 ellipse {
+    fill: hsl(39.69717793635368, 100%, 70%) !important
+}
+
+.quant_1107 ellipse {
+    fill: hsl(113.47629303728723, 100%, 70%) !important
+}
+
+.quant_1604 ellipse {
+    fill: hsl(207.27481036265004, 100%, 70%) !important
+}
+
+.quant_2538 ellipse {
+    fill: hsl(321.4239665039747, 100%, 70%) !important
+}
+
+.quant_1143 ellipse {
+    fill: hsl(15.120177380870246, 100%, 70%) !important
+}
+
+.quant_224 ellipse {
+    fill: hsl(265.75609306325055, 100%, 70%) !important
+}
+
+.quant_1766 ellipse {
+    fill: hsl(134.68573872016577, 100%, 70%) !important
+}
+
+.quant_2117 ellipse {
+    fill: hsl(0, 100%, 70%) !important
+}
+
+.quant_211 ellipse {
+    fill: hsl(222.4922359499622, 100%, 70%) !important
+}
+
+.quant_2139 ellipse {
+    fill: hsl(39.69717793635368, 100%, 70%) !important
+}
+
+.quant_2094 ellipse {
+    fill: hsl(113.47629303728723, 100%, 70%) !important
+}
+
+.quant_2049 ellipse {
+    fill: hsl(33.95772937336858, 100%, 70%) !important
+}
+
+.quant_1472 ellipse {
+    fill: hsl(207.27481036265004, 100%, 70%) !important
+}
+
+.quant_2108 ellipse {
+    fill: hsl(321.4239665039747, 100%, 70%) !important
+}
+
+.quant_1974 ellipse {
+    fill: hsl(15.120177380870246, 100%, 70%) !important
+}
+
+.quant_2454 ellipse {
+    fill: hsl(265.75609306325055, 100%, 70%) !important
+}
+
+.quant_2896 ellipse {
+    fill: hsl(134.68573872016577, 100%, 70%) !important
+}
+
+.quant_1326 ellipse {
+    fill: hsl(109.35817520963724, 100%, 70%) !important
+}
+
+.quant_839 ellipse {
+    fill: hsl(351.4353114193699, 100%, 70%) !important
+}
+
+.quant_2695 ellipse {
+    fill: hsl(19.204346923131652, 100%, 70%) !important
+}
+
+.quant_1524 ellipse {
+    fill: hsl(296.0571282773576, 100%, 70%) !important
+}
+
+.quant_1942 ellipse {
+    fill: hsl(243.0584157987073, 100%, 70%) !important
+}
+
+.quant_2336 ellipse {
+    fill: hsl(243.52192348458743, 100%, 70%) !important
+}
+
+.quant_74 ellipse {
+    fill: hsl(50.38469040143468, 100%, 70%) !important
+}
+
+.quant_1501 ellipse {
+    fill: hsl(0.9807804664470154, 100%, 70%) !important
+}
+
+.quant_1703 ellipse {
+    fill: hsl(215.5732038708877, 100%, 70%) !important
+}
+
+.quant_1771 ellipse {
+    fill: hsl(68.84562946953452, 100%, 70%) !important
+}
+
+.quant_2818 ellipse {
+    fill: hsl(166.9188449823895, 100%, 70%) !important
+}
+
+.quant_1366 ellipse {
+    fill: hsl(193.27642961017432, 100%, 70%) !important
+}
+
+.quant_1616 ellipse {
+    fill: hsl(322.0068956127136, 100%, 70%) !important
+}
+
+.quant_2420 ellipse {
+    fill: hsl(224.97465652686742, 100%, 70%) !important
+}
+
+.quant_1885 ellipse {
+    fill: hsl(213.36858562223028, 100%, 70%) !important
+}
+
+.quant_2929 ellipse {
+    fill: hsl(355.1830599528614, 100%, 70%) !important
+}
+
+.quant_1321 ellipse {
+    fill: hsl(288.39381898007787, 100%, 70%) !important
+}
+
+.quant_datatype16 ellipse {
+    fill: hsl(4.2670687780014305, 100%, 70%) !important
+}
+
+.quant_818 ellipse {
+    fill: hsl(318.6369960304771, 100%, 70%) !important
+}
+
+.quant_2659 ellipse {
+    fill: hsl(91.81080692173282, 100%, 70%) !important
+}
+
+.quant_1542 ellipse {
+    fill: hsl(154.38272777377904, 100%, 70%) !important
+}
+
+.quant_datatype19 ellipse {
+    fill: hsl(321.2166596985433, 100%, 70%) !important
+}
+
+.quant_1376 ellipse {
+    fill: hsl(300.4897274255609, 100%, 70%) !important
+}
+
+.quant_2210 ellipse {
+    fill: hsl(38.79410915188828, 100%, 70%) !important
+}
+
+.quant_857 ellipse {
+    fill: hsl(148.3715306297418, 100%, 70%) !important
+}
+
+.quant_1621 ellipse {
+    fill: hsl(356.2432626570114, 100%, 70%) !important
+}
+
+.quant_1011 ellipse {
+    fill: hsl(310.0667924740833, 100%, 70%) !important
+}
