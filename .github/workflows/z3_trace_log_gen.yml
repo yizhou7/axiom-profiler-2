@@ -39,20 +39,25 @@ jobs:
       - name: Run Z3 solver on changed smt2 files and compress 
         id: run_z3_and_upload
         run: |
+          # Create the 'logs' directory
           mkdir logs
+
+          # Loop through the files
           for file in ${{ steps.changed-smt2-files.outputs.smt_all_changed_files }}; do
-            echo "Processing $file"
-            # Get the filename without extension
-            base_name=$(basename "${file%.*}")
-            # Run Z3 solver for file and save the log in logs
-            # z3 trace=true proof=true trace-file-name=${base_name}.log ./$file > logs
-            z3 trace=true proof=true trace-file-name=logs/${base_name}.log ./$file
-            # Compress the file and save it to logs directory
-            # gzip -c ${base_name}.log > logs/${base_name}.log.gz
+              echo "Processing $file"
+              
+              # Get the filename without extension
+              base_name=$(basename "${file%.*}")
+              
+              # Run Z3 solver for the file and save the log in the 'logs' directory
+              z3 trace=true proof=true trace-file-name=logs/${base_name}.log ./$file
           done
-          tar -jf logs.tar.bz2 logs/
+
+          # Compress the 'logs' directory using tar with Bzip2 compression
+          tar -jf logs.tar.bz2 logs
+
+          # Set the output variable with the path to the compressed archive
           echo "::set-output name=logs_path::$(realpath logs.tar.bz2)"
-          # echo "::set-output name=logs_path::$(realpath logs)"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v3.1.2
