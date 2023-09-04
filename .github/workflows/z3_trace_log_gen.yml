@@ -14,7 +14,7 @@ jobs:
   generate_log:
     strategy: 
       matrix:
-        z3version: ['4.12.2']
+        z3version: ['4.12.2', '4.8.5']
     runs-on: ubuntu-latest
 
     steps:
@@ -26,7 +26,6 @@ jobs:
         uses: pavpanchekha/setup-z3@v1.3 # see GitHub Action "Install Z3"
         with:
           version: ${{ matrix.z3version }} 
-          #version: '4.12.2'
 
       # this fetches all changed (added/modified) smt2 files in the repository 
       - name: Fetch changed smt2 files
