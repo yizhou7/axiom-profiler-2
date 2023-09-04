@@ -45,11 +45,12 @@ jobs:
             # Get the filename without extension
             base_name=$(basename "${file%.*}")
             # Run Z3 solver for file and save the log in logs
-            z3 trace=true proof=true trace-file-name=${base_name}.log ./$file > logs
+            # z3 trace=true proof=true trace-file-name=${base_name}.log ./$file > logs
+            z3 trace=true proof=true trace-file-name=logs/${base_name}.log ./$file
             # Compress the file and save it to logs directory
             # gzip -c ${base_name}.log > logs/${base_name}.log.gz
           done
-          tar -j logs.tar.bz2 logs/
+          tar -jf logs.tar.bz2 logs/
           echo "::set-output name=logs_path::$(realpath logs.tar.bz2)"
           # echo "::set-output name=logs_path::$(realpath logs)"
 
