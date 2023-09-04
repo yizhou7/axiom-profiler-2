@@ -53,8 +53,8 @@ jobs:
               z3 trace=true proof=true trace-file-name=logs/${base_name}.log ./$file
           done
 
-          # Compress the 'logs' directory using tar with Bzip2 compression
-          tar -jf logs.tar.bz2 logs
+          # Compress the 'logs' directory using bzip2
+          tar -cjf logs.tar.bz2 logs/
 
           # Set the output variable with the path to the compressed archive
           echo "::set-output name=logs_path::$(realpath logs.tar.bz2)"
