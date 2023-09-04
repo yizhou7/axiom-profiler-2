@@ -47,10 +47,12 @@ jobs:
             # Run Z3 solver for $file
             z3 trace=true proof=true trace-file-name=${base_name}.log ./$file
             # Compress the file and save it to logs directory
-            gzip -c ${base_name}.log > logs/${base_name}.log.gz
-            echo "Compressed $file and saved to $logs/${base_name}.log.gz"
+            # gzip -c ${base_name}.log > logs/${base_name}.log.gz
+            # Compress the file using tar lzma
+            tar --lzma -J ${base_name}.tar.lzma ${base_name}.log
           done
-          echo "::set-output name=logs_path::$(realpath logs)"
+          echo "::set-output name=logs_path::$(realpath .)"
+          # echo "::set-output name=logs_path::$(realpath logs)"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v3.1.2
