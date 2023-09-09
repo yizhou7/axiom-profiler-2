@@ -14,7 +14,10 @@ jobs:
   generate_log:
     strategy: 
       matrix:
-        versions: [ {z3: '4.12.2', installz3: 'v1.3'}, {z3: '4.10.0', installz3: 'v1.3'}, {z3: '4.8.7', installz3: '1.2.2'}]
+        versions: 
+          - {z3: '4.12.2', installz3: 'v1.3'}
+          - {z3: '4.10.0', installz3: 'v1.3'}
+          - {z3: '4.8.7', installz3: '1.2.2'}
     
     # for versions of Z3 at least 4.9.0 we need v1.3 of the GitHub action, for older versions of Z3, 1.2.2
     runs-on: ubuntu-latest
