@@ -19,16 +19,25 @@ jobs:
     # for versions of Z3 at least 4.9.0 we need v1.3 of the GitHub action, for older versions of Z3, 1.2.2
     runs-on: ubuntu-latest
 
+    env: 
+      Z3_VERSION: ${{ matrix.versions.z3 }}
+      SETUP_Z3_VERSION: ${{ matrix.versions.installz3 }}
+
     steps:
+      - name: Set up environment
+        run: |
+          echo "Z3_VERSION=${{ env.Z3_VERSION }}" >> $GITHUB_ENV
+          echo "SETUP_Z3_VERSION=${{ env.SETUP_Z3_VERSION }}" >> $GITHUB_ENV
+
       - uses: actions/checkout@v3 # this copies the whole repository
         with:
           fetch-depth: 0 # needed, see GitHub Action "Changed Files"
 
       - name: Install Z3
-        uses: pavpanchekha/setup-z3@${{ matrix.versions.installz3 }} # see GitHub Action "Install Z3"
+        uses: pavpanchekha/setup-z3@${{ env.SETUP_Z3_VERSION }} # see GitHub Action "Install Z3"
         # uses: pavpanchekha/setup-z3@v1.3 # see GitHub Action "Install Z3"
         with:
-          version: ${{ matrix.versions.z3 }} 
+          version: ${{ env.Z3_VERSION }} 
 
       # this fetches all changed (added/modified) smt2 files in the repository 
       - name: Fetch changed smt2 files
@@ -58,12 +67,12 @@ jobs:
 
           # Compress the 'logs' directory using bzip2
           # z3_v_clean=$(echo "${{ matrix.z3version }}" | sed 's/\./_/g')
-          z3_v_clean=$(echo "${{ matrix.versions.z3 }} | sed 's/\./_/g')
+          z3_v_clean=$(echo "${{ env.Z3_VERSION }}  | sed 's/\./_/g')
           tar -cjf logs_z3_v${z3_v_clean}.tar.bz2 logs/
           echo "logs_path=$(realpath logs_z3_v${z3_v_clean}.tar.bz2)" >> $GITHUB_OUTPUT
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v3.1.2
         with:
-          name: "logs_z3_v${{ matrix.versions.z3 }}"
+          name: "logs_z3_v${{ env.Z3_VERSION }}"
           path: ${{ steps.run_z3_and_upload.outputs.logs_path }}
