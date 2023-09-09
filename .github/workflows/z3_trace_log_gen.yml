@@ -12,13 +12,13 @@ on:
 
 jobs:
   generate_log:
+    if: (${{ matrix.z3setup-version }} == '1.2.2' && startsWith(${{ matrix.z3version }}, '4.8')) || (${{ matrix.z3setup-version }} == 'v1.3' && !startsWith(${{ matrix.z3version }}, '4.8'))
     strategy: 
       matrix:
         z3version: ['4.12.2','4.10.0','4.8.7'] # for versions of Z3 at least 4.9.0 we need v1.3 of the GitHub action
         z3setup-version: ['v1.3', '1.2.2']
     
     # for versions of Z3 at least 4.9.0 we need v1.3 of the GitHub action, for older versions of Z3, 1.2.2
-    if: (${{ matrix.z3setup-version }} == '1.2.2' && startsWith(${{ matrix.z3version }}, '4.8')) || (${{ matrix.z3setup-version }} == 'v1.3' && !startsWith(${{ matrix.z3version }}, '4.8'))
     runs-on: ubuntu-latest
 
     steps:
