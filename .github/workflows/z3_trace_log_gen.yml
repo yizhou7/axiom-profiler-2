@@ -24,7 +24,8 @@ jobs:
           fetch-depth: 0 # needed, see GitHub Action "Changed Files"
 
       - name: Install Z3
-        uses: pavpanchekha/setup-z3@v1.3 # see GitHub Action "Install Z3"
+        uses: pavpanchekha/setup-z3@1.2.2 # see GitHub Action "Install Z3"
+        # uses: pavpanchekha/setup-z3@v1.3 # see GitHub Action "Install Z3"
         with:
           version: ${{ matrix.z3version }} 
 
