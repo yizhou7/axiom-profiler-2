@@ -27,7 +27,13 @@ jobs:
         with:
           fetch-depth: 0 # needed, see GitHub Action "Changed Files"
 
-      - name: Debug
+      - name: Debug v1.3
+        run: |
+          echo "matrix.versions.installz3: ${{ matrix.versions.installz3 }}"
+          echo "matrix.versions.z3: ${{ matrix.versions.z3 }}"
+        if: ${{ matrix.versions.installz3 }} == 'v1.3' 
+
+      - name: Debug 1.2.2
         run: |
           echo "matrix.versions.installz3: ${{ matrix.versions.installz3 }}"
           echo "matrix.versions.z3: ${{ matrix.versions.z3 }}"
