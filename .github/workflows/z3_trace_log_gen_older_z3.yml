@@ -1,4 +1,4 @@
-name: Z3 Trace Log Generator for at most v4.8.17 
+name: Z3 Trace Log Generator for at most v4.8.9 
 
 on:
   push:
