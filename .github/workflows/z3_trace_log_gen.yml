@@ -27,6 +27,11 @@ jobs:
         with:
           fetch-depth: 0 # needed, see GitHub Action "Changed Files"
 
+      - name: Debug
+        run: |
+          echo "matrix.versions.installz3: ${{ matrix.versions.installz3 }}"
+          echo "matrix.versions.z3: ${{ matrix.versions.z3 }}"
+
       - if: ${{ matrix.versions.installz3 }} == 'v1.3'
         name: Install Z3
         uses: pavpanchekha/setup-z3@v1.3 # see GitHub Action "Install Z3"
