@@ -20,7 +20,6 @@ jobs:
           - {z3: '4.8.7', installz3: '1.2.2'}
     
     # for versions of Z3 at least 4.9.0 we need v1.3 of the GitHub action, for older versions of Z3, 1.2.2
-    if: ${{ matrix.versions.installz3 }} == 'v1.3'
     runs-on: ubuntu-latest
 
     steps:
@@ -28,7 +27,8 @@ jobs:
         with:
           fetch-depth: 0 # needed, see GitHub Action "Changed Files"
 
-        name: Install Z3
+      - name: Install Z3
+        if: ${{ matrix.versions.installz3 }} == 'v1.3'
         uses: pavpanchekha/setup-z3@v1.3 # see GitHub Action "Install Z3"
         with:
           version: ${{ matrix.versions.z3 }} 
