@@ -15,9 +15,9 @@ jobs:
     strategy: 
       matrix:
         versions: 
-          - {z3: '4.12.2', installz3: 'pavpanchekha/setup-z3@v1.3'}
-          - {z3: '4.10.0', installz3: 'pavpanchekha/setup-z3@v1.3'}
-          - {z3: '4.8.7', installz3: 'pavpanchekha/setup-z3@1.2.2'}
+          - {z3: '4.12.2', installz3: 'v1.3'}
+          - {z3: '4.10.0', installz3: 'v1.3'}
+          - {z3: '4.8.7', installz3: '1.2.2'}
     
     # for versions of Z3 at least 4.9.0 we need v1.3 of the GitHub action, for older versions of Z3, 1.2.2
     runs-on: ubuntu-latest
@@ -27,12 +27,17 @@ jobs:
         with:
           fetch-depth: 0 # needed, see GitHub Action "Changed Files"
 
+      - if: ${{ matrix.versions.installz3 }} == 'v1.3'
       - name: Install Z3
-        # uses: pavpanchekha/setup-z3@${{ matrix.versions.installz3 }} # see GitHub Action "Install Z3"
-        uses: ${{ matrix.versions.installz3 }} 
-        # uses: pavpanchekha/setup-z3@v1.3 # see GitHub Action "Install Z3"
+        uses: pavpanchekha/setup-z3@v1.3 # see GitHub Action "Install Z3"
         with:
           version: ${{ matrix.versions.z3 }} 
+
+      - if: ${{ matrix.versions.installz3 }} == '1.2.2'
+      - name: Install Z3
+        uses: pavpanchekha/setup-z3@1.2.2 # see GitHub Action "Install Z3"
+        with:
+          version: ${{ matrix.versions.z3 }}
 
       # this fetches all changed (added/modified) smt2 files in the repository 
       - name: Fetch changed smt2 files
@@ -62,7 +67,7 @@ jobs:
 
           # Compress the 'logs' directory using bzip2
           # z3_v_clean=$(echo "${{ matrix.z3version }}" | sed 's/\./_/g')
-          z3_v_clean=$(echo "${{ matrix.versions.z3 }}  | sed 's/\./_/g')
+          z3_v_clean=$(echo "${{ matrix.versions.z3 }}"  | sed 's/\./_/g')
           tar -cjf logs_z3_v${z3_v_clean}.tar.bz2 logs/
           echo "logs_path=$(realpath logs_z3_v${z3_v_clean}.tar.bz2)" >> $GITHUB_OUTPUT
 
