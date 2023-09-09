@@ -14,7 +14,7 @@ jobs:
   generate_log:
     strategy: 
       matrix:
-        z3version: ['4.8.5']
+        z3version: ['4.8.8']
         # z3version: ['4.12.2', '4.8.7'] # for 4.9.0-4.12.2 we need v1.3 of "Install Z3" and for 4.8.7 we need 1.2.2
     runs-on: ubuntu-latest
 
@@ -24,7 +24,7 @@ jobs:
           fetch-depth: 0 # needed, see GitHub Action "Changed Files"
 
       - name: Install Z3
-        uses: pavpanchekha/setup-z3@1.2.1 # see GitHub Action "Install Z3"
+        uses: pavpanchekha/setup-z3@1.2.2 # see GitHub Action "Install Z3"
         # uses: pavpanchekha/setup-z3@v1.3 # see GitHub Action "Install Z3"
         with:
           version: ${{ matrix.z3version }} 
