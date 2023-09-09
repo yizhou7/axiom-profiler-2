@@ -28,16 +28,12 @@ jobs:
           fetch-depth: 0 # needed, see GitHub Action "Changed Files"
 
       - name: Install Z3
-        if: ${{ matrix.versions.installz3 }} == 'v1.3'
         uses: pavpanchekha/setup-z3@v1.3 # see GitHub Action "Install Z3"
+        if: ${{ matrix.versions.installz3 }} == 'v1.3'
+        uses: pavpanchekha/setup-z3@1.2.2 # see GitHub Action "Install Z3"
+        if: ${{ matrix.versions.installz3 }} == '1.2.2'
         with:
           version: ${{ matrix.versions.z3 }} 
-
-      - name: Install Z3
-        if: ${{ matrix.versions.installz3 }} == '1.2.2'
-        uses: pavpanchekha/setup-z3@1.2.2 # see GitHub Action "Install Z3"
-        with:
-          version: ${{ matrix.versions.z3 }}
 
       # this fetches all changed (added/modified) smt2 files in the repository 
       - name: Fetch changed smt2 files
