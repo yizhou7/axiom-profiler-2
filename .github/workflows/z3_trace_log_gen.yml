@@ -1,4 +1,4 @@
-name: Z3 Trace Log Generator for at most v4.8.9 
+name: Z3 Trace Log Generator 
 
 on:
   push:
@@ -26,13 +26,13 @@ jobs:
 
       - name: Install Z3 for older version 
         uses: pavpanchekha/setup-z3@1.2.2 # see GitHub Action "Install Z3"
-        if: ${{ matrix.z3version }} == '4.8.7'
+        if: ${{ matrix.z3version == '4.8.7' }}
         with:
           version: ${{ matrix.z3version }} 
 
       - name: Install Z3 for newer version 
         uses: pavpanchekha/setup-z3@v1.3 # see GitHub Action "Install Z3"
-        if: ${{ matrix.z3version }} == '4.12.2'
+        if: ${{ matrix.z3version == '4.12.2' }}
         with:
           version: ${{ matrix.z3version }} 
 
