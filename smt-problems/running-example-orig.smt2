@@ -1,4 +1,3 @@
-; some z3 options
 (set-option :print-success false)
 (set-info :smt-lib-version 2.0)
 (set-option :smt.MBQI false)
