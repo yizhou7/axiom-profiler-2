@@ -19,3 +19,4 @@ wasm-bindgen-futures = "0.4.37"
 yew-router = "0.17.0"
 scraper = "0.17.1"
 getrandom = { version = "0.2", features = ["js"] }
+prototype = { path = "../axiom-profiler-rust" }
