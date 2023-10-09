@@ -30,7 +30,6 @@ impl Component for FileDataComponent {
         }
     }
 
-    // test comment
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
             Msg::Files(files) => {
