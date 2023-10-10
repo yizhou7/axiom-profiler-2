@@ -1,4 +1,4 @@
-use yew::{prelude::*, virtual_dom::VNode};
+use yew::{prelude::*, virtual_dom::{VNode, VTag}};
 use scraper::{self, Selector};
 use prototype::parsers::{z3parser1, LogParser};
 use viz_js::VizInstance;
@@ -68,13 +68,35 @@ pub fn svg_result(props: &SVGProps) -> Html {
         })
     };
 
+    let mut polygon = VTag::new("polygon");
+    polygon.add_attribute("fill", "white");
+    polygon.add_attribute("stroke", "none");
+    polygon.add_attribute("points", "-4,4 -4,-112 202,-112 202,4 -4,4");
+
+    let mut group = VTag::new("g"); 
+    group.add_attribute("id","graph0");
+    group.add_attribute("class","graph");
+    group.add_attribute("transform","scale(1 1) rotate(0) translate(4 112)");
+    group.add_child(VNode::from(polygon));
+    group.add_children((*svg_text).1.clone().into_iter());
+
+    let mut svg_graph = VTag::new("svg");
+    svg_graph.add_attribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+    svg_graph.add_attribute("xmlns", "http://www.w3.org/2000/svg");
+    svg_graph.add_attribute("width", "206pt");
+    svg_graph.add_attribute("height", "116pt");
+    svg_graph.add_attribute("viewBox", "0.00 0.00 206.00 116.00");
+    svg_graph.add_child(VNode::from(group));
+
     html! {
         <>
         <button onclick={onclick}>{"Load file"}</button>
         <br/>
-        // <textarea rows="50" cols="100" />
         {(*svg_text).0.clone()}
+        <div>
         { for (*svg_text).1.clone()}
+        </div>
+        {svg_graph}
         </>
     }
 }
