@@ -1,4 +1,4 @@
-use yew::prelude::*;
+use yew::{prelude::*, virtual_dom::VNode};
 use scraper::{self, Selector};
 use prototype::parsers::{z3parser1, LogParser};
 use viz_js::VizInstance;
@@ -11,7 +11,7 @@ pub struct SVGProps {
 #[function_component(SVGResult)]
 pub fn svg_result(props: &SVGProps) -> Html {
     log::debug!("SVG result");
-    let svg_text = use_state(|| html! {});
+    let svg_text = use_state(|| (html! {}, Vec::new()));
     let g_selector = Selector::parse("g > g").unwrap();
     let svg_selector = Selector::parse("svg").unwrap();
     let onclick = {
@@ -42,16 +42,17 @@ pub fn svg_result(props: &SVGProps) -> Html {
                     let g_tags =
                         scraper::Html::select(&svg, &g_selector);
                     log::debug!("selected");
-                    let _nodes = g_tags
+                    let _nodes: Vec<VNode> = g_tags
                         .map(|node| {
                                 let inner_html: AttrValue = 
                                 node.inner_html().into();
+                                // node.html().into();
                                 let id: AttrValue = node.value().id().unwrap().to_string().into();
                                 let class = classes!(node.value().classes().map(String::from).collect::<Vec<String>>());
                             html! {
                             <Node inner_html={inner_html} id={id} class={class}/>
                             }
-                        });
+                        }).collect();
                     let mut svg_tag = scraper::Html::select(&svg, &svg_selector);
                     let node = svg_tag.next().unwrap().value();
                     let _width = node.attr("width").unwrap().to_string();
@@ -59,7 +60,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
                     let _view_box = node.attr("viewBox").unwrap().to_string();
                     log::debug!("made nodes");
                     let svg_result = AttrValue::from(fetched_svg);
-                    svg_text.set(Html::from_html_unchecked(svg_result));
+                    svg_text.set((Html::from_html_unchecked(svg_result),_nodes));
                     log::debug!("set state");
                 },
                    
@@ -72,7 +73,8 @@ pub fn svg_result(props: &SVGProps) -> Html {
         <button onclick={onclick}>{"Load file"}</button>
         <br/>
         // <textarea rows="50" cols="100" />
-        {(*svg_text).clone()}
+        {(*svg_text).0.clone()}
+        { for (*svg_text).1.clone()}
         </>
     }
 }
