@@ -47,10 +47,15 @@ pub fn svg_result(props: &SVGProps) -> Html {
                                 let inner_html: AttrValue = 
                                 node.inner_html().into();
                                 // node.html().into();
-                                let id: AttrValue = node.value().id().unwrap().to_string().into();
+                                let id_str = node.value().id().unwrap().to_string();
+                                let id : AttrValue = id_str.clone().into();
                                 let class = classes!(node.value().classes().map(String::from).collect::<Vec<String>>());
                             html! {
-                            <Node inner_html={inner_html} id={id} class={class}/>
+                                {if id_str.contains("a_") {
+                                    html! {}
+                                } else {
+                                    html! { <Node inner_html={inner_html} id={id} class={class}/> }
+                                }}
                             }
                         }).collect();
                     let mut svg_tag = scraper::Html::select(&svg, &svg_selector);
@@ -81,8 +86,8 @@ pub fn svg_result(props: &SVGProps) -> Html {
     group.add_children((*svg_text).1.clone().into_iter());
 
     let mut svg_graph = VTag::new("svg");
-    svg_graph.add_attribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
     svg_graph.add_attribute("xmlns", "http://www.w3.org/2000/svg");
+    svg_graph.add_attribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
     svg_graph.add_attribute("width", "206pt");
     svg_graph.add_attribute("height", "116pt");
     svg_graph.add_attribute("viewBox", "0.00 0.00 206.00 116.00");
@@ -94,9 +99,9 @@ pub fn svg_result(props: &SVGProps) -> Html {
         <br/>
         {(*svg_text).0.clone()}
         <div>
-        { for (*svg_text).1.clone()}
+            { for (*svg_text).1.clone()}
         </div>
-        {svg_graph}
+        {VNode::from(svg_graph)}
         </>
     }
 }
