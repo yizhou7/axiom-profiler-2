@@ -115,15 +115,21 @@ pub struct NodeProps {
 
 #[function_component(Node)]
 fn node(props: &NodeProps) -> Html {
-    let state = use_state(|| props.id.clone());
+    let state = use_state(|| (props.id.clone(), false));
     let onclick = move |_| {
-        log::debug!("{}", *state);
         log::debug!("node selected!");
     };
     let inner = Html::from_html_unchecked(props.inner_html.clone().into());
     html! {
-        <g id={props.id.clone()} class={props.class.clone()} onclick={onclick.clone()}>
-        {inner}
-        </g>
+        {if (*state).clone().1 == true {
+            html! {
+                <g id={props.id.clone()} class={props.class.clone()} onclick={onclick.clone()}>
+                {inner}
+                </g>
+            }
+        } else {
+            html! {}
+        }}
+
     }
 } 
