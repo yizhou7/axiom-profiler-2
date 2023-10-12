@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+    "smt-log-parser",
+    "axiom-profiler-GUI",
+]
