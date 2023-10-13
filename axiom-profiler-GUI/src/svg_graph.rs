@@ -2,6 +2,7 @@ use yew::{prelude::*, virtual_dom::{VNode, VTag}};
 use scraper::{self, Selector};
 use prototype::parsers::{z3parser1, LogParser};
 use viz_js::VizInstance;
+use petgraph::dot::{Dot, Config};
 
 #[derive(Properties, PartialEq)]
 pub struct SVGProps {
@@ -29,7 +30,9 @@ pub fn svg_result(props: &SVGProps) -> Html {
                 async move {
                     let mut parser = z3parser1::Z3Parser1::new();
                     parser.process_log(text);
-                    let dot_output = parser.get_dot_output_as_string();
+                    // let dot_output = parser.get_dot_output_as_string();
+                    let qi_graph = parser.get_instantiation_graph();
+                    let dot_output = format!("{:?}", Dot::with_config(qi_graph, &[Config::EdgeNoLabel])); 
                     let graphviz = VizInstance::new().await;
                     let svg = graphviz
                         .render_svg_element(dot_output, viz_js::Options::default())
