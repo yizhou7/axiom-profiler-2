@@ -91,11 +91,6 @@ pub fn output_dot_and_css_to_file(dot_filename: &str, css_filename: &str, depend
     output_css_to_file(css_filename, &node_list);
 }
 
-pub fn get_dot_output_as_string(dependencies: &Vec<Dependency>) -> String {
-    let (node_list, edge_list) = build_graph(dependencies);
-    let (node_list, edge_list) = filter_graph_line_no(node_list, edge_list);
-    get_dot("instantiations", &node_list, &edge_list)
-}
 
 // Turn `dependencies` into a Dot file
 fn output_dot_to_file(filename: &str, dependencies: &Vec<Dependency>) -> BTreeSet<InstNode> {

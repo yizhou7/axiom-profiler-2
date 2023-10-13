@@ -1,4 +1,5 @@
 use super::*;
+use petgraph::graph::Graph;
 
 pub struct Z3Parser1 {
     terms: TwoDMap<Term>,             // [namespace => [ID number => Term]]
@@ -13,6 +14,8 @@ pub struct Z3Parser1 {
     version_info: VersionInfo,
     pub continue_parsing: Arc<Mutex<bool>>, // continue parsing or not?
     qvar_re: Vec<Regex>,
+    line_nr_of_node: BTreeMap<petgraph::graph::NodeIndex, usize>, // [node-idx => line number]
+    qi_graph: Graph::<usize, ()>,
 }
 
 pub fn new() -> Z3Parser1 {
@@ -617,6 +620,8 @@ impl Default for Z3Parser1 {
             version_info: VersionInfo::default(),
             continue_parsing: Arc::new(Mutex::new(true)),
             qvar_re: vec![qvar_re_1, qvar_re_2],
+            line_nr_of_node: BTreeMap::new(),
+            qi_graph: Graph::<usize, ()>::new(),
         }
     }
 }
@@ -796,13 +801,29 @@ impl Z3Parser1 {
         }
     }
 
-    pub fn get_sorted_dependencies(&self) -> Vec<Dependency> {
+    fn get_sorted_dependencies(&self) -> Vec<Dependency> {
         let insts_sorted = Z3Parser1::filter_instantiations_by_cost(&self.instantiations, 250);
         Self::filter_dependencies_by_cost(&insts_sorted, &self.dependencies)
     } 
 
-    pub fn get_dot_output_as_string(&self) -> String {
-        let sorted_deps = self.get_sorted_dependencies();
-        crate::dot_output::get_dot_output_as_string(&sorted_deps)
+    pub fn get_instantiation_graph(&mut self) -> &petgraph::Graph<usize, ()> {
+        if self.qi_graph.node_count() <= 0 {
+            let sorted_deps = self.get_sorted_dependencies();
+            let is_not_theory_inst: fn(&Dependency) -> bool = |d| d.quant != "arith#" && d.quant != "basic#"; 
+            for dep in sorted_deps {
+                if is_not_theory_inst(&dep) {
+                    // check first that it has not yet been inserted into self.line_nr_of_node
+                    let to_node = self.qi_graph.add_node(dep.to);
+                    self.line_nr_of_node.insert(to_node, dep.to);
+                    if dep.from != 0 {
+                        // check first that it has not yet been inserted into self.line_nr_of_node
+                        let from_node = self.qi_graph.add_node(dep.from);
+                        self.line_nr_of_node.insert(from_node, dep.from);
+                        self.qi_graph.add_edge(from_node, to_node, ());
+                    }
+                }
+            }
+        }
+        &self.qi_graph
     }
 }
