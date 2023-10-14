@@ -15,6 +15,7 @@ pub struct Z3Parser1 {
     pub continue_parsing: Arc<Mutex<bool>>, // continue parsing or not?
     qvar_re: Vec<Regex>,
     line_nr_of_node: BTreeMap<petgraph::graph::NodeIndex, usize>, // [node-idx => line number]
+    node_of_line_nr: BTreeMap<usize, petgraph::graph::NodeIndex>, // [node-idx => line number]
     qi_graph: Graph::<usize, ()>,
 }
 
@@ -621,6 +622,7 @@ impl Default for Z3Parser1 {
             continue_parsing: Arc::new(Mutex::new(true)),
             qvar_re: vec![qvar_re_1, qvar_re_2],
             line_nr_of_node: BTreeMap::new(),
+            node_of_line_nr: BTreeMap::new(),
             qi_graph: Graph::<usize, ()>::new(),
         }
     }
@@ -813,13 +815,23 @@ impl Z3Parser1 {
             for dep in sorted_deps {
                 if is_not_theory_inst(&dep) {
                     // check first that it has not yet been inserted into self.line_nr_of_node
-                    let to_node = self.qi_graph.add_node(dep.to);
-                    self.line_nr_of_node.insert(to_node, dep.to);
+                    if !self.node_of_line_nr.contains_key(&dep.to) {
+                        let to_node = self.qi_graph.add_node(dep.to);
+                        self.line_nr_of_node.insert(to_node, dep.to);
+                        self.node_of_line_nr.insert(dep.to, to_node);
+                    }
                     if dep.from != 0 {
                         // check first that it has not yet been inserted into self.line_nr_of_node
-                        let from_node = self.qi_graph.add_node(dep.from);
-                        self.line_nr_of_node.insert(from_node, dep.from);
-                        self.qi_graph.add_edge(from_node, to_node, ());
+                        if !self.node_of_line_nr.contains_key(&dep.from) {
+                            let from_node = self.qi_graph.add_node(dep.from);
+                            self.line_nr_of_node.insert(from_node, dep.from);
+                            self.node_of_line_nr.insert(dep.from, from_node);
+                        }
+                        if let Some(&from_node) = self.node_of_line_nr.get(&dep.from) {
+                            if let Some(&to_node) = self.node_of_line_nr.get(&dep.to) {
+                                self.qi_graph.add_edge(from_node, to_node, ());
+                            }
+                        }
                     }
                 }
             }
