@@ -7,6 +7,7 @@ use yew_router::prelude::*;
 use crate::svg_graph::*;
 
 mod svg_graph;
+mod nodes;
 pub enum Msg {
     LoadedBytes(String, Vec<u8>),
     Files(Vec<File>),
