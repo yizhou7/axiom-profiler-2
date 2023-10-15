@@ -4,6 +4,7 @@ use prototype::parsers::{z3parser1, LogParser};
 use viz_js::VizInstance;
 use petgraph::dot::{Dot, Config};
 use crate::nodes::*;
+use crate::edges::*;
 
 #[derive(Properties, PartialEq)]
 pub struct SVGProps {
@@ -47,6 +48,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
                 <g id="graph0" class="graph" transform="scale (1 1) rotate(0) translate(4 112)">
                     <polygon fill="white" stroke="none" points="-4,4 -4,-112 202,-112 202,4 -4,4"></polygon>
                     <Nodes svg_text={(*svg_text).clone()} />
+                    <Edges svg_text={(*svg_text).clone()} />
                 </g>
             </svg>
         </>
