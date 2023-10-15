@@ -31,7 +31,7 @@ pub struct NodeProps {
 
 #[function_component(Node)]
 fn node(props: &NodeProps) -> Html {
-    let state = use_state(|| props.id.clone());
+    let _ = use_state(|| props.id.clone());
     let onclick = move |_| {
         log::debug!("node selected!");
     };

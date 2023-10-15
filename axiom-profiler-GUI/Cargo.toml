@@ -23,4 +23,3 @@ getrandom = { version = "0.2", features = ["js"] }
 prototype = { path = "../smt-log-parser" }
 petgraph = "0.6.4"
 viz-js = "3.1.0"
-yewtil = "0.4.0"

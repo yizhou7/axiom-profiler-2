@@ -1,4 +1,4 @@
-use yew::{prelude::*, virtual_dom::{VNode, VTag, VText}};
+use yew::prelude::*;
 use scraper::{self, Selector};
 
 #[derive(Properties, PartialEq)]
@@ -31,7 +31,7 @@ pub struct EdgeProps {
 
 #[function_component(Edge)]
 fn edge(props: &EdgeProps) -> Html {
-    let state = use_state(|| props.id.clone());
+    let _ = use_state(|| props.id.clone());
     let onclick = move |_| {
         log::debug!("edge selected!");
     };
