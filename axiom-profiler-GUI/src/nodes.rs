@@ -1,5 +1,6 @@
 use yew::{prelude::*, virtual_dom::{VNode, VTag, VText}};
 use scraper::{self, Selector};
+use crate::svg_graph::*;
 
 #[derive(Properties, PartialEq)]
 pub struct NodesProps {
@@ -63,13 +64,19 @@ fn node(props: &NodeProps) -> Html {
     text_node.add_attribute("font-family", font_family);
     text_node.add_attribute("font-size", font_size);
     // Set the text content
-    let inner_text_node: VNode = VText::new(inner_text).into(); 
+    let inner_text_node: VNode = VText::new(inner_text.clone()).into(); 
     text_node.add_child(inner_text_node);
-
     // Convert the VTag to a VNode
     let text_vnode: VNode = text_node.into();
+    // Decide whether this node should be visible or not based on max line nr.
+    let ctx = use_context::<MaxLineNr>().expect("no ctx found");
+    let max_line_nr = ctx.max_line_nr;
+    let visibility = match inner_text.parse::<i32>() {
+        Ok(line_nr) => if line_nr > max_line_nr { "hidden" } else { "visible" },
+        Err(_) => "visible", 
+    };
     html! {
-        <g id={props.id.clone()} class={props.class.clone()} onclick={onclick.clone()}>
+        <g id={props.id.clone()} class={props.class.clone()} {visibility} onclick={onclick.clone()}>
             <ellipse {fill} {stroke} {cx} {cy} {rx} {ry} ></ellipse>
             { text_vnode }
         </g>

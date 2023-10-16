@@ -31,9 +31,13 @@ pub struct EdgeProps {
 
 #[function_component(Edge)]
 fn edge(props: &EdgeProps) -> Html {
-    let _ = use_state(|| props.id.clone());
-    let onclick = move |_| {
-        log::debug!("edge selected!");
+    let visible = use_state(|| true);
+    let onclick = {
+        let visible = visible.clone();
+        move |_| {
+            log::debug!("edge selected!");
+            visible.set(!*visible)
+        }
     };
     // extract path attributes 
     let path_selector = Selector::parse("path").unwrap();
@@ -50,8 +54,12 @@ fn edge(props: &EdgeProps) -> Html {
     let polygon_fill = node.attr("fill").unwrap().to_string();
     let polygon_stroke = node.attr("stroke").unwrap().to_string();
     let points = node.attr("points").unwrap().to_string();
+    let visibility = match *visible {
+        true => "visible",
+        false => "hidden",
+    };
     html! {
-        <g id={props.id.clone()} class={props.class.clone()} onclick={onclick.clone()}>
+        <g id={props.id.clone()} class={props.class.clone()} {visibility} onclick={onclick.clone()}>
             <path {fill} {stroke} {d} ></path>
             <polygon {polygon_fill} {polygon_stroke} {points} ></polygon>
         </g>

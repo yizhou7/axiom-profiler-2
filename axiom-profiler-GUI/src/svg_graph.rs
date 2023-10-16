@@ -1,3 +1,6 @@
+use wasm_bindgen::JsCast;
+use wasm_bindgen::UnwrapThrowExt;
+use web_sys::HtmlInputElement;
 use yew::prelude::*;
 use scraper::{self, Selector};
 use prototype::parsers::{z3parser1, LogParser};
@@ -14,7 +17,7 @@ pub struct SVGProps {
 #[function_component(SVGResult)]
 pub fn svg_result(props: &SVGProps) -> Html {
     log::debug!("SVG result");
-    let svg_text = use_state(|| (String::new(), false));
+    let svg_text = use_state(|| None);
     let onclick = {
         let text = props.trace_file_text.to_string();
         let svg_text = svg_text.clone();
@@ -33,7 +36,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
                         .render_svg_element(dot_output, viz_js::Options::default())
                         .expect("Could not render graphviz");
                     let fetched_svg = svg.outer_html(); 
-                    svg_text.set((fetched_svg, true));
+                    svg_text.set(Some(fetched_svg));
                 },
                    
             );
@@ -42,10 +45,10 @@ pub fn svg_result(props: &SVGProps) -> Html {
     html! {
         <>
             <div>
-            <button onclick={onclick}>{"Load file"}</button>
+                <button onclick={onclick}>{"Render instantiation graph"}</button>
             </div>
-            { if (*svg_text).1 {
-                html! { <Graph svg_text={(*svg_text).0.clone()} /> }
+            { if let Some(text) = (*svg_text).clone() {
+                html! { <Graph svg_text={text} /> }
             } else {
                 html! {}
             }}
@@ -58,8 +61,28 @@ pub struct GraphProps {
     pub svg_text: String,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct MaxLineNr {
+    pub max_line_nr: i32,
+}
+
 #[function_component(Graph)]
 fn graph(props: &GraphProps) -> Html {
+    let max_line_nr = use_state(|| i32::MAX);
+    let oninput = Callback::from({
+        let max_line_nr = max_line_nr.clone();
+        move |input_event: InputEvent| {
+            let target: HtmlInputElement = input_event
+                .target()
+                .unwrap_throw()
+                .dyn_into()
+                .unwrap_throw();
+            match target.value().to_string().parse::<i32>() {
+                Ok(line_nr) => max_line_nr.set(line_nr),
+                Err(_) => max_line_nr.set(i32::MAX),
+            }
+        }
+    });
     // extract svg attributes
     let svg_selector = Selector::parse("svg").unwrap();
     let svg = scraper::Html::parse_document(&props.svg_text);
@@ -86,12 +109,19 @@ fn graph(props: &GraphProps) -> Html {
     let stroke = node.attr("stroke").unwrap().to_string();
     let points = node.attr("points").unwrap().to_string();
     html! {
-        <svg xmlns="http://www.w3.org/2000/svg" {width} {height} viewBox={view_box}>
-            <g {id} {class} {transform}>
-                <polygon {fill} {stroke} {points}></polygon>
-                <Nodes svg_text={(props.svg_text).clone()} />
-                <Edges svg_text={(props.svg_text).clone()} />
-            </g>
-        </svg>
+        <>
+            <div>
+                <input type="number" {oninput} />
+            </div>
+            <ContextProvider<MaxLineNr> context={MaxLineNr{max_line_nr: *max_line_nr}}>
+                <svg xmlns="http://www.w3.org/2000/svg" {width} {height} viewBox={view_box}>
+                    <g {id} {class} {transform}>
+                        <polygon {fill} {stroke} {points}></polygon>
+                        <Nodes svg_text={(props.svg_text).clone()} />
+                        <Edges svg_text={(props.svg_text).clone()} />
+                    </g>
+                </svg>
+            </ContextProvider<MaxLineNr>>
+        </>
     }
 }
