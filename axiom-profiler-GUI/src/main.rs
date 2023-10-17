@@ -10,6 +10,7 @@ mod svg_result;
 mod nodes;
 mod edges;
 mod graph;
+mod attribute_fetcher;
 pub enum Msg {
     LoadedBytes(String, Vec<u8>),
     Files(Vec<File>),

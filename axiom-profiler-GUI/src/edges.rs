@@ -1,7 +1,7 @@
 use yew::prelude::*;
 use scraper::{self, Selector};
 
-use crate::svg_result::GraphState;
+use crate::{svg_result::GraphState, attribute_fetcher::{PathAttr, TagAttributes, PolygonAttr}};
 
 #[function_component(Edges)]
 pub fn edges() -> Html {
@@ -29,31 +29,13 @@ pub struct EdgeProps {
 
 #[function_component(Edge)]
 fn edge(props: &EdgeProps) -> Html {
-    // let _ = use_state(|| None);
-    // let onclick = {
-    //     move |_| {
-    //         log::debug!("edge selected!");
-    //     }
-    // };
-    // extract path attributes 
-    let path_selector = Selector::parse("path").unwrap();
     let svg = scraper::Html::parse_document(&props.inner_html);
-    let mut path_tag = scraper::Html::select(&svg, &path_selector);
-    let node = path_tag.next().unwrap().value();
-    let fill = node.attr("fill").unwrap().to_string();
-    let stroke = node.attr("stroke").unwrap().to_string();
-    let d = node.attr("d").unwrap().to_string();
-    // extract polygon attributes
-    let polygon_selector = Selector::parse("polygon").unwrap();
-    let mut polygon_tag = scraper::Html::select(&svg, &polygon_selector);
-    let node = polygon_tag.next().unwrap().value();
-    let polygon_fill = node.attr("fill").unwrap().to_string();
-    let polygon_stroke = node.attr("stroke").unwrap().to_string();
-    let points = node.attr("points").unwrap().to_string();
+    let PathAttr{fill, stroke, d} = PathAttr::get_attributes(&svg);
+    let PolygonAttr{fill: polygon_fill, stroke: polygon_stroke, points} = PolygonAttr::get_attributes(&svg);
     let title_selector = Selector::parse("title").unwrap();
     let title_text: String = scraper::Html::select(&svg, &title_selector).flat_map(|el| el.text()).collect();
     let ctx = use_context::<GraphState>().expect("no ctx found");
-    let visibility = match parse_input(&title_text) {
+    let visibility = match parse_edge_title(&title_text) {
         Some((from_node_idx, to_node_idx)) => {
             match (ctx.line_nr_of_node.get(&from_node_idx), ctx.line_nr_of_node.get(&to_node_idx)) {
                 (Some(&from_node_line_nr), Some(&to_node_line_nr)) => {
@@ -71,7 +53,6 @@ fn edge(props: &EdgeProps) -> Html {
         _ => {log::debug!("third visible branch"); "visible"}
     };
     html! {
-        // <g id={props.id.clone()} class={props.class.clone()} {visibility} onclick={onclick.clone()}>
         <g id={props.id.clone()} class={props.class.clone()} {visibility} >
             <path {fill} {stroke} {d} ></path>
             <polygon {polygon_fill} {polygon_stroke} {points} ></polygon>
@@ -79,7 +60,7 @@ fn edge(props: &EdgeProps) -> Html {
     }
 }
 
-fn parse_input(input: &str) -> Option<(usize, usize)> {
+fn parse_edge_title(input: &str) -> Option<(usize, usize)> {
     // Split the input string by "->" and parse the integers
     let parts: Vec<&str> = input.trim().split("->").collect();
 
