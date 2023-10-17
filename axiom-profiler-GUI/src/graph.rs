@@ -1,73 +1,24 @@
-use wasm_bindgen::JsCast;
-use wasm_bindgen::UnwrapThrowExt;
-use web_sys::HtmlInputElement;
 use yew::prelude::*;
+use web_sys::HtmlInputElement;
+use wasm_bindgen::UnwrapThrowExt;
+use wasm_bindgen::JsCast;
 use scraper::{self, Selector};
-use prototype::parsers::{z3parser1, LogParser};
-use viz_js::VizInstance;
-use petgraph::dot::{Dot, Config};
 use crate::nodes::*;
 use crate::edges::*;
-
-#[derive(Properties, PartialEq)]
-pub struct SVGProps {
-    pub trace_file_text: AttrValue,
-}
-
-#[function_component(SVGResult)]
-pub fn svg_result(props: &SVGProps) -> Html {
-    log::debug!("SVG result");
-    let svg_text = use_state(|| None);
-    let onclick = {
-        let text = props.trace_file_text.to_string();
-        let svg_text = svg_text.clone();
-        Callback::from(move |_| {
-            let text = text.to_string();
-            let svg_text = svg_text.clone();
-            log::debug!("use effect");
-            wasm_bindgen_futures::spawn_local(
-                async move {
-                    let mut parser = z3parser1::Z3Parser1::new();
-                    parser.process_log(text);
-                    let qi_graph = parser.get_instantiation_graph();
-                    let dot_output = format!("{:?}", Dot::with_config(qi_graph, &[Config::EdgeNoLabel])); 
-                    let graphviz = VizInstance::new().await;
-                    let svg = graphviz
-                        .render_svg_element(dot_output, viz_js::Options::default())
-                        .expect("Could not render graphviz");
-                    let fetched_svg = svg.outer_html(); 
-                    svg_text.set(Some(fetched_svg));
-                },
-                   
-            );
-        })
-    };
-    html! {
-        <>
-            <div>
-                <button onclick={onclick}>{"Render instantiation graph"}</button>
-            </div>
-            { if let Some(text) = (*svg_text).clone() {
-                html! { <Graph svg_text={text} /> }
-            } else {
-                html! {}
-            }}
-        </>
-    }
-}
+use crate::svg_result::GraphCtxt;
 
 #[derive(Properties, PartialEq)]
 pub struct GraphProps {
     pub svg_text: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct MaxLineNr {
-    pub max_line_nr: i32,
-}
+// #[derive(Clone, Debug, PartialEq)]
+// pub struct MaxLineNr {
+//     pub max_line_nr: i32,
+// }
 
 #[function_component(Graph)]
-fn graph(props: &GraphProps) -> Html {
+pub fn graph(props: &GraphProps) -> Html {
     let max_line_nr = use_state(|| i32::MAX);
     let oninput = Callback::from({
         let max_line_nr = max_line_nr.clone();
@@ -108,12 +59,13 @@ fn graph(props: &GraphProps) -> Html {
     let fill = node.attr("fill").unwrap().to_string();
     let stroke = node.attr("stroke").unwrap().to_string();
     let points = node.attr("points").unwrap().to_string();
+    let ctx = use_context::<GraphCtxt>().expect("no ctx found");
     html! {
         <>
             <div>
                 <input type="number" {oninput} />
             </div>
-            <ContextProvider<MaxLineNr> context={MaxLineNr{max_line_nr: *max_line_nr}}>
+            <ContextProvider<GraphCtxt> context={GraphCtxt{max_line_nr: *max_line_nr, line_nr_of_node: ctx.line_nr_of_node}}>
                 <svg xmlns="http://www.w3.org/2000/svg" {width} {height} viewBox={view_box}>
                     <g {id} {class} {transform}>
                         <polygon {fill} {stroke} {points}></polygon>
@@ -121,7 +73,7 @@ fn graph(props: &GraphProps) -> Html {
                         <Edges svg_text={(props.svg_text).clone()} />
                     </g>
                 </svg>
-            </ContextProvider<MaxLineNr>>
+            </ContextProvider<GraphCtxt>>
         </>
     }
 }

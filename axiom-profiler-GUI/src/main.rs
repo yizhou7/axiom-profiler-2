@@ -4,11 +4,12 @@ use std::str::from_utf8;
 use web_sys::{Event, HtmlInputElement};
 use yew::prelude::*;
 use yew_router::prelude::*;
-use crate::svg_graph::*;
+use crate::svg_result::*;
 
-mod svg_graph;
+mod svg_result;
 mod nodes;
 mod edges;
+mod graph;
 pub enum Msg {
     LoadedBytes(String, Vec<u8>),
     Files(Vec<File>),
