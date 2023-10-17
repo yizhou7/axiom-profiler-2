@@ -14,7 +14,7 @@ pub struct Z3Parser1 {
     version_info: VersionInfo,
     pub continue_parsing: Arc<Mutex<bool>>, // continue parsing or not?
     qvar_re: Vec<Regex>,
-    line_nr_of_node: BTreeMap<petgraph::graph::NodeIndex, usize>, // [node-idx => line number]
+    pub line_nr_of_node: BTreeMap<usize, usize>, // [node-idx => line number]
     node_of_line_nr: BTreeMap<usize, petgraph::graph::NodeIndex>, // [node-idx => line number]
     qi_graph: Graph::<usize, ()>,
 }
@@ -817,14 +817,14 @@ impl Z3Parser1 {
                     // check first that it has not yet been inserted into self.line_nr_of_node
                     if !self.node_of_line_nr.contains_key(&dep.to) {
                         let to_node = self.qi_graph.add_node(dep.to);
-                        self.line_nr_of_node.insert(to_node, dep.to);
+                        self.line_nr_of_node.insert(to_node.index(), dep.to);
                         self.node_of_line_nr.insert(dep.to, to_node);
                     }
                     if dep.from != 0 {
                         // check first that it has not yet been inserted into self.line_nr_of_node
                         if !self.node_of_line_nr.contains_key(&dep.from) {
                             let from_node = self.qi_graph.add_node(dep.from);
-                            self.line_nr_of_node.insert(from_node, dep.from);
+                            self.line_nr_of_node.insert(from_node.index(), dep.from);
                             self.node_of_line_nr.insert(dep.from, from_node);
                         }
                         if let Some(&from_node) = self.node_of_line_nr.get(&dep.from) {
