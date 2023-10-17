@@ -1,18 +1,14 @@
 use yew::prelude::*;
 use scraper::{self, Selector};
 
-use crate::svg_result::GraphCtxt;
-
-#[derive(Properties, PartialEq)]
-pub struct EdgesProps {
-    pub svg_text: String,
-}
+use crate::svg_result::GraphState;
 
 #[function_component(Edges)]
-pub fn edges(EdgesProps { svg_text }: &EdgesProps) -> Html {
-    // let g_selector = Selector::parse("g > g").unwrap();
+pub fn edges() -> Html {
+    let state = use_context::<GraphState>().expect("no ctx found");
+    let svg_text = state.svg_text; 
     let edge_selector = Selector::parse(".edge").unwrap();
-    let svg = scraper::Html::parse_document(svg_text);
+    let svg = scraper::Html::parse_document(&svg_text);
     let edge_tags = scraper::Html::select(&svg, &edge_selector);
     edge_tags.map(|edge| {
         let inner_html = edge.inner_html();
@@ -56,7 +52,7 @@ fn edge(props: &EdgeProps) -> Html {
     let points = node.attr("points").unwrap().to_string();
     let title_selector = Selector::parse("title").unwrap();
     let title_text: String = scraper::Html::select(&svg, &title_selector).flat_map(|el| el.text()).collect();
-    let ctx = use_context::<GraphCtxt>().expect("no ctx found");
+    let ctx = use_context::<GraphState>().expect("no ctx found");
     let visibility = match parse_input(&title_text) {
         Some((from_node_idx, to_node_idx)) => {
             match (ctx.line_nr_of_node.get(&from_node_idx), ctx.line_nr_of_node.get(&to_node_idx)) {

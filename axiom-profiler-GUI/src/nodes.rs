@@ -2,16 +2,13 @@ use yew::{prelude::*, virtual_dom::{VNode, VTag, VText}};
 use scraper::{self, Selector};
 use crate::svg_result::*;
 
-#[derive(Properties, PartialEq)]
-pub struct NodesProps {
-    pub svg_text: String,
-}
-
 #[function_component(Nodes)]
-pub fn nodes(NodesProps { svg_text }: &NodesProps) -> Html {
+pub fn nodes() -> Html {
     // let g_selector = Selector::parse("g > g").unwrap();
     let node_selector = Selector::parse(".node").unwrap();
-    let svg = scraper::Html::parse_document(svg_text);
+    let state = use_context::<GraphState>().expect("no ctx found");
+    let svg_text = state.svg_text; 
+    let svg = scraper::Html::parse_document(&svg_text);
     let node_tags = scraper::Html::select(&svg, &node_selector);
     node_tags.map(|node| {
         let inner_html = node.inner_html();
@@ -69,7 +66,7 @@ fn node(props: &NodeProps) -> Html {
     // Convert the VTag to a VNode
     let text_vnode: VNode = text_node.into();
     // Decide whether this node should be visible or not based on max line nr.
-    let ctx = use_context::<GraphCtxt>().expect("no ctx found");
+    let ctx = use_context::<GraphState>().expect("no ctx found");
     let max_line_nr = ctx.max_line_nr;
     let visibility = match inner_text.parse::<i32>() {
         Ok(line_nr) => if line_nr > max_line_nr { "hidden" } else { "visible" },
