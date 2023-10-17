@@ -18,16 +18,14 @@ pub fn graph() -> Html {
     let view_box = node.attr("viewBox").unwrap().to_string();
     // extract top-level g attributes
     let g_selector = Selector::parse("g").unwrap();
-    let g = scraper::Html::parse_document(&state.svg_text);
-    let mut g_tag = scraper::Html::select(&g, &g_selector);
+    let mut g_tag = scraper::Html::select(&svg, &g_selector);
     let node = g_tag.next().unwrap().value();
     let id = node.attr("id").unwrap().to_string();
     let class = node.attr("class").unwrap().to_string();
     let transform = node.attr("transform").unwrap().to_string();
     // extract top-level polygon attributes
     let polygon_selector = Selector::parse("polygon").unwrap();
-    let polygon = scraper::Html::parse_document(&state.svg_text);
-    let mut polygon_tag = scraper::Html::select(&polygon, &polygon_selector);
+    let mut polygon_tag = scraper::Html::select(&svg, &polygon_selector);
     let node = polygon_tag.next().unwrap().value();
     let fill = node.attr("fill").unwrap().to_string();
     let stroke = node.attr("stroke").unwrap().to_string();
