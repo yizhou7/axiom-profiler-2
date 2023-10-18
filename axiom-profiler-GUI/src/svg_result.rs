@@ -1,3 +1,4 @@
+use std::borrow::BorrowMut;
 use std::collections::BTreeMap;
 use yew::prelude::*;
 use prototype::parsers::{z3parser1, LogParser};
@@ -37,7 +38,7 @@ impl Default for GraphState {
 impl Reducible for GraphState {
     type Action = GUIAction;
 
-    fn reduce(self: std::rc::Rc<Self>, action: Self::Action) -> std::rc::Rc<Self> {
+    fn reduce(mut self: std::rc::Rc<Self>, action: Self::Action) -> std::rc::Rc<Self> {
         match action {
             GUIAction::ParseResult(parsed_log, svg_text, line_nr_of_node) => Self {
                 parsed_log,
@@ -53,13 +54,17 @@ impl Reducible for GraphState {
                 max_line_nr,
                 input: self.input,
             }.into(),
-            GUIAction::ReadInput(input) => Self {
-                parsed_log: self.parsed_log,
-                svg_text: self.svg_text.clone(),
-                line_nr_of_node: self.line_nr_of_node.clone(),
-                max_line_nr: self.max_line_nr,
-                input: input,
-            }.into(),
+            GUIAction::ReadInput(input) => {
+                std::rc::Rc::get_mut(&mut self).unwrap().input = input;
+                self
+            }
+            // Self {
+            //     parsed_log: self.parsed_log,
+            //     svg_text: self.svg_text.clone(),
+            //     line_nr_of_node: self.line_nr_of_node.clone(),
+            //     max_line_nr: self.max_line_nr,
+            //     input: input,
+            // }.into(),
         }
     }
 }
