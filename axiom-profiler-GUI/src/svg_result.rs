@@ -10,14 +10,16 @@ use wasm_bindgen::JsCast;
 pub enum GUIAction {
     ParseResult(bool, String, BTreeMap<usize, usize>),
     SetMaxLineNr(i32),
+    ReadInput(i32),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GraphState {
-    pub parsed_log: bool,
+    parsed_log: bool,
     pub svg_text: String,
     pub line_nr_of_node: BTreeMap<usize, usize>,
     pub max_line_nr: i32,
+    input: i32,
 }
 
 impl Default for GraphState {
@@ -26,7 +28,9 @@ impl Default for GraphState {
             parsed_log: false, 
             svg_text: String::new(), 
             line_nr_of_node: BTreeMap::new(), 
-            max_line_nr: i32::MAX}
+            max_line_nr: i32::MAX,
+            input: i32::MAX,
+        }
     }
 }
 
@@ -40,12 +44,21 @@ impl Reducible for GraphState {
                 svg_text, 
                 line_nr_of_node, 
                 max_line_nr: self.max_line_nr,
+                input: self.input,
             }.into(),
             GUIAction::SetMaxLineNr(max_line_nr) => Self {
                 parsed_log: self.parsed_log,
                 svg_text: self.svg_text.clone(),
                 line_nr_of_node: self.line_nr_of_node.clone(),
                 max_line_nr,
+                input: self.input,
+            }.into(),
+            GUIAction::ReadInput(input) => Self {
+                parsed_log: self.parsed_log,
+                svg_text: self.svg_text.clone(),
+                line_nr_of_node: self.line_nr_of_node.clone(),
+                max_line_nr: self.max_line_nr,
+                input: input,
             }.into(),
         }
     }
@@ -85,7 +98,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
         })
     };
 
-    let set_max_line_nr = Callback::from({
+    let read_input = Callback::from({
         let graph_state = graph_state.clone();
         move |input_event: InputEvent| {
             let target: HtmlInputElement = input_event
@@ -93,10 +106,21 @@ pub fn svg_result(props: &SVGProps) -> Html {
                 .unwrap_throw()
                 .dyn_into()
                 .unwrap_throw();
-            if let Ok(max_line_nr) = target.value().to_string().parse::<i32>() {
-                graph_state.dispatch(GUIAction::SetMaxLineNr(max_line_nr));
+            if let Ok(input) = target.value().to_string().parse::<i32>() {
+                graph_state.dispatch(GUIAction::ReadInput(input));
             }
         }
+    });
+
+    let set_max_line_nr = Callback::from({
+        let graph_state = graph_state.clone();
+        move |key_event: KeyboardEvent| {
+            if key_event.key() == "Enter" {
+                let max_line_nr = graph_state.input;
+                log::debug!("pressed Enter key");
+                graph_state.dispatch(GUIAction::SetMaxLineNr(max_line_nr));
+            }
+       }
     });
 
     use crate::graph::Graph;
@@ -107,7 +131,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
             </div>
             <div>
                 <label for="max_line_nr">{"Render up to line number: "}</label>
-                <input type="number" oninput={set_max_line_nr} id="max_line_nr" />
+                <input type="number" oninput={read_input} onkeypress={set_max_line_nr} id="max_line_nr" />
             </div>
             { if graph_state.parsed_log {
                 html! {
