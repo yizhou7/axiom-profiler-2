@@ -1,8 +1,0 @@
-{
-    "name": "yew-testing",
-    "version": "0.1.0",
-    "description": "",
-    "dependencies": {
-        "d3-dag": "^1.1.0"
-    }
-}
