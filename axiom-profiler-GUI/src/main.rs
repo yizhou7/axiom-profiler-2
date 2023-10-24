@@ -11,6 +11,8 @@ mod nodes;
 mod edges;
 mod graph;
 mod attribute_fetcher;
+mod graph_layout;
+
 pub enum Msg {
     LoadedBytes(String, Vec<u8>),
     Files(Vec<File>),
