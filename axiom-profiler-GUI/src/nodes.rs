@@ -10,7 +10,7 @@ pub fn nodes() -> Html {
     let svg = scraper::Html::parse_document(&svg_text);
     let node_tags = scraper::Html::select(&svg, &node_selector);
     node_tags.map(|node| {
-        let inner_html = node.inner_html();
+        let inner_html: AttrValue = node.inner_html().into();
         let id: AttrValue = node.value().id().unwrap().to_string().into();
         let class = classes!(node.value().classes().map(String::from).collect::<Vec<String>>());
         html! {
@@ -21,7 +21,7 @@ pub fn nodes() -> Html {
 
 #[derive(Properties, PartialEq)]
 pub struct NodeProps {
-    pub inner_html: String,
+    pub inner_html: AttrValue,
     pub id: AttrValue,
     pub class: Classes,
 }
@@ -57,10 +57,12 @@ fn node(props: &NodeProps) -> Html {
         Ok(line_nr) => if line_nr > max_line_nr { "hidden" } else { "visible" },
         Err(_) => "visible", 
     };
+    let inner = Html::from_html_unchecked(props.inner_html.clone().into());
     html! {
         <g id={props.id.clone()} class={props.class.clone()} {visibility} onclick={onclick.clone()}>
-            <ellipse {fill} {stroke} {cx} {cy} {rx} {ry} ></ellipse>
-            { text_vnode }
+            {inner}
+            // <ellipse {fill} {stroke} {cx} {cy} {rx} {ry} ></ellipse>
+            // { text_vnode }
         </g>
     }
 }
