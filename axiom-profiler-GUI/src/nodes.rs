@@ -58,11 +58,27 @@ fn node(props: &NodeProps) -> Html {
         Err(_) => "visible", 
     };
     let inner = Html::from_html_unchecked(props.inner_html.clone().into());
+    log::debug!("VNode type: {}", get_vnode_type(&inner));
+
     html! {
         <g id={props.id.clone()} class={props.class.clone()} {visibility} onclick={onclick.clone()}>
-            {inner}
-            // <ellipse {fill} {stroke} {cx} {cy} {rx} {ry} ></ellipse>
-            // { text_vnode }
+            // {inner}
+            <ellipse {fill} {stroke} {cx} {cy} {rx} {ry} ></ellipse>
+            { text_vnode }
         </g>
+    }
+}
+
+fn get_vnode_type(vnode: &VNode) -> &str {
+    match vnode {
+        VNode::VTag(_) => "VTag",
+        VNode::VText(_) => "VText",
+        VNode::VComp(_) => "VComp",
+        VNode::VList(_) => "VList",
+        VNode::VPortal(_) => "VPortal",
+        VNode::VRef(_) => "VRef",
+        VNode::VSuspense(_) => "VSuspense",
+        VNode::VRaw(_) => "VRaw",
+        _ => "Unknown",
     }
 }

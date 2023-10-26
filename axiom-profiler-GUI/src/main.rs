@@ -137,28 +137,29 @@ enum Route {
     Test,
 }
 
-fn switch(routes: Route) -> Html {
-    match routes {
-        Route::App => html! {
-            <App/>
-        },
-        Route::Test => html! {
-            <Test/>
-        },
-    }
-}
+// fn switch(routes: Route) -> Html {
+//     match routes {
+//         Route::App => html! {
+//             <App/>
+//         },
+//         Route::Test => html! {
+//             <Test/>
+//         },
+//     }
+// }
 
-#[function_component(Main)]
-fn main() -> Html {
-    html! {
-        <BrowserRouter>
-            <Switch<Route> render={switch} />
-        </BrowserRouter>
-    }
-}
+// #[function_component(Main)]
+// fn main() -> Html {
+//     html! {
+//         <BrowserRouter>
+//             <Switch<Route> render={switch} />
+//         </BrowserRouter>
+//     }
+// }
 
 fn main() {
     wasm_logger::init(wasm_logger::Config::default());
     log::debug!("App is starting");
-    yew::Renderer::<Main>::new().render();
+    // yew::Renderer::<Main>::new().render();
+    yew::Renderer::<App>::new().render();
 }
