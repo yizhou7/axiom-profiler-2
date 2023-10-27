@@ -7,11 +7,7 @@ use yew_router::prelude::*;
 use crate::svg_result::*;
 
 mod svg_result;
-mod nodes;
-mod edges;
 mod graph;
-mod attribute_fetcher;
-mod graph_layout;
 
 pub enum Msg {
     LoadedBytes(String, Vec<u8>),

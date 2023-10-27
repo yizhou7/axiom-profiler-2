@@ -6,7 +6,6 @@ use petgraph::dot::{Dot, Config};
 use web_sys::HtmlInputElement;
 use wasm_bindgen::UnwrapThrowExt;
 use wasm_bindgen::JsCast;
-use crate::graph_layout;
 
 pub enum GUIAction {
     ParseResult(bool, String, BTreeMap<usize, usize>),
@@ -85,10 +84,6 @@ pub fn svg_result(props: &SVGProps) -> Html {
             let mut parser = z3parser1::Z3Parser1::new();
             parser.process_log(text);
             let qi_graph = parser.get_instantiation_graph();
-            let graph_layout = graph_layout::get_sugiyama_layout(qi_graph); 
-            let svg_width = graph_layout.svg_width;
-            let svg_height = graph_layout.svg_height;
-            log::debug!("svg_width: {svg_width}, svg_height: {svg_height}");
             let dot_output = format!("{:?}", Dot::with_config(qi_graph, &[Config::EdgeNoLabel])); 
             log::debug!("use effect");
             wasm_bindgen_futures::spawn_local(

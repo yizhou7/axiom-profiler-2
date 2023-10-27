@@ -29,7 +29,6 @@ pub fn graph() -> Html {
             let descendant_nodes = div.get_elements_by_class_name("node");
             for i in 0..descendant_nodes.length() {
                 if let Some(node) = descendant_nodes.item(i) {
-                    web_sys::console::log_1(&"Adding event listener".into());
                     node.add_event_listener_with_callback("click", listener.as_ref().unchecked_ref()).unwrap();
                 }
             }
@@ -38,7 +37,6 @@ pub fn graph() -> Html {
                 // Remove event listeners when the component is unmounted
                 for i in 0..descendant_nodes.length() {
                     if let Some(node) = descendant_nodes.item(i) {
-                        web_sys::console::log_1(&"Removing event listener".into());
                         node.remove_event_listener_with_callback("click", listener.as_ref().unchecked_ref()).unwrap();
                     }
                 }
@@ -46,35 +44,30 @@ pub fn graph() -> Html {
         });
     }
     {
+        // Executes whenever max_line_nr is updated
         let div_ref = div_ref.clone();
         let max_line_nr = max_line_nr.clone();
 
         use_effect_with(max_line_nr, move |&max_line_nr| {
-            web_sys::console::log_1(&"Using effect due to change in max_line_nr: ".into());
             let max_line_nr_js = JsValue::from(max_line_nr);
-            web_sys::console::log_1(&max_line_nr_js);
             let div = div_ref
                 .cast::<HtmlElement>()
                 .expect("div_ref not attached to div element");
 
-            // Iterate through all nodes with class "node" and add a click event listener
+            // Iterate through all nodes with class "node" set visibility depending on line_nr 
             let descendant_nodes = div.get_elements_by_class_name("node");
             for i in 0..descendant_nodes.length() {
-                web_sys::console::log_1(&"Iterating through nodes".into());
                 if let Some(node) = descendant_nodes.item(i) {
                     let text_element = node.query_selector("text").expect("Failed to select text element");
                     if let Some(text) = text_element {
                         if let Some(text_content) = text.text_content() {
                             match text_content.parse::<i32>() {
                                 Ok(line_nr) => if line_nr > max_line_nr {
-                                    web_sys::console::log_1(&"Hiding node".into());
                                     node.set_attribute("visibility", "hidden");
                                 } else {
-                                    web_sys::console::log_1(&"Showing node".into());
                                     node.set_attribute("visibility", "visible");
                                 },
                                 Err(_) => { 
-                                    web_sys::console::log_1(&"Showing node".into());
                                     node.set_attribute("visibility", "visible"); }
                             }
                         }
@@ -82,7 +75,34 @@ pub fn graph() -> Html {
                     }
                 }
             }
-            web_sys::console::log_1(&"Finished iterating through nodes".into());
+            // Iterate through all elements with class "edge" set visibility depending on line_nr 
+            let descendant_edges = div.get_elements_by_class_name("edge");
+            for i in 0..descendant_edges.length() {
+                if let Some(edge) = descendant_edges.item(i) {
+                    let title_element = edge.query_selector("title").expect("Failed to select title element");
+                    if let Some(title) = title_element {
+                        if let Some(title_content) = title.text_content() {
+                            match parse_edge_title(&title_content) {
+                                Some((from_node_idx, to_node_idx)) => {
+                                    match (state.line_nr_of_node.get(&from_node_idx), state.line_nr_of_node.get(&to_node_idx)) {
+                                        (Some(&from_node_line_nr), Some(&to_node_line_nr)) => {
+                                            if from_node_line_nr > state.max_line_nr as usize || to_node_line_nr > state.max_line_nr as usize {
+                                                edge.set_attribute("visibility", "hidden");
+                                            } else {
+                                                edge.set_attribute("visibility", "visible");
+                                            }
+                                        },
+                                        (_, _) => {edge.set_attribute("visibility", "visible");}
+                                    }
+                                }, 
+                                _ => {edge.set_attribute("visibility", "visible");}
+
+                            }
+                        }
+                    }
+
+                }
+            }
             move || {
                 web_sys::console::log_1(&"Tearing down".into());
             }
@@ -93,5 +113,23 @@ pub fn graph() -> Html {
         <div ref={div_ref}>
             {svg_result}
         </div>
+    }
+}
+
+fn parse_edge_title(input: &str) -> Option<(usize, usize)> {
+    // Split the input string by "->" and parse the integers
+    let parts: Vec<&str> = input.trim().split("->").collect();
+
+    if parts.len() == 2 {
+        let x = parts[0].trim().parse::<i32>();
+        let y = parts[1].trim().parse::<i32>();
+
+        // Check if parsing was successful
+        match (x, y) {
+            (Ok(x_val), Ok(y_val)) => Some((x_val as usize, y_val as usize)),
+            _ => None,
+        }
+    } else {
+        None
     }
 }
