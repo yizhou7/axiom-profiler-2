@@ -1,5 +1,5 @@
 use std::fs::{File, OpenOptions, self};
-use std::io::{self, BufRead, Write, BufWriter};
+use std::io::{self, Write, BufWriter};
 use std::path::Path;
 use serde::Deserialize;
 
@@ -14,10 +14,10 @@ const CAPACITY: usize = 1 << 25; // 32 MiB
 /// Used to avoid reading entire file at once.
 /// # Errors
 /// Errors if file cannot be opened.
-pub fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
-where P: AsRef<Path>, {
+pub fn open_file_and_wrap<P>(filename: P) -> io::Result<io::BufReader<File>>
+where P: AsRef<Path> {
     let file = File::open(filename)?;
-    Ok(io::BufReader::new(file).lines())
+    Ok(io::BufReader::new(file))
 }
 
 /// Writes the debug text of `obj` to `file`.

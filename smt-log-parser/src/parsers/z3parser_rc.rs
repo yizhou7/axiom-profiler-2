@@ -43,10 +43,10 @@ impl LogParser for Z3ParserRc {
         true    // stub
     }
 
-    fn process_log(
+    fn process_log<R>(
         &mut self,
-        log: String,
-    ) {
+        log: R,
+    ) where R: Read {
         self.process_z3_log(log)
     }
 
@@ -150,93 +150,84 @@ impl Z3LogParser for Z3ParserRc {
 
     fn conflict(&mut self, _l: &[&str]) {}
 
-    fn main_parse_loop(&mut self, log: Log) {
-        match log {
-            Log::Filename(filename) => {
-                if let Ok(lines) = read_lines(filename) {
-                    for (line_no, line) in lines.enumerate() {
-                        let l0 = line.unwrap_or_else(|_| panic!("Error reading line {}", line_no));
-                        let l: Vec<&str> = l0.split(' ').collect();
-                        match l[0] {
-                            // match the line case
-                            "[tool-version]" => {
-                                self.version_info(&l);
-                            }
-                            "[mk-quant]" | "[mk-lambda]" => {
-                                self.mk_quant(&l);
-                            }
-                            "[mk-var]" => {
-                                self.mk_var(&l);
-                            }
-                            "[mk-proof]" | "[mk-app]" => {
-                                self.mk_proof_app(&l);
-                            }
-                            "[attach-meaning]" => {
-                                self.attach_meaning(&l);
-                            }
-                            "[attach-var-names]" => {
-                                self.attach_vars(&l, &l0);
-                            }
-                            "[attach-enode]" => {
-                                self.attach_enode(&l);
-                            }
-                            "[eq-expl]" => {
-                                self.eq_expl(&l);
-                            }
-                            "[new-match]" => {
-                                self.new_match(&l, line_no);
-                            }
-                            "[inst-discovered]" => {
-                                self.inst_discovered(&l, line_no, &l0);
-                            }
-                            "[instance]" => {
-                                self.instance(&l, line_no);
-                            }
-                            "[end-of-instance]" => {
-                                self.end_of_instance();
-                            }
-                            "[decide-and-or]" => {
-                                self.decide_and_or(&l);
-                            }
-                            "[decide]" => {
-                                self.decide(&l);
-                            }
-                            "[assign]" => {
-                                self.assign(&l);
-                            }
-                            "[push]" => {
-                                self.push(&l);
-                            }
-                            "[pop]" => {
-                                self.pop(&l);
-                            }
-                            "[begin-check]" => {
-                                self.begin_check(&l);
-                            }
-                            "[query-done]" => {
-                                self.query_done(&l);
-                            }
-                            "[eof]" => {
-                                break;
-                            }
-                            "[resolve-process]" => {
-                                self.resolve_process(&l);
-                            }
-                            "[resolve-lit]" => {
-                                self.resolve_lit(&l);
-                            }
-                            "[conflict]" => {
-                                self.conflict(&l);
-                            }
-                            _ => println!("Unknown line case: {}", l0),
-                        }
-                    }
-                } else {
-                    panic!("Failed reading lines")
+    fn main_parse_loop<R>(&mut self, log: BufReader<R>) where R: Read {
+        for (line_no, line) in log.lines().enumerate() {
+            let l0 = line.unwrap_or_else(|_| panic!("Error reading line {}", line_no));
+            let l: Vec<&str> = l0.split(' ').collect();
+            match l[0] {
+                // match the line case
+                "[tool-version]" => {
+                    self.version_info(&l);
                 }
-            },
-            Log::File(_) => todo!() 
-        } 
+                "[mk-quant]" | "[mk-lambda]" => {
+                    self.mk_quant(&l);
+                }
+                "[mk-var]" => {
+                    self.mk_var(&l);
+                }
+                "[mk-proof]" | "[mk-app]" => {
+                    self.mk_proof_app(&l);
+                }
+                "[attach-meaning]" => {
+                    self.attach_meaning(&l);
+                }
+                "[attach-var-names]" => {
+                    self.attach_vars(&l, &l0);
+                }
+                "[attach-enode]" => {
+                    self.attach_enode(&l);
+                }
+                "[eq-expl]" => {
+                    self.eq_expl(&l);
+                }
+                "[new-match]" => {
+                    self.new_match(&l, line_no);
+                }
+                "[inst-discovered]" => {
+                    self.inst_discovered(&l, line_no, &l0);
+                }
+                "[instance]" => {
+                    self.instance(&l, line_no);
+                }
+                "[end-of-instance]" => {
+                    self.end_of_instance();
+                }
+                "[decide-and-or]" => {
+                    self.decide_and_or(&l);
+                }
+                "[decide]" => {
+                    self.decide(&l);
+                }
+                "[assign]" => {
+                    self.assign(&l);
+                }
+                "[push]" => {
+                    self.push(&l);
+                }
+                "[pop]" => {
+                    self.pop(&l);
+                }
+                "[begin-check]" => {
+                    self.begin_check(&l);
+                }
+                "[query-done]" => {
+                    self.query_done(&l);
+                }
+                "[eof]" => {
+                    break;
+                }
+                "[resolve-process]" => {
+                    self.resolve_process(&l);
+                }
+                "[resolve-lit]" => {
+                    self.resolve_lit(&l);
+                }
+                "[conflict]" => {
+                    self.conflict(&l);
+                }
+                _ => println!("Unknown line case: {}", l0),
+            }
+        }
     }
 
     fn save_output_to_files(&mut self, _settings: &Settings, _now: &Instant) {

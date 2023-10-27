@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Write, BufRead};
 
 use crate::file_io::open_file_truncate;
 
@@ -32,7 +32,7 @@ pub fn add_link_to_svg(input_file: &str, output_file: &str) {
     // hard-coded info for insertion
     const INSERT_LINE_NO: usize = 9;
     const INSERT_LINE: &str = "<link xmlns=\"http://www.w3.org/1999/xhtml\" rel=\"stylesheet\" href=\"styles.css\" type=\"text/css\" />\n";
-    let file_lines = file_io::read_lines(input_file).unwrap();
+    let file_lines = file_io::open_file_and_wrap(input_file).unwrap().lines();
     // open new file
     let mut out_file = file_io::open_file_truncate(output_file);
     for (line_no, line0) in file_lines.enumerate() {

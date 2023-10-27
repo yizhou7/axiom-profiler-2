@@ -25,3 +25,4 @@ petgraph = {version="0.6.4", features=["serde-1"]}
 viz-js = "3.1.0"
 gloo-utils = {version="0.2.0", features=["serde"]}
 serde_json = "1.0.107"
+wasm-bindgen-file-reader = "1.0.0"

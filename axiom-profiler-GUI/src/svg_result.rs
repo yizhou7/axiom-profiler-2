@@ -7,6 +7,8 @@ use web_sys::HtmlInputElement;
 use wasm_bindgen::UnwrapThrowExt;
 use wasm_bindgen::JsCast;
 use crate::graph_layout;
+use wasm_bindgen_file_reader::WebSysFile;
+use web_sys::File;
 
 pub enum GUIAction {
     ParseResult(bool, String, BTreeMap<usize, usize>),
@@ -67,7 +69,7 @@ impl Reducible for GraphState {
 
 #[derive(Properties, PartialEq)]
 pub struct SVGProps {
-    pub trace_file_text: AttrValue,
+    pub trace_file: File,
 }
 
 #[function_component(SVGResult)]
@@ -77,13 +79,14 @@ pub fn svg_result(props: &SVGProps) -> Html {
     let graph_state = use_reducer(GraphState::default);
 
     let parse_log = {
-        let text = props.trace_file_text.to_string();
         let graph_state = graph_state.clone();
+        let trace_file = props.trace_file.clone();
         Callback::from(move |_| {
-            let text = text.to_string();
+            let trace_file = trace_file.clone();
             let graph_state = graph_state.clone();
             let mut parser = z3parser1::Z3Parser1::new();
-            parser.process_log(text);
+            parser.process_log(WebSysFile::new(trace_file));
+            // parser.process_log(text);
             let qi_graph = parser.get_instantiation_graph();
             let graph_layout = graph_layout::get_sugiyama_layout(qi_graph); 
             let svg_width = graph_layout.svg_width;
