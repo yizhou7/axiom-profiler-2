@@ -2,7 +2,7 @@ use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use std::collections::{HashMap, BTreeMap, HashSet};
-use std::io::{Write, BufReader, BufRead, Read};
+use std::io::Write;
 use regex::Regex;
 use serde::Serialize;
 
@@ -75,10 +75,10 @@ pub trait LogParser {
     }
 
     /// Parse given log represented as a String
-    fn process_log<R>(
+    fn process_log(
         &mut self,
-        log: R,
-    ) where R: Read;
+        log: String,
+    );
 
     fn get_dependencies(&self) -> &Vec<Dependency>;
 }
@@ -120,21 +120,34 @@ pub trait Z3LogParser: LogParser {
     fn conflict(&mut self, _l: &[&str]) {}
 
     /// Parses log data line by line.
-    fn main_parse_loop<R>(&mut self, log: BufReader<R>)
-    where R: Read {
-        for (line_no, line) in log
-        .lines()
-        .enumerate() {
-            if !self.should_continue() {
-                println!("Interrupted");
-                break;
+    fn main_parse_loop(&mut self, log: Log) {
+        match log {
+            Log::Filename(filename) => {
+                if let Ok(lines) = read_lines(filename) {
+                    for (line_no, line) in lines.enumerate() {
+                        if !self.should_continue() {
+                            println!("Interrupted");
+                            break;
+                        }
+                        let l0 = line.unwrap_or_else(|_| panic!("Error reading line {}", line_no));
+                        match self.process_line(l0, line_no) {
+                            Ok(()) => continue,
+                            Err(_) => break,
+                        }
+                    }
+                } else {
+                    panic!("Failed reading lines")
+                }
+            },
+            Log::File(file) => {
+                for (line_no, line) in file.lines().enumerate() {
+                    match self.process_line(line.to_string(), line_no) {
+                        Ok(()) => continue,
+                        Err(_) => break,
+                    }
+                }
             }
-            let l0 = line.unwrap_or_else(|_| panic!("Error reading line {}", line_no));
-            match self.process_line(l0, line_no) {
-                Ok(()) => continue,
-                Err(_) => break,
-            }
-        }
+        } 
     } 
 
     fn process_line(&mut self, line: String, line_no: usize) -> Result<(),Box<dyn Error>> {
@@ -220,9 +233,7 @@ pub trait Z3LogParser: LogParser {
 fn process_z3_file(&mut self, filename: &str, settings: &Settings) -> Result<(String,), String> {
         let time = Instant::now();
 
-        if let Ok(file_buf_reader) = open_file_and_wrap(filename) {
-            self.main_parse_loop(file_buf_reader);
-        }
+        self.main_parse_loop(Log::Filename(filename.to_string()));
 
         let elapsed_time = time.elapsed();
         println!(
@@ -244,8 +255,8 @@ fn process_z3_file(&mut self, filename: &str, settings: &Settings) -> Result<(St
         Ok((svg_result, ))
     }
 
-    fn process_z3_log<R>(&mut self, log: R) where R: Read {
-        self.main_parse_loop(BufReader::new(log));
+    fn process_z3_log(&mut self, log: String) {
+        self.main_parse_loop(Log::File(log));
     }
     /// Save contents of parser to files.
     fn save_output_to_files(&mut self, settings: &Settings, time: &Instant);

@@ -14,12 +14,13 @@ mod attribute_fetcher;
 mod graph_layout;
 
 pub enum Msg {
-    LoadedBytes(String, web_sys::File),
-    Files(Vec<web_sys::File>),
+    LoadedBytes(String, Vec<u8>),
+    Files(Vec<File>),
 }
 
 pub struct FileDataComponent {
-    files: Vec<web_sys::File>,
+    files: Vec<String>,
+    readers: HashMap<String, FileReader>,
 }
 
 impl Component for FileDataComponent {
@@ -29,6 +30,7 @@ impl Component for FileDataComponent {
     fn create(_ctx: &Context<Self>) -> Self {
         Self {
             files: Vec::new(),
+            readers: HashMap::default(),
         }
     }
 
@@ -41,24 +43,25 @@ impl Component for FileDataComponent {
                     let task = {
                         let file_name = file_name.clone();
                         let link = ctx.link().clone();
-                        link.send_message(Msg::LoadedBytes(file_name, file));
 
-                        // gloo_file::callbacks::read_as_bytes(&file, move |res| {
-                        //     link.send_message(Msg::LoadedBytes(
-                        //         file_name,
-                        //         res.expect("failed to read file"),
-                        //     ))
-                        // })
+                        gloo_file::callbacks::read_as_bytes(&file, move |res| {
+                            link.send_message(Msg::LoadedBytes(
+                                file_name,
+                                res.expect("failed to read file"),
+                            ))
+                        })
                     };
+                    self.readers.insert(file_name, task);
                 }
                 true
             }
-            Msg::LoadedBytes(file_name, file) => {
+            Msg::LoadedBytes(file_name, data) => {
                 log::info!("Processing: {}", file_name);
 
-                // let text_data = from_utf8(&data).unwrap().to_string(); //base64::encode(data);
+                let text_data = from_utf8(&data).unwrap().to_string(); //base64::encode(data);
                 self.files.pop();
-                self.files.push(file);
+                self.files.push(text_data);
+                self.readers.remove(&file_name);
                 true
             }
         }
@@ -72,8 +75,8 @@ impl Component for FileDataComponent {
                 let files = js_sys::try_iter(&files)
                     .unwrap()
                     .unwrap()
-                    .map(|v| web_sys::File::from(v.unwrap()));
-                    // .map(File::from);
+                    .map(|v| web_sys::File::from(v.unwrap()))
+                    .map(File::from);
                 selected_files.extend(files);
             }
             Msg::Files(selected_files)
@@ -95,11 +98,11 @@ impl Component for FileDataComponent {
 }
 
 impl FileDataComponent {
-    fn view_file(file: &web_sys::File) -> Html {
+    fn view_file(data: &str) -> Html {
         log::debug!("Viewing file");
         html! {
             <div>
-            <SVGResult trace_file={(*file).clone()}/>
+            <SVGResult trace_file_text={AttrValue::from(data.to_string())}/>
             </div>
         }
     }

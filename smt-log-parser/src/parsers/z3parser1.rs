@@ -44,10 +44,10 @@ impl LogParser for Z3Parser1 {
             }
     }
 
-    fn process_log<R>(
+    fn process_log(
         &mut self,
-        log: R,
-    ) where R: Read {
+        log: String,
+    ) {
         self.process_z3_log(log)
     }
 

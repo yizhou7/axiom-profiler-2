@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fs, io::BufRead};
+use std::{collections::BTreeMap, fs};
 
 use prototype::{file_io, items::{self, EqualityExpl, BlamedTermItem, Instantiation}};
 
@@ -18,7 +18,7 @@ fn main() {
         }
         let path = path.unwrap();
         println!("Name: {}", path.path().display());
-        for (line_no, l0) in file_io::open_file_and_wrap(path.path()).unwrap().lines().enumerate() {
+        for (line_no, l0) in file_io::read_lines(path.path()).unwrap().enumerate() {
             let line = l0.unwrap();
             let l = line.split(' ').collect::<Vec<&str>>();
             match l[0] {
