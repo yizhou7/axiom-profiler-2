@@ -6,7 +6,6 @@ use petgraph::dot::{Dot, Config};
 use web_sys::HtmlInputElement;
 use wasm_bindgen::UnwrapThrowExt;
 use wasm_bindgen::JsCast;
-use std::rc::Rc;
 
 pub enum GUIAction {
     ParseResult(bool, String, BTreeMap<usize, usize>),
@@ -17,7 +16,7 @@ pub enum GUIAction {
 #[derive(Clone, Debug, PartialEq)]
 pub struct GraphState {
     parsed_log: bool,
-    pub svg_text: Rc<String>,
+    pub svg_text: String,
     pub line_nr_of_node: BTreeMap<usize, usize>,
     pub max_line_nr: i32,
     input: i32,
@@ -27,7 +26,7 @@ impl Default for GraphState {
     fn default() -> Self {
         Self { 
             parsed_log: false, 
-            svg_text: Rc::new(String::new()), 
+            svg_text: String::new(), 
             line_nr_of_node: BTreeMap::new(), 
             max_line_nr: i32::MAX,
             input: i32::MAX,
@@ -42,7 +41,7 @@ impl Reducible for GraphState {
         match action {
             GUIAction::ParseResult(parsed_log, svg_text, line_nr_of_node) => Self {
                 parsed_log,
-                svg_text: Rc::new(svg_text), 
+                svg_text, 
                 line_nr_of_node, 
                 max_line_nr: self.max_line_nr,
                 input: self.input,
@@ -50,16 +49,16 @@ impl Reducible for GraphState {
             GUIAction::SetMaxLineNr(max_line_nr) => Self {
                 parsed_log: self.parsed_log,
                 svg_text: self.svg_text.clone(),
-                line_nr_of_node: self.line_nr_of_node.to_owned(),
+                line_nr_of_node: self.line_nr_of_node.clone(),
                 max_line_nr,
                 input: self.input,
             }.into(),
             GUIAction::ReadInput(input) => Self {
                 parsed_log: self.parsed_log,
                 svg_text: self.svg_text.clone(),
-                line_nr_of_node: self.line_nr_of_node.to_owned(),
+                line_nr_of_node: self.line_nr_of_node.clone(),
                 max_line_nr: self.max_line_nr,
-                input,
+                input: input,
             }.into(),
         }
     }
