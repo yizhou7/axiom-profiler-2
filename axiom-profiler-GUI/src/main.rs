@@ -8,6 +8,7 @@ use crate::svg_result::*;
 
 mod svg_result;
 mod graph;
+mod graph_state;
 
 pub enum Msg {
     LoadedBytes(String, Vec<u8>),

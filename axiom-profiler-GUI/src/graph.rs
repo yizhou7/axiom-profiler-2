@@ -1,5 +1,5 @@
 use yew::prelude::*;
-use crate::svg_result::GraphState;
+use crate::graph_state::GraphState;
 use wasm_bindgen::{prelude::Closure, JsValue};
 use wasm_bindgen::JsCast;
 use web_sys::{Event, HtmlElement};
@@ -8,14 +8,15 @@ use yew::{function_component, html, use_effect_with, use_node_ref, Html};
 #[function_component(Graph)]
 pub fn graph() -> Html {
     let state = use_context::<GraphState>().expect("no ctx found");
-    let svg_attr_val = AttrValue::from(state.svg_text);
+    let svg_attr_val = AttrValue::from(state.svg_text.clone());
     let svg_result = Html::from_html_unchecked(svg_attr_val);
     let div_ref = use_node_ref();
-    let max_line_nr = state.max_line_nr;
     {
+        // Executes initially when component is mounted 
         let div_ref = div_ref.clone();
+        let svg_text = state.svg_text.clone();
 
-        use_effect_with(div_ref, |div_ref| {
+        use_effect_with((div_ref, svg_text), |(div_ref, svg_text)| {
             web_sys::console::log_1(&"Using effect".into());
             let div = div_ref
                 .cast::<HtmlElement>()
@@ -46,10 +47,11 @@ pub fn graph() -> Html {
     {
         // Executes whenever max_line_nr is updated
         let div_ref = div_ref.clone();
-        let max_line_nr = max_line_nr.clone();
+        let max_line_nr = state.max_line_nr.clone();
 
-        use_effect_with(max_line_nr, move |&max_line_nr| {
-            let max_line_nr_js = JsValue::from(max_line_nr);
+        use_effect_with((div_ref, max_line_nr), move |(div_ref, max_line_nr)| {
+            web_sys::console::log_1(&"Using effect due to max_line_nr change".into());
+            let max_line_nr = *max_line_nr;
             let div = div_ref
                 .cast::<HtmlElement>()
                 .expect("div_ref not attached to div element");
