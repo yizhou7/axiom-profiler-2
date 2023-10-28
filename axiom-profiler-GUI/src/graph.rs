@@ -8,7 +8,8 @@ use yew::{function_component, html, use_effect_with, use_node_ref, Html};
 #[function_component(Graph)]
 pub fn graph() -> Html {
     let state = use_context::<GraphState>().expect("no ctx found");
-    let svg_attr_val = AttrValue::from(state.svg_text);
+    log::debug!("Cloning SVG!");
+    let svg_attr_val = AttrValue::from((*state.svg_text).clone());
     let svg_result = Html::from_html_unchecked(svg_attr_val);
     let div_ref = use_node_ref();
     let max_line_nr = state.max_line_nr;
