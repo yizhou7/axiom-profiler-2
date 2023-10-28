@@ -1,20 +1,29 @@
 use yew::prelude::*;
-use crate::graph_state::GraphState;
+use crate::graph_state::*;
 use wasm_bindgen::prelude::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::{Event, HtmlElement};
 use yew::{function_component, html, use_effect_with, use_node_ref, Html};
+use web_sys::HtmlInputElement;
+use wasm_bindgen::UnwrapThrowExt;
+use std::collections::BTreeMap;
+
+#[derive(Properties, PartialEq)]
+pub struct GraphProps {
+    pub svg_text: String,
+    pub line_nr_of_node: BTreeMap<usize, usize>,
+}
 
 #[function_component(Graph)]
-pub fn graph() -> Html {
-    let state = use_context::<GraphState>().expect("no ctx found");
-    let svg_attr_val = AttrValue::from(state.svg_text.clone());
+pub fn graph(props: &GraphProps) -> Html {
+    let graph_state = use_reducer(GraphState::default);
+    let svg_attr_val = AttrValue::from(props.svg_text.clone());
     let svg_result = Html::from_html_unchecked(svg_attr_val);
     let div_ref = use_node_ref();
     {
         // Whenever SVG text changes, need to add new listener to new nodes 
         let div_ref = div_ref.clone();
-        let svg_text = state.svg_text.clone();
+        let svg_text = props.svg_text.clone();
 
         use_effect_with(svg_text, move |svg_text| {
             web_sys::console::log_1(&"Using effect".into());
@@ -47,8 +56,10 @@ pub fn graph() -> Html {
     {
         // Whenever max_line_nr or svg_text is updated, need to conditionally render the nodes and edges
         let div_ref = div_ref.clone();
-        let max_line_nr = state.max_line_nr.clone();
-        let svg_text = state.svg_text.clone();
+        let max_line_nr = graph_state.max_line_nr.clone();
+        let svg_text = props.svg_text.clone();
+        let line_nr_of_node = props.line_nr_of_node.clone();
+        let graph_state = graph_state.clone();
 
         use_effect_with((max_line_nr,svg_text), move |&(max_line_nr, _)| {
             web_sys::console::log_1(&"Using effect due to max_line_nr change".into());
@@ -86,9 +97,9 @@ pub fn graph() -> Html {
                         if let Some(title_content) = title.text_content() {
                             let visibility = match parse_edge_title(&title_content) {
                                 Some((from_node_idx, to_node_idx)) => {
-                                    match (state.line_nr_of_node.get(&from_node_idx), state.line_nr_of_node.get(&to_node_idx)) {
+                                    match (line_nr_of_node.get(&from_node_idx), line_nr_of_node.get(&to_node_idx)) {
                                         (Some(&from_node_line_nr), Some(&to_node_line_nr)) => {
-                                            if from_node_line_nr > state.max_line_nr as usize || to_node_line_nr > state.max_line_nr as usize {
+                                            if from_node_line_nr > graph_state.max_line_nr as usize || to_node_line_nr > graph_state.max_line_nr as usize {
                                                 "hidden"
                                             } else {
                                                 "visible"
@@ -109,11 +120,53 @@ pub fn graph() -> Html {
             }
         });
     }
+    {
+        let svg_text = props.svg_text.clone();
+        let line_nr_of_node = props.line_nr_of_node.clone();
+        let graph_state = graph_state.clone();
+        use_effect_with((svg_text, line_nr_of_node), {
+            let graph_state = graph_state.clone();
+            move |_| {
+                graph_state.dispatch(GUIAction::ResetState);
+            }
+        });
+    }
+
+    let read_input = Callback::from({
+        let graph_state = graph_state.clone();
+        move |input_event: InputEvent| {
+            let target: HtmlInputElement = input_event
+                .target()
+                .unwrap_throw()
+                .dyn_into()
+                .unwrap_throw();
+            if let Ok(input) = target.value().to_string().parse::<i32>() {
+                graph_state.dispatch(GUIAction::ReadInput(input));
+            }
+        }
+    });
+
+    let set_max_line_nr = Callback::from({
+        let graph_state = graph_state.clone();
+        move |key_event: KeyboardEvent| {
+            if key_event.key() == "Enter" {
+                let max_line_nr = graph_state.input;
+                log::debug!("pressed Enter key");
+                graph_state.dispatch(GUIAction::SetMaxLineNr(max_line_nr));
+            }
+       }
+    });
 
     html! {
-        <div ref={div_ref}>
-            {svg_result}
-        </div>
+        <>
+            <div>
+                <label for="max_line_nr">{"Render up to line number: "}</label>
+                <input type="number" oninput={read_input} onkeypress={set_max_line_nr} id="max_line_nr" />
+            </div>
+            <div ref={div_ref}>
+                {svg_result}
+            </div>
+        </>
     }
 }
 
