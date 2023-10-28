@@ -1,6 +1,6 @@
 use yew::prelude::*;
 use crate::graph_state::GraphState;
-use wasm_bindgen::{prelude::Closure, JsValue};
+use wasm_bindgen::prelude::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::{Event, HtmlElement};
 use yew::{function_component, html, use_effect_with, use_node_ref, Html};
@@ -12,11 +12,11 @@ pub fn graph() -> Html {
     let svg_result = Html::from_html_unchecked(svg_attr_val);
     let div_ref = use_node_ref();
     {
-        // Executes initially when component is mounted 
+        // Whenever SVG text changes, need to add new listener to new nodes 
         let div_ref = div_ref.clone();
         let svg_text = state.svg_text.clone();
 
-        use_effect_with((div_ref, svg_text), |(div_ref, svg_text)| {
+        use_effect_with(svg_text, move |svg_text| {
             web_sys::console::log_1(&"Using effect".into());
             let div = div_ref
                 .cast::<HtmlElement>()
@@ -45,13 +45,13 @@ pub fn graph() -> Html {
         });
     }
     {
-        // Executes whenever max_line_nr is updated
+        // Whenever max_line_nr or svg_text is updated, need to conditionally render the nodes and edges
         let div_ref = div_ref.clone();
         let max_line_nr = state.max_line_nr.clone();
+        let svg_text = state.svg_text.clone();
 
-        use_effect_with((div_ref, max_line_nr), move |(div_ref, max_line_nr)| {
+        use_effect_with((max_line_nr,svg_text), move |&(max_line_nr, _)| {
             web_sys::console::log_1(&"Using effect due to max_line_nr change".into());
-            let max_line_nr = *max_line_nr;
             let div = div_ref
                 .cast::<HtmlElement>()
                 .expect("div_ref not attached to div element");
@@ -84,25 +84,24 @@ pub fn graph() -> Html {
                     let title_element = edge.query_selector("title").expect("Failed to select title element");
                     if let Some(title) = title_element {
                         if let Some(title_content) = title.text_content() {
-                            match parse_edge_title(&title_content) {
+                            let visibility = match parse_edge_title(&title_content) {
                                 Some((from_node_idx, to_node_idx)) => {
                                     match (state.line_nr_of_node.get(&from_node_idx), state.line_nr_of_node.get(&to_node_idx)) {
                                         (Some(&from_node_line_nr), Some(&to_node_line_nr)) => {
                                             if from_node_line_nr > state.max_line_nr as usize || to_node_line_nr > state.max_line_nr as usize {
-                                                edge.set_attribute("visibility", "hidden");
+                                                "hidden"
                                             } else {
-                                                edge.set_attribute("visibility", "visible");
+                                                "visible"
                                             }
                                         },
-                                        (_, _) => {edge.set_attribute("visibility", "visible");}
+                                        (_, _) => "visible"
                                     }
                                 }, 
-                                _ => {edge.set_attribute("visibility", "visible");}
-
-                            }
+                                _ =>  "visible"
+                            };
+                            edge.set_attribute("visibility", visibility);
                         }
                     }
-
                 }
             }
             move || {

@@ -6,6 +6,7 @@ use web_sys::HtmlInputElement;
 use wasm_bindgen::UnwrapThrowExt;
 use wasm_bindgen::JsCast;
 use crate::graph_state::*;
+use crate::graph::Graph;
 
 #[derive(Properties, PartialEq)]
 pub struct SVGProps {
@@ -15,7 +16,6 @@ pub struct SVGProps {
 #[function_component(SVGResult)]
 pub fn svg_result(props: &SVGProps) -> Html {
     log::debug!("SVG result");
-    log::debug!("From JS:");
     let graph_state = use_reducer(GraphState::default);
 
     let parse_log = {
@@ -36,7 +36,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
                         .render_svg_element(dot_output, viz_js::Options::default())
                         .expect("Could not render graphviz");
                     let svg_text = svg.outer_html();
-                    graph_state.dispatch(GUIAction::ParseResult(true, svg_text, parser.line_nr_of_node));
+                    graph_state.dispatch(GUIAction::ParseResult(svg_text, parser.line_nr_of_node));
                 },
             );
         })
@@ -67,7 +67,13 @@ pub fn svg_result(props: &SVGProps) -> Html {
        }
     });
 
-    use crate::graph::Graph;
+    let uploaded_log = props.trace_file_text.clone();
+    use_effect_with(uploaded_log, { 
+        let graph_state = graph_state.clone();
+        move |_| {
+        graph_state.dispatch(GUIAction::ResetState);
+    }});
+
     html! {
         <>
             <div>
@@ -77,15 +83,9 @@ pub fn svg_result(props: &SVGProps) -> Html {
                 <label for="max_line_nr">{"Render up to line number: "}</label>
                 <input type="number" oninput={read_input} onkeypress={set_max_line_nr} id="max_line_nr" />
             </div>
-            { if graph_state.parsed_log {
-                html! {
-                    <ContextProvider<GraphState> context={(*graph_state).clone()}>
-                        <Graph /> 
-                    </ContextProvider<GraphState>>
-                }
-            } else {
-                html! {}
-            }}
+            <ContextProvider<GraphState> context={(*graph_state).clone()}>
+                <Graph /> 
+            </ContextProvider<GraphState>>
         </>
     }
 }
