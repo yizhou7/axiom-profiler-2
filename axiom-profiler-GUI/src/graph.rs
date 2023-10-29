@@ -8,17 +8,16 @@ use web_sys::HtmlInputElement;
 use wasm_bindgen::UnwrapThrowExt;
 use std::collections::BTreeMap;
 
-#[derive(Properties, PartialEq)]
+#[derive(Properties, PartialEq, Default)]
 pub struct GraphProps {
-    pub svg_text: String,
+    pub svg_text: AttrValue,
     pub line_nr_of_node: BTreeMap<usize, usize>,
 }
 
 #[function_component(Graph)]
 pub fn graph(props: &GraphProps) -> Html {
     let graph_state = use_reducer(GraphState::default);
-    let svg_attr_val = AttrValue::from(props.svg_text.clone());
-    let svg_result = Html::from_html_unchecked(svg_attr_val);
+    let svg_result = Html::from_html_unchecked(props.svg_text.clone());
     let div_ref = use_node_ref();
     let input_ref = use_node_ref();
     {
@@ -26,7 +25,7 @@ pub fn graph(props: &GraphProps) -> Html {
         let div_ref = div_ref.clone();
         let svg_text = props.svg_text.clone();
 
-        use_effect_with(svg_text, move |svg_text| {
+        use_effect_with(svg_text, move |_| {
             web_sys::console::log_1(&"Using effect".into());
             let div = div_ref
                 .cast::<HtmlElement>()
@@ -111,7 +110,7 @@ pub fn graph(props: &GraphProps) -> Html {
                                 }, 
                                 _ =>  "visible"
                             };
-                            edge.set_attribute("visibility", visibility);
+                            let _ = edge.set_attribute("visibility", visibility);
                         }
                     }
                 }

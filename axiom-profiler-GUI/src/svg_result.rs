@@ -2,12 +2,7 @@ use yew::prelude::*;
 use prototype::parsers::{z3parser1, LogParser};
 use viz_js::VizInstance;
 use petgraph::dot::{Dot, Config};
-// use web_sys::HtmlInputElement;
-// use wasm_bindgen::UnwrapThrowExt;
-// use wasm_bindgen::JsCast;
-// use crate::graph_state::*;
-use crate::graph::Graph;
-use std::collections::BTreeMap;
+use crate::graph::{Graph, GraphProps};
 
 #[derive(Properties, PartialEq)]
 pub struct SVGProps {
@@ -17,18 +12,16 @@ pub struct SVGProps {
 #[function_component(SVGResult)]
 pub fn svg_result(props: &SVGProps) -> Html {
     log::debug!("SVG result");
-    // let graph_state = use_reducer(GraphState::default);
-    let state = use_state(|| (String::new(), BTreeMap::new()));
+    let graph_props = use_state(|| GraphProps::default());
 
     let parse_log = {
-        let text = props.trace_file_text.to_string();
-        let state = state.clone();
+        let graph_props = graph_props.clone();
+        let trace_file_text = props.trace_file_text.clone();
         Callback::from(move |_| {
-            let text = text.to_string();
-            let state = state.clone();
+            let graph_props = graph_props.clone();
+            let trace_file_text = trace_file_text.clone();
             let mut parser = z3parser1::Z3Parser1::new();
-            // parser.process_log(text);
-            parser.process_log(text);
+            parser.process_log(trace_file_text.to_string());
             let qi_graph = parser.get_instantiation_graph();
             let dot_output = format!("{:?}", Dot::with_config(qi_graph, &[Config::EdgeNoLabel])); 
             log::debug!("use effect");
@@ -39,17 +32,18 @@ pub fn svg_result(props: &SVGProps) -> Html {
                         .render_svg_element(dot_output, viz_js::Options::default())
                         .expect("Could not render graphviz");
                     let svg_text = svg.outer_html();
-                    state.set((svg_text, parser.line_nr_of_node))
+                    graph_props.set(GraphProps{svg_text: AttrValue::from(svg_text), line_nr_of_node: parser.line_nr_of_node});
                 },
             );
         })
     };
 
+    // this resets the graph-props whenever a new log-file has been uploaded
     let uploaded_log = props.trace_file_text.clone();
     use_effect_with(uploaded_log, { 
-        let state = state.clone();
+        let graph_props = graph_props.clone();
         move |_| {
-        state.set((String::new(), BTreeMap::new()));
+        graph_props.set(GraphProps::default());
     }});
 
     html! {
@@ -57,7 +51,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
             <div>
                 <button onclick={parse_log}>{"Render instantiation graph"}</button>
             </div>
-            <Graph svg_text={state.0.clone()} line_nr_of_node={state.1.clone()} /> 
+            <Graph svg_text={graph_props.svg_text.clone()} line_nr_of_node={graph_props.line_nr_of_node.clone()} /> 
         </>
     }
 }
