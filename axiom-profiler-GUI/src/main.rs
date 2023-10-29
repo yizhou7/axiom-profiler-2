@@ -7,10 +7,8 @@ use yew_router::prelude::*;
 use crate::svg_result::*;
 
 mod svg_result;
-mod nodes;
-mod edges;
 mod graph;
-mod attribute_fetcher;
+mod graph_state;
 pub enum Msg {
     LoadedBytes(String, Vec<u8>),
     Files(Vec<File>),
@@ -111,7 +109,7 @@ fn app() -> Html {
     html! {
         <>
         <div>
-            <h1>{"Yew testing"}</h1>
+            <h1>{"Axiom Profiler"}</h1>
             <FileDataComponent/>
         </div>
         </>
@@ -135,28 +133,29 @@ enum Route {
     Test,
 }
 
-fn switch(routes: Route) -> Html {
-    match routes {
-        Route::App => html! {
-            <App/>
-        },
-        Route::Test => html! {
-            <Test/>
-        },
-    }
-}
+// fn switch(routes: Route) -> Html {
+//     match routes {
+//         Route::App => html! {
+//             <App/>
+//         },
+//         Route::Test => html! {
+//             <Test/>
+//         },
+//     }
+// }
 
-#[function_component(Main)]
-fn main() -> Html {
-    html! {
-        <BrowserRouter>
-            <Switch<Route> render={switch} />
-        </BrowserRouter>
-    }
-}
+// #[function_component(Main)]
+// fn main() -> Html {
+//     html! {
+//         <BrowserRouter>
+//             <Switch<Route> render={switch} />
+//         </BrowserRouter>
+//     }
+// }
 
 fn main() {
     wasm_logger::init(wasm_logger::Config::default());
     log::debug!("App is starting");
-    yew::Renderer::<Main>::new().render();
+    // yew::Renderer::<Main>::new().render();
+    yew::Renderer::<App>::new().render();
 }
