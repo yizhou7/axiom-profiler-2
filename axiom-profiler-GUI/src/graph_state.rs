@@ -26,7 +26,7 @@ impl Reducible for GraphState {
 
     fn reduce(self: std::rc::Rc<Self>, action: Self::Action) -> std::rc::Rc<Self> {
         match action {
-           GUIAction::SetMaxLineNr(max_line_nr) => Self {
+            GUIAction::SetMaxLineNr(max_line_nr) => Self {
                 max_line_nr,
                 input: self.input,
             }.into(),

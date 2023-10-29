@@ -9,6 +9,7 @@ use crate::svg_result::*;
 mod svg_result;
 mod graph;
 mod graph_state;
+mod input_state;
 pub enum Msg {
     LoadedBytes(String, Vec<u8>),
     Files(Vec<File>),

@@ -3,6 +3,7 @@ use prototype::parsers::{z3parser1, LogParser};
 use viz_js::VizInstance;
 use petgraph::dot::{Dot, Config};
 use crate::graph::{Graph, GraphProps};
+// use crate::input_state::{IntegerInput, State};
 
 #[derive(Properties, PartialEq)]
 pub struct SVGProps {
@@ -13,6 +14,8 @@ pub struct SVGProps {
 pub fn svg_result(props: &SVGProps) -> Html {
     log::debug!("SVG result");
     let graph_props = use_state(|| GraphProps::default());
+    // let max_log_line_nr = use_reducer(State::default);
+    // let max_instantiations = use_reducer(State::default);
 
     let parse_log = {
         let graph_props = graph_props.clone();
@@ -49,6 +52,8 @@ pub fn svg_result(props: &SVGProps) -> Html {
     html! {
         <>
             <div>
+                // <IntegerInput label={"Parse log up to line number: "} dependency={props.trace_file_text.clone()} state={max_log_line_nr} />
+                // <IntegerInput label={"Parse up to how many instantiations?: "} dependency={props.trace_file_text.clone()} state={max_instantiations} />
                 <button onclick={parse_log}>{"Parse log and render results"}</button>
             </div>
             <Graph svg_text={graph_props.svg_text.clone()} line_nr_of_node={graph_props.line_nr_of_node.clone()} /> 

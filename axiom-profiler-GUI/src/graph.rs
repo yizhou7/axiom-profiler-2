@@ -1,12 +1,11 @@
 use yew::prelude::*;
-use crate::graph_state::*;
 use wasm_bindgen::prelude::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::{Event, HtmlElement};
 use yew::{function_component, html, use_effect_with, use_node_ref, Html};
-use web_sys::HtmlInputElement;
-use wasm_bindgen::UnwrapThrowExt;
 use std::collections::BTreeMap;
+
+use crate::input_state::{State, IntegerInput};
 
 #[derive(Properties, PartialEq, Default)]
 pub struct GraphProps {
@@ -16,10 +15,10 @@ pub struct GraphProps {
 
 #[function_component(Graph)]
 pub fn graph(props: &GraphProps) -> Html {
-    let graph_state = use_reducer(GraphState::default);
+    // let graph_state = use_reducer(GraphState::default);
+    let max_line_nr = use_reducer(State::default);
     let svg_result = Html::from_html_unchecked(props.svg_text.clone());
     let div_ref = use_node_ref();
-    let input_ref = use_node_ref();
     {
         // Whenever SVG text changes, need to add new listener to new nodes 
         let div_ref = div_ref.clone();
@@ -56,9 +55,9 @@ pub fn graph(props: &GraphProps) -> Html {
     {
         // Whenever max_line_nr is updated, need to conditionally render the nodes and edges
         let div_ref = div_ref.clone();
-        let max_line_nr = graph_state.max_line_nr.clone();
+        // let max_line_nr = graph_state.max_line_nr.clone();
+        let max_line_nr = max_line_nr.value.clone();
         let line_nr_of_node = props.line_nr_of_node.clone();
-        let graph_state = graph_state.clone();
 
         use_effect_with(max_line_nr, move |&max_line_nr| {
             web_sys::console::log_1(&"Using effect due to max_line_nr change".into());
@@ -98,7 +97,8 @@ pub fn graph(props: &GraphProps) -> Html {
                                 Some((from_node_idx, to_node_idx)) => {
                                     match (line_nr_of_node.get(&from_node_idx), line_nr_of_node.get(&to_node_idx)) {
                                         (Some(&from_node_line_nr), Some(&to_node_line_nr)) => {
-                                            if from_node_line_nr > graph_state.max_line_nr as usize || to_node_line_nr > graph_state.max_line_nr as usize {
+                                            // if from_node_line_nr > graph_state.max_line_nr as usize || to_node_line_nr > graph_state.max_line_nr as usize {
+                                            if from_node_line_nr > max_line_nr as usize || to_node_line_nr > max_line_nr as usize {
                                                 "hidden"
                                             } else {
                                                 "visible"
@@ -119,56 +119,11 @@ pub fn graph(props: &GraphProps) -> Html {
             }
         });
     }
-    {
-        // Whenever log changes, svg_text changes and hence need to reset the state
-        let svg_text = props.svg_text.clone();
-        let graph_state = graph_state.clone();
-        let input_ref = input_ref.clone();
-        use_effect_with(svg_text, {
-            let graph_state = graph_state.clone();
-            move |_| {
-                graph_state.dispatch(GUIAction::ResetState);
-                let input = input_ref
-                    .cast::<HtmlInputElement>()
-                    .expect("div_ref not attached to div element");
-                input.set_value("");
-            }
-        });
-    }
-
-    let read_input = Callback::from({
-        let graph_state = graph_state.clone();
-        move |input_event: InputEvent| {
-            let target: HtmlInputElement = input_event
-                .target()
-                .unwrap_throw()
-                .dyn_into()
-                .unwrap_throw();
-            if let Ok(input) = target.value().to_string().parse::<i32>() {
-                graph_state.dispatch(GUIAction::ReadInput(input));
-            } else {
-                // by default, i.e., if user input can't be parsed as i32, we
-                // reset the state of the graph
-                graph_state.dispatch(GUIAction::ResetState);
-            }
-        }
-    });
-
-    let set_max_line_nr = Callback::from({
-        let graph_state = graph_state.clone();
-        move |key_event: KeyboardEvent| {
-            if key_event.key() == "Enter" {
-                let max_line_nr = graph_state.input;
-                graph_state.dispatch(GUIAction::SetMaxLineNr(max_line_nr));
-            }
-       }
-    });
 
     html! {
         <>
             <div>
-                <label for="max_line_nr">{"Render up to line number: "}</label>
-                <input ref={input_ref} type="number" oninput={read_input} onkeypress={set_max_line_nr} id="max_line_nr" />
+                <IntegerInput label={"Render up to line number: "} dependency={props.svg_text.clone()} state={max_line_nr} />
             </div>
             <div ref={div_ref}>
                 {svg_result}
