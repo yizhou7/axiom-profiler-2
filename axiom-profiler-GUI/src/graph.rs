@@ -54,14 +54,13 @@ pub fn graph(props: &GraphProps) -> Html {
         });
     }
     {
-        // Whenever max_line_nr or svg_text is updated, need to conditionally render the nodes and edges
+        // Whenever max_line_nr is updated, need to conditionally render the nodes and edges
         let div_ref = div_ref.clone();
         let max_line_nr = graph_state.max_line_nr.clone();
-        let svg_text = props.svg_text.clone();
         let line_nr_of_node = props.line_nr_of_node.clone();
         let graph_state = graph_state.clone();
 
-        use_effect_with((max_line_nr,svg_text), move |&(max_line_nr, _)| {
+        use_effect_with(max_line_nr, move |&max_line_nr| {
             web_sys::console::log_1(&"Using effect due to max_line_nr change".into());
             let div = div_ref
                 .cast::<HtmlElement>()
@@ -121,11 +120,11 @@ pub fn graph(props: &GraphProps) -> Html {
         });
     }
     {
+        // Whenever log changes, svg_text changes and hence need to reset the state
         let svg_text = props.svg_text.clone();
-        let line_nr_of_node = props.line_nr_of_node.clone();
         let graph_state = graph_state.clone();
         let input_ref = input_ref.clone();
-        use_effect_with((svg_text, line_nr_of_node), {
+        use_effect_with(svg_text, {
             let graph_state = graph_state.clone();
             move |_| {
                 graph_state.dispatch(GUIAction::ResetState);

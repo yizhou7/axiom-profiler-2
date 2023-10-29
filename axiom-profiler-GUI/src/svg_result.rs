@@ -49,7 +49,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
     html! {
         <>
             <div>
-                <button onclick={parse_log}>{"Render instantiation graph"}</button>
+                <button onclick={parse_log}>{"Parse log and render results"}</button>
             </div>
             <Graph svg_text={graph_props.svg_text.clone()} line_nr_of_node={graph_props.line_nr_of_node.clone()} /> 
         </>
