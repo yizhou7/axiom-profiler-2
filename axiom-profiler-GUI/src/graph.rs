@@ -20,6 +20,7 @@ pub fn graph(props: &GraphProps) -> Html {
     let svg_attr_val = AttrValue::from(props.svg_text.clone());
     let svg_result = Html::from_html_unchecked(svg_attr_val);
     let div_ref = use_node_ref();
+    let input_ref = use_node_ref();
     {
         // Whenever SVG text changes, need to add new listener to new nodes 
         let div_ref = div_ref.clone();
@@ -124,10 +125,15 @@ pub fn graph(props: &GraphProps) -> Html {
         let svg_text = props.svg_text.clone();
         let line_nr_of_node = props.line_nr_of_node.clone();
         let graph_state = graph_state.clone();
+        let input_ref = input_ref.clone();
         use_effect_with((svg_text, line_nr_of_node), {
             let graph_state = graph_state.clone();
             move |_| {
                 graph_state.dispatch(GUIAction::ResetState);
+                let input = input_ref
+                    .cast::<HtmlInputElement>()
+                    .expect("div_ref not attached to div element");
+                input.set_value("");
             }
         });
     }
@@ -142,6 +148,10 @@ pub fn graph(props: &GraphProps) -> Html {
                 .unwrap_throw();
             if let Ok(input) = target.value().to_string().parse::<i32>() {
                 graph_state.dispatch(GUIAction::ReadInput(input));
+            } else {
+                // by default, i.e., if user input can't be parsed as i32, we
+                // reset the state of the graph
+                graph_state.dispatch(GUIAction::ResetState);
             }
         }
     });
@@ -151,7 +161,6 @@ pub fn graph(props: &GraphProps) -> Html {
         move |key_event: KeyboardEvent| {
             if key_event.key() == "Enter" {
                 let max_line_nr = graph_state.input;
-                log::debug!("pressed Enter key");
                 graph_state.dispatch(GUIAction::SetMaxLineNr(max_line_nr));
             }
        }
@@ -161,7 +170,7 @@ pub fn graph(props: &GraphProps) -> Html {
         <>
             <div>
                 <label for="max_line_nr">{"Render up to line number: "}</label>
-                <input type="number" oninput={read_input} onkeypress={set_max_line_nr} id="max_line_nr" />
+                <input ref={input_ref} type="number" oninput={read_input} onkeypress={set_max_line_nr} id="max_line_nr" />
             </div>
             <div ref={div_ref}>
                 {svg_result}

@@ -9,6 +9,7 @@ use crate::svg_result::*;
 mod svg_result;
 mod graph;
 mod graph_state;
+mod graph_layout;
 
 pub enum Msg {
     LoadedBytes(String, Vec<u8>),
@@ -110,7 +111,7 @@ fn app() -> Html {
     html! {
         <>
         <div>
-            <h1>{"Yew testing"}</h1>
+            <h1>{"Axiom Profiler"}</h1>
             <FileDataComponent/>
         </div>
         </>

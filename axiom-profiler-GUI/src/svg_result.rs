@@ -27,6 +27,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
             let text = text.to_string();
             let state = state.clone();
             let mut parser = z3parser1::Z3Parser1::new();
+            // parser.process_log(text);
             parser.process_log(text);
             let qi_graph = parser.get_instantiation_graph();
             let dot_output = format!("{:?}", Dot::with_config(qi_graph, &[Config::EdgeNoLabel])); 
