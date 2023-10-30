@@ -5,6 +5,7 @@ use std::collections::{HashMap, BTreeMap, HashSet};
 use std::io::Write;
 use regex::Regex;
 use serde::Serialize;
+use implicit_clone::unsync::IString;
 
 use crate::file_io::*;
 use crate::items::*;
@@ -53,7 +54,21 @@ const OUT_EQ_JSON: &str = "out/eq_expls.json";
 
 pub enum Log {
     Filename(String),
-    File(String)
+    File(IString)
+}
+
+pub struct ParserSettings {
+    pub max_line_nr: u32,
+    pub max_instantiations: u32,
+}
+
+impl Default for ParserSettings {
+    fn default() -> Self {
+        Self {
+            max_line_nr: u32::MAX,
+            max_instantiations: u32::MAX,
+        }
+    }
 }
 
 /// Trait for a generic SMT solver trace parser. Intended to support different solvers or log formats. 
@@ -70,14 +85,12 @@ pub trait LogParser {
 
     // perhaps below two should be part of their own trait, but Z3LogParser::main_parse_loop depends on these functions being part of LogParser
     /// Returns true if parser should parse the next line; false if parser should stop
-    fn should_continue(&self) -> bool {
-        true
-    }
+    fn should_continue(&self, line_no: u32) -> bool; 
 
     /// Parse given log represented as a String
     fn process_log(
         &mut self,
-        log: String,
+        log: IString,
     );
 
     fn get_dependencies(&self) -> &Vec<Dependency>;
@@ -125,10 +138,6 @@ pub trait Z3LogParser: LogParser {
             Log::Filename(filename) => {
                 if let Ok(lines) = read_lines(filename) {
                     for (line_no, line) in lines.enumerate() {
-                        if !self.should_continue() {
-                            println!("Interrupted");
-                            break;
-                        }
                         let l0 = line.unwrap_or_else(|_| panic!("Error reading line {}", line_no));
                         match self.process_line(l0, line_no) {
                             Ok(()) => continue,
@@ -141,6 +150,9 @@ pub trait Z3LogParser: LogParser {
             },
             Log::File(file) => {
                 for (line_no, line) in file.lines().enumerate() {
+                    if !self.should_continue(line_no as u32) {
+                        break;
+                    }
                     match self.process_line(line.to_string(), line_no) {
                         Ok(()) => continue,
                         Err(_) => break,
@@ -255,7 +267,7 @@ fn process_z3_file(&mut self, filename: &str, settings: &Settings) -> Result<(St
         Ok((svg_result, ))
     }
 
-    fn process_z3_log(&mut self, log: String) {
+    fn process_z3_log(&mut self, log: IString) {
         self.main_parse_loop(Log::File(log));
     }
     /// Save contents of parser to files.

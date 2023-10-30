@@ -17,10 +17,20 @@ pub struct Z3Parser1 {
     pub line_nr_of_node: BTreeMap<usize, usize>, // [node-idx => line number]
     node_of_line_nr: BTreeMap<usize, petgraph::graph::NodeIndex>, // [node-idx => line number]
     qi_graph: Graph::<usize, ()>,
+    max_line_nr: u32,
+    max_instantiations: u32,
+    processed_instantiations: u32,
 }
 
 pub fn new() -> Z3Parser1 {
     Z3Parser1::default()
+}
+
+pub fn new_with_settings(settings: ParserSettings) -> Z3Parser1 {
+    let mut default = Z3Parser1::new();
+    default.max_line_nr = settings.max_line_nr;
+    default.max_instantiations = settings.max_instantiations;
+    default
 }
 
 impl LogParser for Z3Parser1 {
@@ -36,17 +46,26 @@ impl LogParser for Z3Parser1 {
         Z3Parser1::default()
     }
     
-    fn should_continue(&self) -> bool {
-        !self.inst_stack.is_empty()
-            || match self.continue_parsing.lock() {
-                Ok(guard) => *guard,
-                Err(_poisoned) => false, // if poisoned, assume trying to stop
-            }
+    // fn should_continue(&self) -> bool {
+    //     !self.inst_stack.is_empty()
+    //         || match self.continue_parsing.lock() {
+    //             Ok(guard) => *guard,
+    //             Err(_poisoned) => false, // if poisoned, assume trying to stop
+    //         }
+    // }
+
+    fn should_continue(&self, line_no: u32) -> bool {
+        self.max_line_nr >= line_no 
+        // !self.inst_stack.is_empty()
+        //     || match self.continue_parsing.lock() {
+        //         Ok(guard) => *guard,
+        //         Err(_poisoned) => false, // if poisoned, assume trying to stop
+        //     }
     }
 
     fn process_log(
         &mut self,
-        log: String,
+        log: IString,
     ) {
         self.process_z3_log(log)
     }
@@ -624,6 +643,9 @@ impl Default for Z3Parser1 {
             line_nr_of_node: BTreeMap::new(),
             node_of_line_nr: BTreeMap::new(),
             qi_graph: Graph::<usize, ()>::new(),
+            max_line_nr: u32::MAX,
+            max_instantiations: u32::MAX,
+            processed_instantiations: 0,
         }
     }
 }

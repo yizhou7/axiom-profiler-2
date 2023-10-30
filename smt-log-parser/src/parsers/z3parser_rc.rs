@@ -39,13 +39,13 @@ impl LogParser for Z3ParserRc {
         Z3ParserRc::default()
     }
     
-    fn should_continue(&self) -> bool {
+    fn should_continue(&self, line_no: u32) -> bool {
         true    // stub
     }
 
     fn process_log(
         &mut self,
-        log: String,
+        log: IString,
     ) {
         self.process_z3_log(log)
     }

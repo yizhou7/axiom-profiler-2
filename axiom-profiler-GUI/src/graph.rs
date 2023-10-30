@@ -5,7 +5,7 @@ use web_sys::{Event, HtmlElement};
 use yew::{function_component, html, use_effect_with, use_node_ref, Html};
 use std::collections::BTreeMap;
 
-use crate::input_state::{State, IntegerInput};
+use crate::input_state::{InputValue, IntegerInput};
 
 #[derive(Properties, PartialEq, Default)]
 pub struct GraphProps {
@@ -16,11 +16,13 @@ pub struct GraphProps {
 #[function_component(Graph)]
 pub fn graph(props: &GraphProps) -> Html {
     // let graph_state = use_reducer(GraphState::default);
-    let max_line_nr = use_reducer(State::default);
+    let max_line_nr = use_reducer(InputValue::default);
     let svg_result = Html::from_html_unchecked(props.svg_text.clone());
     let div_ref = use_node_ref();
+
+    // attach_event_listeners_to_nodes(div_ref, svg_text);
     {
-        // Whenever SVG text changes, need to add new listener to new nodes 
+        // Whenever SVG text changes, need to attach event listeners to new nodes 
         let div_ref = div_ref.clone();
         let svg_text = props.svg_text.clone();
 
@@ -52,6 +54,7 @@ pub fn graph(props: &GraphProps) -> Html {
             }
         });
     }
+    // handle_max_line_nr_update(div_ref, max_line_nr, line_nr_of_node);
     {
         // Whenever max_line_nr is updated, need to conditionally render the nodes and edges
         let div_ref = div_ref.clone();
@@ -122,9 +125,7 @@ pub fn graph(props: &GraphProps) -> Html {
 
     html! {
         <>
-            <div>
-                <IntegerInput label={"Render up to line number: "} dependency={props.svg_text.clone()} state={max_line_nr} />
-            </div>
+            <IntegerInput label={"Render graph up to line number: "} dependency={props.svg_text.clone()} input_value={max_line_nr} />
             <div ref={div_ref}>
                 {svg_result}
             </div>

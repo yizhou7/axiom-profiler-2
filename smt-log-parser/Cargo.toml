@@ -11,3 +11,4 @@ futures = "0.3.28"
 serde = { version = "1.0.183", features = ["derive"] }
 serde_json = "1.0.105"
 petgraph = "0.6.4"
+implicit-clone = "0.4.1"

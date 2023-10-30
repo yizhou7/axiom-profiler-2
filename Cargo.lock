@@ -1185,6 +1185,7 @@ name = "prototype"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "implicit-clone 0.4.1",
  "petgraph",
  "regex",
  "serde",
@@ -1895,6 +1896,7 @@ dependencies = [
  "gloo 0.9.0",
  "gloo-file 0.2.3",
  "gloo-net 0.3.1",
+ "implicit-clone 0.4.1",
  "js-sys",
  "log",
  "petgraph",
