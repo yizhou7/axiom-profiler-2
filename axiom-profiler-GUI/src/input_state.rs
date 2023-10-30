@@ -4,21 +4,18 @@ use wasm_bindgen::{UnwrapThrowExt, JsCast};
 
 pub enum InputAction {
     SetValueTo(i32),
-    ReadInput(i32),
     ResetState,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct InputValue {
     pub value: i32,
-    input: i32,
 }
 
 impl Default for InputValue {
     fn default() -> Self {
         Self {
             value: i32::MAX,
-            input: i32::MAX,
         }
     }
 }
@@ -30,11 +27,6 @@ impl Reducible for InputValue {
         match action {
             InputAction::SetValueTo(value) => Self {
                 value,
-                input: self.input,
-            }.into(),
-            InputAction::ReadInput(input) => Self {
-                value: self.value,
-                input,
             }.into(),
             InputAction::ResetState => {
                 Self::default().into()
@@ -55,44 +47,46 @@ pub fn integer_input(props: &IntegerInputProps) -> Html {
     let input_value = props.input_value.clone(); 
     let input_ref = use_node_ref();
 
-    let read_input = Callback::from({
-        let input_value = input_value.clone();
-        move |input_event: InputEvent| {
+    let read_input = |input_event: Event| {
             let target: HtmlInputElement = input_event
                 .target()
                 .unwrap_throw()
                 .dyn_into()
                 .unwrap_throw();
-            if let Ok(input) = target.value().to_string().parse::<i32>() {
-                input_value.dispatch(InputAction::ReadInput(input));
-            } else {
-                // by default, i.e., if user input can't be parsed as i32, we
-                // reset the state of the graph
-                input_value.dispatch(InputAction::ResetState);
-            }
+            target.value().to_string().parse::<i32>()
         }
-    });
+    ;
 
     let set_value = Callback::from({
         let input_value = input_value.clone();
         move |key_event: KeyboardEvent| {
-            let event_type = key_event.type_();
-            log::debug!("Event type: {event_type}");
-            if key_event.key() == "Enter" {
-                let value = input_value.input;
-                input_value.dispatch(InputAction::SetValueTo(value));
+            let event: Event = key_event.clone().into();
+            match read_input(event) {
+                Ok(value) => {
+                    if key_event.key() == "Enter" {
+                        input_value.dispatch(InputAction::SetValueTo(value));
+                    }
+                },
+                Err(_) => {
+                    input_value.dispatch(InputAction::ResetState);
+                } 
             }
-       }
+      }
     });
 
     let set_value_on_blur = Callback::from({
         let input_value = input_value.clone();
-        move |event: FocusEvent| {
-            let event_type = event.type_();
-            log::debug!("Event type: {event_type}");
-            let value = input_value.input;
-            input_value.dispatch(InputAction::SetValueTo(value));
-       }
+        move |blur_event: FocusEvent| {
+            let event: Event = blur_event.clone().into();
+            match read_input(event) {
+                Ok(value) => {
+                    input_value.dispatch(InputAction::SetValueTo(value));
+                },
+                Err(_) => {
+                    input_value.dispatch(InputAction::ResetState);
+                } 
+            }
+      }
     });
 
     {
@@ -115,7 +109,7 @@ pub fn integer_input(props: &IntegerInputProps) -> Html {
     html! {
         <div>
             <label for="input">{props.label.to_string()}</label>
-            <input ref={input_ref} type="number" oninput={read_input} onkeypress={set_value} onblur={set_value_on_blur} id="input" />
+            <input ref={input_ref} type="number" onkeypress={set_value} onblur={set_value_on_blur} id="input" />
         </div>
     }
 }
