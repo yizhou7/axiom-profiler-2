@@ -47,45 +47,40 @@ pub fn integer_input(props: &IntegerInputProps) -> Html {
     let input_value = props.input_value.clone(); 
     let input_ref = use_node_ref();
 
-    let read_input = |input_event: Event| {
+    let set_value = {
+        let input_value = input_value.clone();
+        move |input_event: Event| {
             let target: HtmlInputElement = input_event
                 .target()
                 .unwrap_throw()
                 .dyn_into()
                 .unwrap_throw();
-            target.value().to_string().parse::<i32>()
-        }
-    ;
-
-    let set_value = Callback::from({
-        let input_value = input_value.clone();
-        move |key_event: KeyboardEvent| {
-            let event: Event = key_event.clone().into();
-            match read_input(event) {
-                Ok(value) => {
-                    if key_event.key() == "Enter" {
-                        input_value.dispatch(InputAction::SetValueTo(value));
-                    }
-                },
-                Err(_) => {
-                    input_value.dispatch(InputAction::ResetState);
-                } 
-            }
-      }
-    });
-
-    let set_value_on_blur = Callback::from({
-        let input_value = input_value.clone();
-        move |blur_event: FocusEvent| {
-            let event: Event = blur_event.clone().into();
-            match read_input(event) {
+            match target.value().to_string().parse::<i32>() {
                 Ok(value) => {
                     input_value.dispatch(InputAction::SetValueTo(value));
                 },
                 Err(_) => {
                     input_value.dispatch(InputAction::ResetState);
-                } 
+                }
             }
+        }
+    };
+
+    let set_value_on_enter = Callback::from({
+        let set_value = set_value.clone();
+        move |key_event: KeyboardEvent| {
+            if key_event.key() == "Enter" {
+                let event: Event = key_event.clone().into();
+                set_value(event);
+            }
+      }
+    });
+
+    let set_value_on_blur = Callback::from({
+        let set_value = set_value.clone();
+        move |blur_event: FocusEvent| {
+            let event: Event = blur_event.clone().into();
+            set_value(event);
       }
     });
 
@@ -109,7 +104,7 @@ pub fn integer_input(props: &IntegerInputProps) -> Html {
     html! {
         <div>
             <label for="input">{props.label.to_string()}</label>
-            <input ref={input_ref} type="number" onkeypress={set_value} onblur={set_value_on_blur} id="input" />
+            <input ref={input_ref} type="number" onkeypress={set_value_on_enter} onblur={set_value_on_blur} id="input" />
         </div>
     }
 }
