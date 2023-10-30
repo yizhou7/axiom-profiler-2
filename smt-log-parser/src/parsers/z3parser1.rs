@@ -56,11 +56,6 @@ impl LogParser for Z3Parser1 {
     fn should_continue(&self, line_no: u32) -> bool {
         line_no <= self.max_line_nr && 
         self.instantiations.len() <= self.max_instantiations as usize  
-        // !self.inst_stack.is_empty()
-        //     || match self.continue_parsing.lock() {
-        //         Ok(guard) => *guard,
-        //         Err(_poisoned) => false, // if poisoned, assume trying to stop
-        //     }
     }
 
     fn process_log(
