@@ -1,5 +1,8 @@
+use std::time::Duration;
+
+use smt_log_parser::parsers::z3::z3parser::Z3Parser;
 use yew::prelude::*;
-use prototype::parsers::{z3parser1, LogParser, ParserSettings};
+use smt_log_parser::parsers::{z3::z3parser, LogParser, StreamParser};
 use viz_js::VizInstance;
 use petgraph::dot::{Dot, Config};
 use crate::graph::{Graph, GraphProps};
@@ -25,12 +28,11 @@ pub fn svg_result(props: &SVGProps) -> Html {
         Callback::from(move |_| {
             let graph_props = graph_props.clone();
             let trace_file_text = trace_file_text.clone();
-            // let mut parser = z3parser1::Z3Parser1::new();
-            let mut parser = z3parser1::new_with_settings(ParserSettings{
-                max_line_nr: max_log_line_nr as u32, 
-                max_instantiations: max_instantiations as u32, 
-            });
-            parser.process_log(trace_file_text);
+            // z3parser::new_with_settings(ParserSettings{
+            //     max_line_nr: max_log_line_nr as u32, 
+            //     max_instantiations: max_instantiations as u32, 
+            // });
+            let (_, mut parser): (_, Z3Parser) = StreamParser::parse_entire_string(trace_file_text.as_str(), Duration::ZERO);
             let qi_graph = parser.get_instantiation_graph();
             let dot_output = format!("{:?}", Dot::with_config(qi_graph, &[Config::EdgeNoLabel])); 
             log::debug!("use effect");

@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fs};
 
-use prototype::{file_io, items::{self, EqualityExpl, BlamedTermItem, Instantiation}};
+use smt_log_parser::{file_io, items::{self, EqualityExpl, BlamedTermItem, Instantiation}};
 
 /// Just for testing "cg" equality explanations and finding the explanations they depend on.
 fn main() {
