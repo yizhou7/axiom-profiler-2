@@ -19,7 +19,6 @@ pub struct Z3Parser1 {
     qi_graph: Graph::<usize, ()>,
     max_line_nr: u32,
     max_instantiations: u32,
-    processed_instantiations: u32,
 }
 
 pub fn new() -> Z3Parser1 {
@@ -55,7 +54,8 @@ impl LogParser for Z3Parser1 {
     // }
 
     fn should_continue(&self, line_no: u32) -> bool {
-        self.max_line_nr >= line_no 
+        line_no <= self.max_line_nr && 
+        self.instantiations.len() <= self.max_instantiations as usize  
         // !self.inst_stack.is_empty()
         //     || match self.continue_parsing.lock() {
         //         Ok(guard) => *guard,
@@ -645,7 +645,6 @@ impl Default for Z3Parser1 {
             qi_graph: Graph::<usize, ()>::new(),
             max_line_nr: u32::MAX,
             max_instantiations: u32::MAX,
-            processed_instantiations: 0,
         }
     }
 }
