@@ -356,7 +356,7 @@ impl Z3LogParser for Z3Parser {
         self.temp_dependencies.insert(line_no + 1, vec![]);
         if method == "theory-solving" {
             name = l.next()?.to_string();
-            l.next()?; // TODO: what are we skipping here?
+            l.next(); // Skip `;`
 
             blamed_terms = l
                     .map(String::from)
