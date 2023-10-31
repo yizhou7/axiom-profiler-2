@@ -1,5 +1,9 @@
-use gloo_file::{callbacks::FileReader, File};
-use std::collections::HashMap;
+use gloo_file::{callbacks::FileReader, File, FileList};
+use smt_log_parser::parsers::AsyncStreamParser;
+use smt_log_parser::parsers::z3::z3parser::Z3Parser;
+use wasm_bindgen::JsCast;
+use wasm_streams::ReadableStream;
+use std::{collections::HashMap, ops::Deref};
 use std::str::from_utf8;
 use web_sys::{Event, HtmlInputElement};
 use yew::prelude::*;
@@ -12,7 +16,7 @@ mod graph_state;
 mod input_state;
 pub enum Msg {
     LoadedBytes(String, Vec<u8>),
-    Files(Vec<File>),
+    Files(Option<FileList>),
 }
 
 pub struct FileDataComponent {
@@ -34,9 +38,21 @@ impl Component for FileDataComponent {
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
             Msg::Files(files) => {
+                let Some(files) = files else {
+                    return true;
+                };
                 log::info!("Files selected: {}", files.len());
                 for file in files.into_iter() {
                     let file_name = file.name();
+                    // Turn into stream
+                    let blob: &web_sys::Blob = file.as_ref();
+                    let stream = ReadableStream::from_raw(blob.stream().unchecked_into());
+                    let read = stream.into_async_read();
+                    let mut read = AsyncStreamParser::<_, Z3Parser>::new_read(read);
+                    wasm_bindgen_futures::spawn_local(async move {
+                        // TODO: read file here
+                        // let result = read.process_all().await;
+                    });
                     let task = {
                         let file_name = file_name.clone();
                         let link = ctx.link().clone();
@@ -66,17 +82,8 @@ impl Component for FileDataComponent {
 
     fn view(&self, ctx: &Context<Self>) -> Html {
         let on_change = ctx.link().callback(move |e: Event| {
-            let mut selected_files = Vec::new();
-            let input: HtmlInputElement = e.target_unchecked_into();
-            if let Some(files) = input.files() {
-                let files = js_sys::try_iter(&files)
-                    .unwrap()
-                    .unwrap()
-                    .map(|v| web_sys::File::from(v.unwrap()))
-                    .map(File::from);
-                selected_files.extend(files);
-            }
-            Msg::Files(selected_files)
+            let files = e.target_dyn_into::<HtmlInputElement>().unwrap().files();
+            Msg::Files(files.map(FileList::from))
         });
         html! {
             <div>

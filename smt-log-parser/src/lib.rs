@@ -5,7 +5,7 @@ pub mod file_io;
 pub mod items;
 
 /// Rendering for quantifier instantiation graphs.
-mod render;
+pub mod render;
 
 /// Generates CSS style sheets for static SVG outputs.
 mod css;
@@ -18,6 +18,3 @@ mod sort_filter;
 
 /// Parser structs and methods.
 pub mod parsers;
-
-/// Early stopping functionality for parsers.
-pub mod interrupter;
