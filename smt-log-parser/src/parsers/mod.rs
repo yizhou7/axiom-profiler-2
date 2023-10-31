@@ -39,8 +39,8 @@ impl<R: BufRead, Parser: LogParser> StreamParser<R, Parser> {
         let mut buffer = String::new();
         while !stop(&self.parser, self.line_no) {
             buffer.clear();
-            let _bytes_read = self.reader.read_line(&mut buffer).unwrap();
-            if !self.parser.process_line(buffer.trim_end(), self.line_no) {
+            let bytes_read = self.reader.read_line(&mut buffer).unwrap();
+            if bytes_read == 0 || !self.parser.process_line(buffer.trim_end(), self.line_no) {
                 self.finished = true;
                 let parser = std::mem::replace(&mut self.parser, Parser::default());
                 return ProcessResult::Return(parser);
