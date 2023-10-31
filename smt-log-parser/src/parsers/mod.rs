@@ -45,6 +45,7 @@ impl<R: BufRead, Parser: LogParser> StreamParser<R, Parser> {
                 let parser = std::mem::replace(&mut self.parser, Parser::default());
                 return ProcessResult::Return(parser);
             }
+            self.line_no += 1;
         }
         ProcessResult::Yield(&self.parser)
     }
