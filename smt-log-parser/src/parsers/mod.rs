@@ -13,6 +13,15 @@ pub enum ProcessResult<'a, T> {
     Return(T),
 }
 
+impl<'a, T> ProcessResult<'a, T> {
+    pub fn as_return(self) -> Option<T> {
+        match self {
+            ProcessResult::Yield(..) => None,
+            ProcessResult::Return(result) => Some(result),
+        }
+    }
+}
+
 /// Struct for a generic SMT solver trace parser. Supports parsing line-by-line with a callback to
 /// indicate if or when to pause. Intended to support different solvers or log formats.
 pub struct StreamParser<R: Read, P: LogParser> {
@@ -55,7 +64,8 @@ impl<Parser: LogParser> StreamParser<BufReader<File>, Parser> {
         let mut this = Self::new_file(path)?;
         let time = Instant::now();
         let result = this.process_until(|_, _| !timeout.is_zero() && Instant::now() - time > timeout);
-        Ok((matches!(result, ProcessResult::Yield(..)), this.parser))
+        let result = result.as_return();
+        Ok((result.is_none(), result.unwrap_or(this.parser)))
     }
 }
 impl<'a, Parser: LogParser> StreamParser<&'a [u8], Parser> {
@@ -66,7 +76,8 @@ impl<'a, Parser: LogParser> StreamParser<&'a [u8], Parser> {
         let mut this = Self::new_string(string);
         let time = Instant::now();
         let result = this.process_until(|_, _| !timeout.is_zero() && Instant::now() - time > timeout);
-        (matches!(result, ProcessResult::Yield(..)), this.parser)
+        let result = result.as_return();
+        (result.is_none(), result.unwrap_or(this.parser))
     }
 }
 
