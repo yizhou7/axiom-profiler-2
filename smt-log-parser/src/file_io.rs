@@ -1,9 +1,8 @@
+use std::fmt::Display;
 use std::fs::{File, OpenOptions, self};
 use std::io::{self, BufRead, Write, BufWriter};
 use std::path::Path;
 use serde::Deserialize;
-
-use crate::items;
 
 /// settings file
 const SETTINGS: &str = "settings.json";
@@ -23,8 +22,8 @@ where P: AsRef<Path>, {
 /// Writes the debug text of `obj` to `file`.
 /// # Panics
 /// Panics if an error occurs when writing to `file`.
-pub fn write<T>(file: &mut BufWriter<File>, obj: &T) where T: items::Print {
-    file.write_all(obj.format().as_bytes()).expect("write failed");
+pub fn write<T>(file: &mut BufWriter<File>, obj: &T) where T: Display {
+    file.write_all(obj.to_string().as_bytes()).expect("write failed");
 }
 
 /// Writes `text` to `file`. More general-purpose than `write<T>`.
@@ -70,9 +69,10 @@ pub struct Settings {
     // - number of instantiations to display in final visualization.
 }
 
-
 /// Read settings from `SETTINGS` json file, saving them to a `Settings` struct
 pub fn get_settings() -> Settings {
-    let settings_text = fs::read_to_string(SETTINGS).expect("settings file should exist");
-    serde_json::from_str(&settings_text).expect("Settings file should be valid JSON")
+    fs::read_to_string(SETTINGS)
+        .ok()
+        .map(|s| serde_json::from_str(&s).unwrap())
+        .unwrap_or_default()
 }

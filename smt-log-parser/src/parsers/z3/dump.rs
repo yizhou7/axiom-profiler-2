@@ -1,8 +1,8 @@
-use std::{time::Instant, collections::{BTreeMap, HashSet}, io::Write};
+use std::{time::Instant, collections::{BTreeMap, HashSet}, io::Write, fmt::Display};
 
 use serde::Serialize;
 
-use crate::{parsers::z3::z3parser::Z3Parser, file_io::{Settings, open_file_truncate, write_str, write}, items::{Term, Instantiation, Dependency, Quantifier, Print}};
+use crate::{parsers::z3::z3parser::Z3Parser, file_io::{Settings, open_file_truncate, write_str, write}, items::{Term, Instantiation, Dependency, Quantifier, TermIdCow}};
 
 // default output files
 const OUT_INST: &str = "out/instantiations.txt";
@@ -28,14 +28,16 @@ const OUT_EQ_JSON: &str = "out/eq_expls.json";
 impl Z3Parser {
     pub fn save_output_to_files(&mut self, settings: &Settings, now: &Instant) {
         // save terms
-        let terms_main = self.terms.0.get("").unwrap();
-        save_terms_to_txt(settings, terms_main);
-        save_to_json(OUT_TERMS_JSON, terms_main);
-        println!(
-            "Finished printing terms ({}) after {} seconds",
-            terms_main.len(),
-            now.elapsed().as_secs_f32()
-        );
+        if let Some(idxs) = self.idx_map.term_map.get("") {
+            let terms_main = idxs.iter().map(|(idx, value)| (*idx, &self.terms[value])).collect();
+            save_terms_to_txt(settings, &terms_main);
+            save_to_json(OUT_TERMS_JSON, &terms_main);
+            println!(
+                "Finished printing terms ({}) after {} seconds",
+                terms_main.len(),
+                now.elapsed().as_secs_f32()
+            );
+        }
 
         // update quantifier, instantiation costs
         self.update_costs();
@@ -150,14 +152,14 @@ impl Z3Parser {
         settings: &Settings
     ) where
         F: Fn(&V),
-        V: Print,
+        V: Display,
     {
         if settings.save_all_data {
             let mut file = open_file_truncate(filename);
             for item in map.values() {
                 do_stuff(item);
                 if settings.verbose {
-                    item.print();
+                    item.to_string();
                 }
                 write(&mut file, item);
             }
@@ -169,14 +171,14 @@ impl Z3Parser {
     fn save_to_file_vec<V, F>(filename: &str, vec: &Vec<V>, do_stuff: F, settings: &Settings)
     where
         F: Fn(&V),
-        V: Print,
+        V: Display,
     {
         if settings.save_all_data {
             let mut file = open_file_truncate(filename);
             for item in vec {
                 do_stuff(item);
                 if settings.verbose {
-                    item.print();
+                    item.to_string();
                 }
                 write(&mut file, item);
             }
@@ -219,13 +221,13 @@ impl Z3Parser {
             .collect::<Vec<Dependency>>()
     }
 
-    fn save_quants_to_txt(&self, settings: &Settings, quantifiers_main: &BTreeMap<usize, Quantifier>) {
+    fn save_quants_to_txt(&self, settings: &Settings, quantifiers_main: &BTreeMap<Option<usize>, Quantifier>) {
         if settings.save_all_data {
             let mut file = open_file_truncate(OUT_QUANT);
             let mut file2 = open_file_truncate(OUT_PRETTY_QUANT);
             for q in quantifiers_main.values() {
                 if settings.verbose {
-                    q.print();
+                    print!("{q}");
                 }
                 write(&mut file, q);
                 write_str(&mut file2, &(q.pretty_text(&self.terms) + "\n"));
@@ -243,7 +245,7 @@ impl Z3Parser {
     pub fn get_instantiation_graph(&mut self) -> &petgraph::Graph<usize, ()> {
         if self.qi_graph.node_count() <= 0 {
             let sorted_deps = self.get_sorted_dependencies();
-            let is_not_theory_inst: fn(&Dependency) -> bool = |d| d.quant != "arith#" && d.quant != "basic#"; 
+            let is_not_theory_inst: fn(&Dependency) -> bool = |d| d.quant != TermIdCow::parse("arith#") && d.quant != TermIdCow::parse("basic#"); 
             for dep in sorted_deps {
                 if is_not_theory_inst(&dep) {
                     // check first that it has not yet been inserted into self.line_nr_of_node
@@ -291,17 +293,16 @@ fn save_to_json_vec<T>(filename: &str, vec: &[T]) where T: Serialize {
 }
 
 
-fn save_terms_to_txt(settings: &Settings, terms_main: &BTreeMap<usize, Term>) {
+fn save_terms_to_txt(settings: &Settings, terms_main: &BTreeMap<Option<usize>, Term>) {
     if settings.save_all_data {
         let mut file = open_file_truncate(OUT_TERMS);
         let mut file2 = open_file_truncate(OUT_PRETTY_TERMS);
-        for i in 0..terms_main.len() {
-            let t = terms_main.get(&(i + 1)).unwrap();
+        for t in terms_main.values() {
             if settings.verbose {
-                t.print();
+                print!("{t}");
             }
             write(&mut file, t);
-            write_str(&mut file2, &format!("{}\n", &t.text));
+            write_str(&mut file2, &format!("{:?}\n", &t));
         }
         file.flush().unwrap();
         file2.flush().unwrap();

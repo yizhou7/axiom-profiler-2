@@ -1,17 +1,17 @@
 use std::{io::Write, collections::{BTreeSet, HashSet}};
-use crate::{file_io::open_file_truncate, items::Dependency};
+use crate::{file_io::open_file_truncate, items::{Dependency, TermId, TermIdCow, QuantIdx}};
 
 /// A node representing a quantifier instantiation.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 struct InstNode {
     line_no: usize,
-    quant: String
+    quant: QuantIdx,
 }
 
 /// Dot representation for each node.
 impl std::fmt::Display for InstNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let quant_id = self.quant.replace('#', "");
+        let quant_id = self.quant.to_string().replace('#', "");
         write!(f, "{} [ class=\"quant_{}\", tooltip=\"quant_{}\" ]", self.line_no, quant_id, self.quant)
     }
 }
@@ -45,9 +45,8 @@ fn get_dot(name: &str, node_list: &BTreeSet<InstNode>, edge_list: &BTreeSet<Inst
 }
 
 /// Filter out theory-solving instantiations
-fn filter_theory_inst(_dep: &Dependency) -> bool {
-    _dep.quant != "arith#" && _dep.quant != "basic#"
-    // true
+fn filter_theory_inst(dep: &Dependency) -> bool {
+    !dep.quant_discovered
 }
 
 /// Get nodes and edges from dependency list.
@@ -58,9 +57,9 @@ fn build_graph(dependencies: &Vec<Dependency>) -> (BTreeSet<InstNode>, BTreeSet<
     for dep in dependencies {
         if filter(dep) {
             if dep.from != 0 {
-                edge_list.insert(InstEdge { node1: dep.from, node2: dep.to });
+                edge_list.insert(InstEdge { node1: dep.from, node2: dep.to.unwrap_or_default() });
             }
-            node_list.insert(InstNode { line_no: dep.to, quant: dep.quant.clone() });
+            node_list.insert(InstNode { line_no: dep.to.unwrap_or_default(), quant: dep.quant });
         }
     }
     (node_list, edge_list)
@@ -106,7 +105,7 @@ fn output_css_to_file(filename: &str, node_list: &BTreeSet<InstNode>) {
     use crate::css::make_css;
     let mut file = open_file_truncate(filename);
     let quant_set: HashSet<String> = node_list.iter()
-    .map(|node| String::from("quant_") + &node.quant.replace('#', ""))
+    .map(|node| String::from("quant_") + &node.quant.to_string().replace('#', ""))
     .collect();
     let css = make_css::make_css_string(&quant_set);
     file.write_all(&css.into_bytes()).expect("failed to write CSS file");
@@ -120,14 +119,14 @@ mod tests {
     fn test_node_display() {
         let node1 = InstNode {
             line_no: 1,
-            quant: "#A".to_string()
+            quant: 0.into()
         };
         let node2 = InstNode {
             line_no: 2,
-            quant: "ns#B".to_string()
+            quant: 1.into()
         };
-        assert_eq!(&format!("{}", node1), "1 [ class=\"quant_A\", tooltip=\"quant_#A\" ]");
-        assert_eq!(&format!("{}", node2), "2 [ class=\"quant_nsB\", tooltip=\"quant_ns#B\" ]");
+        assert_eq!(&format!("{}", node1), "1 [ class=\"quant_A\", tooltip=\"q0\" ]");
+        assert_eq!(&format!("{}", node2), "2 [ class=\"quant_nsB\", tooltip=\"q1\" ]");
     }
 
     #[test]
@@ -143,11 +142,11 @@ mod tests {
     fn test_get_dot() {
         let node1 = InstNode {
             line_no: 1,
-            quant: "#A".to_string()
+            quant: 0.into()
         };
         let node2 = InstNode {
             line_no: 2,
-            quant: "ns#B".to_string()
+            quant: 1.into()
         };
         let edge = InstEdge {
             node1: 1,
@@ -157,8 +156,8 @@ mod tests {
         let edges = BTreeSet::from([edge]);
         assert_eq!(&get_dot("test", &nodes, &edges), 
         r#"digraph test {
-	1 [ class="quant_A", tooltip="quant_#A" ]
-	2 [ class="quant_nsB", tooltip="quant_ns#B" ]
+	1 [ class="quant_A", tooltip="q0" ]
+	2 [ class="quant_nsB", tooltip="q1" ]
 	1 -> 2 [ ]
 }
 "#);

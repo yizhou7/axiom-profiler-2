@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::fs::File;
 use std::path::Path;
 use futures::{AsyncRead, AsyncBufReadExt};
@@ -83,7 +84,7 @@ impl<'a, Parser: LogParser> StreamParser<&'a [u8], Parser> {
 }
 
 /// Trait for a generic SMT solver trace parser. Intended to support different solvers or log formats. 
-pub trait LogParser: Default {
+pub trait LogParser: Default + Debug {
     fn process_line(&mut self, line: &str, line_no: usize) -> bool;
 }
 
