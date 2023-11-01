@@ -5,7 +5,7 @@ on:
     branches: [ "main" ]
     # only triggers job when smt2 files are changed (added/removed/modified) in a push
     paths:
-      - '**/*.smt2'
+      - '**/smt-problems/*.smt2'
 
   # job can also be triggered manually on GitHub
   workflow_dispatch:
