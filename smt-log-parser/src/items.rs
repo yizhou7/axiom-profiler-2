@@ -289,12 +289,11 @@ impl<'a> TermIdCow<'a> {
     /// Splits an ID string into namespace and ID number.
     /// 0 is used for identifiers without a number
     /// (usually for theory-solving 'quantifiers' such as "basic#", "arith#")
-    #[must_use]   
+    #[must_use]
     pub fn parse(value: &'a str) -> Option<Self> {
-        let mut split = value.split('#');
-        let namespace = Cow::Borrowed(split.next()?);
-        let id = split.next()?;
-        assert!(split.next().is_none());
+        let hash_idx = value.find('#')?;
+        let namespace = Cow::Borrowed(&value[..hash_idx]);
+        let id = &value[hash_idx+1..];
         let id = match id {
             "" => None,
             id => Some(id.parse::<usize>().ok()?),

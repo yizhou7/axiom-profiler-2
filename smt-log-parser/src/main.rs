@@ -30,11 +30,16 @@ fn main() {
         }
         println!("Parsing {filename:?}");
         let time = Instant::now();
-        let parsed = StreamParser::parse_entire_file(path, Duration::from_secs_f32(10.0));
-        let (_timeout, mut result): (_, Z3Parser) = parsed.unwrap();
+        // // Use to test max loading speed
+        // let file = std::fs::read_to_string(path).unwrap();
+        // let len = file.chars().filter(|c| *c == '\n').count();
+        // let parsed = StreamParser::parse_entire_string(&file, Duration::from_secs_f32(10.0));
+        let to = Duration::from_secs_f32(15.0);
+        let parser = path.smt_try_parser_from::<Z3Parser>().unwrap();
+        let (timeout, mut result) = parser.process_all_timeout(to);
         let elapsed_time = time.elapsed();
         println!(
-            "Finished parsing after {} seconds\n",
+            "Finished parsing after {} seconds (timeout {timeout})\n",
             elapsed_time.as_secs_f32()
         );
         // result.save_output_to_files(&settings, &time);

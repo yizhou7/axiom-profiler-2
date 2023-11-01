@@ -1,4 +1,5 @@
-use std::{collections::{HashMap, BTreeMap}, str::Split};
+use std::{collections::BTreeMap, str::Split};
+use fxhash::FxHashMap;
 use typed_index_collections::TiVec;
 
 use petgraph::graph::Graph;
@@ -15,45 +16,45 @@ pub struct Z3Parser {
     pub(super) idx_map: IdxMap,
     pub(super) terms: TiVec<TermIdx, Term>,             // [namespace => [ID number => Term]]
     pub(super) quantifiers: TiVec<QuantIdx, Quantifier>, // [namespace => [ID number => Quantifier]]
-    pub(super) matches: HashMap<Fingerprint, Instantiation>, // [match line number => Instantiation]
+    pub(super) matches: FxHashMap<Fingerprint, Instantiation>, // [match line number => Instantiation]
     pub(super) instantiations: TiVec<InstIdx, Instantiation>, // [line number => Instantiation]
     // pub(super) inst_stack: Vec<(usize, Fingerprint)>, // [(line_no, fingerprint)]
     pub(super) inst_stack: Vec<InstIdx>,
-    pub(super) temp_dependencies: BTreeMap<usize, Vec<Dependency>>, // [match line number => Vec<Dependency>]
+    pub(super) temp_dependencies: FxHashMap<usize, Vec<Dependency>>, // [match line number => Vec<Dependency>]
     // pub(super) eq_expls: BTreeMap<String, EqualityExpl>, // [ID => EqualityExpl from ID]
     // pub(super) fingerprints: BTreeMap<usize, Fingerprint>, // [match_line_number => fingerprint]
     pub(super) dependencies: Vec<Dependency>,
     // pub continue_parsing: Arc<Mutex<bool>>, // continue parsing or not?
     // pub(super) qvar_re: Regex,
-    pub line_nr_of_node: BTreeMap<usize, usize>, // [node-idx => line number]
-    pub(super) node_of_line_nr: BTreeMap<usize, petgraph::graph::NodeIndex>, // [node-idx => line number]
+    pub line_nr_of_node: FxHashMap<usize, usize>, // [node-idx => line number]
+    pub(super) node_of_line_nr: FxHashMap<usize, petgraph::graph::NodeIndex>, // [node-idx => line number]
     pub(super) qi_graph: Graph::<usize, ()>,
 }
 
 #[derive(Debug, Default)]
 pub struct IdxMap {
-    pub(super) term_map: HashMap<String, BTreeMap<Option<usize>, TermIdx>>,
-    pub(super) discovered_map: HashMap<DiscoveredId, QuantIdx>,
+    term_map: FxHashMap<TermId, TermIdx>,
+    discovered_map: FxHashMap<DiscoveredId, QuantIdx>,
 }
 impl IdxMap {
     pub fn register_term(&mut self, id: TermIdCow, idx: TermIdx) {
         // The `id` of two different terms may clash and so we may remove
         // a `TermIdx` from the map. This is fine since we want future uses of
         // `id` to refer to the new term and not the old one.
-        self.term_map
-            .entry(id.namespace.into_owned())
-            .or_default()
-            .insert(id.id, idx);
+        self.term_map.insert(id.into_owned(), idx);
     }
     pub fn get_term(&self, id: TermIdCow) -> Option<TermIdx> {
-        self.term_map
-            .get(&*id.namespace)
-            .and_then(|term| term.get(&id.id))
-            .copied()
+        self.term_map.get(&id).copied()
+    }
+    pub fn discovered_quant(&mut self, id: DiscoveredId, default: impl FnOnce() -> QuantIdx) -> QuantIdx {
+        *self.discovered_map.entry(id).or_insert_with(default)
     }
 }
 
 impl Z3Parser {
+    pub fn version_info(&self) -> Option<&VersionInfo> {
+        self.version_info.as_ref()
+    }
     pub fn new_term(&mut self, id: TermIdCow, term: Term) -> TermIdx {
         let idx = self.terms.next_key();
         for c in &term.child_ids {
@@ -65,7 +66,7 @@ impl Z3Parser {
     }
 
     pub fn discovered_quant(&mut self, id: DiscoveredId, method: &str) -> QuantIdx {
-        *self.idx_map.discovered_map.entry(id).or_insert_with(||
+        self.idx_map.discovered_quant(id, ||
             self.quantifiers.push_and_get_key(Quantifier {
                 kind: QuantKind::Other(method.to_string()),
                 num_vars: 0,
@@ -602,17 +603,17 @@ impl Default for Z3Parser {
             version_info: None,
             terms: TiVec::new(),
             quantifiers: TiVec::new(),
-            matches: HashMap::new(),
+            matches: FxHashMap::default(),
             instantiations: TiVec::new(),
             inst_stack: Vec::new(),
-            temp_dependencies: BTreeMap::new(),
+            temp_dependencies: FxHashMap::default(),
             // eq_expls: BTreeMap::new(),
             // fingerprints: BTreeMap::new(),
             dependencies: Vec::new(),
             // continue_parsing: Arc::new(Mutex::new(true)),
             // qvar_re: Regex::new(QVAR_REGEX_STR).unwrap(),
-            line_nr_of_node: BTreeMap::new(),
-            node_of_line_nr: BTreeMap::new(),
+            line_nr_of_node: FxHashMap::default(),
+            node_of_line_nr: FxHashMap::default(),
             qi_graph: Graph::<usize, ()>::new(),
             idx_map: IdxMap::default(),
         }
