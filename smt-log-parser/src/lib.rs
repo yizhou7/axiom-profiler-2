@@ -7,11 +7,11 @@ pub mod items;
 /// Rendering for quantifier instantiation graphs.
 pub mod render;
 
-/// Generates CSS style sheets for static SVG outputs.
-mod css;
+// /// Generates CSS style sheets for static SVG outputs.
+// mod css;
 
-/// Generates Dot output from instantiation information.
-mod dot_output;
+// /// Generates Dot output from instantiation information.
+// mod dot_output;
 
 /// Manages different sorting/filtering functionality (currently empty).
 mod sort_filter;

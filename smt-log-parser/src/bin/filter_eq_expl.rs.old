@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fs};
 
-use smt_log_parser::{file_io, items::{self, EqualityExpl, BlamedTermItem, Instantiation}};
+use smt_log_parser::{file_io, items::{self, EqualityExpl, BlamedTermItem, Instantiation, Fingerprint, TermIdCow}};
 
 /// Just for testing "cg" equality explanations and finding the explanations they depend on.
 fn main() {
@@ -79,9 +79,9 @@ fn main() {
                 .map(|&t| String::from(t))
                 .collect();
             let mut blamed_terms: Vec<BlamedTermItem> = vec![];
-            let fingerprint = u64::from_str_radix(l[1], 16).expect("Should be valid hex string");
+            let fingerprint = Fingerprint::parse(&l[1]).unwrap();
             // fingerprints.insert(line_no + 1, fingerprint);
-            let quant_id = l[2];
+            let quant_id = TermIdCow::parse(&l[2]).unwrap().into_owned();
             let pattern_id = l[3];
             let mut equality_expls = vec![];
             let dep_instantiations = vec![];
@@ -102,13 +102,13 @@ fn main() {
                 }
             }
             let instant = Instantiation {
-                line_no: line_no + 1,
+                line_no: Some(line_no + 1),
                 match_line_no: line_no + 1,
                 fingerprint,
-                resulting_term: String::from("N/A"),
-                z3_gen: 0,
+                resulting_term: None,
+                z3_gen: None,
                 cost: 1.0,
-                quant_id: quant_id.to_string(),
+                quant_id,
                 pattern_id: pattern_id.to_string(),
                 yields_terms: vec![],
                 bound_terms,
@@ -170,5 +170,4 @@ fn get_all_equality_expls<'a>(from_term: &str, to_term: &str, eq_expls: &'a BTre
         }
     }
     result
-
 }
