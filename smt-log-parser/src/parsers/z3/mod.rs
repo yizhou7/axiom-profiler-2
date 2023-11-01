@@ -5,9 +5,6 @@ use super::LogParser;
 /// Original Z3 log parser. Works with Z3 v.4.12.1, should work with other versions
 /// as long as the log format is the same for the important line cases.
 /// Compare with the log files in the `logs/` folder to see if this is the case.
-/// 
-/// Tries to get around borrowing issues with indirection
-/// (saving ID strings to avoid managing actual references/pointers between terms/other items) and map lookups.
 pub mod z3parser;
 // pub mod dump;
 
@@ -69,11 +66,12 @@ impl<T: Z3LogParser + Default> LogParser for T {
                 self.conflict(split),
             _ => None,
         };
-        parse.unwrap_or_else(|| println!("Error parsing line: {line:?}"));
+        parse.unwrap_or_else(|| eprintln!("Error parsing line: {line:?}"));
         true
     }
 }
 
+const DEFAULT: Option<()> = Some(());
 pub trait Z3LogParser: Debug {
     /* Methods to handle each line case of Z3 logs.
      `l` is a line split with spaces as delimiters,
@@ -104,7 +102,6 @@ pub trait Z3LogParser: Debug {
     fn resolve_lit(&mut self, _l: Split<'_, char>) -> Option<()> { DEFAULT }
     fn conflict(&mut self, _l: Split<'_, char>) -> Option<()> { DEFAULT }
 }
-const DEFAULT: Option<()> = Some(());
 
 /// Type of solver and version number
 #[derive(Debug)]

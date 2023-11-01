@@ -1,5 +1,5 @@
 use gloo_file::{callbacks::FileReader, File, FileList};
-use smt_log_parser::parsers::AsyncStreamParser;
+use smt_log_parser::parsers::LogParser;
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
 use wasm_bindgen::JsCast;
 use wasm_streams::ReadableStream;
@@ -48,7 +48,7 @@ impl Component for FileDataComponent {
                     let blob: &web_sys::Blob = file.as_ref();
                     let stream = ReadableStream::from_raw(blob.stream().unchecked_into());
                     let read = stream.into_async_read();
-                    let mut read = AsyncStreamParser::<_, Z3Parser>::new_read(read);
+                    let mut read = Z3Parser::from_async(read);
                     wasm_bindgen_futures::spawn_local(async move {
                         // TODO: read file here
                         // let result = read.process_all().await;

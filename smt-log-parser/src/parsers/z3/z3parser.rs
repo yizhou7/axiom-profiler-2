@@ -1,14 +1,8 @@
-use std::{collections::BTreeMap, str::Split};
+use std::str::Split;
 use fxhash::FxHashMap;
 use typed_index_collections::TiVec;
 
-use petgraph::graph::Graph;
-// use regex::Regex;
-
 use crate::{items::*, parsers::z3::{VersionInfo, Z3LogParser}};
-
-// Regex constants for parsing quantifier variables and sorts (note the `|` splitting the two patterns)
-// const QVAR_REGEX_STR: &str = r"\(;(?P<sort_only>\S+)\)|\(\|(?P<name>\S+)\|\s;\s\|(?P<sort>\S+)\|\)";
 
 #[derive(Debug)]
 pub struct Z3Parser {
@@ -18,17 +12,9 @@ pub struct Z3Parser {
     pub(super) quantifiers: TiVec<QuantIdx, Quantifier>, // [namespace => [ID number => Quantifier]]
     pub(super) matches: FxHashMap<Fingerprint, Instantiation>, // [match line number => Instantiation]
     pub(super) instantiations: TiVec<InstIdx, Instantiation>, // [line number => Instantiation]
-    // pub(super) inst_stack: Vec<(usize, Fingerprint)>, // [(line_no, fingerprint)]
     pub(super) inst_stack: Vec<InstIdx>,
     pub(super) temp_dependencies: FxHashMap<usize, Vec<Dependency>>, // [match line number => Vec<Dependency>]
-    // pub(super) eq_expls: BTreeMap<String, EqualityExpl>, // [ID => EqualityExpl from ID]
-    // pub(super) fingerprints: BTreeMap<usize, Fingerprint>, // [match_line_number => fingerprint]
     pub(super) dependencies: Vec<Dependency>,
-    // pub continue_parsing: Arc<Mutex<bool>>, // continue parsing or not?
-    // pub(super) qvar_re: Regex,
-    pub line_nr_of_node: FxHashMap<usize, usize>, // [node-idx => line number]
-    pub(super) node_of_line_nr: FxHashMap<usize, petgraph::graph::NodeIndex>, // [node-idx => line number]
-    pub(super) qi_graph: Graph::<usize, ()>,
 }
 
 #[derive(Debug, Default)]
@@ -406,60 +392,6 @@ impl Z3LogParser for Z3Parser {
                 blamed_terms.push(BlamedTermItem::Single(widx));
             }
         }
-
-        // let mut blamed_terms: Vec<BlamedTermItem> = Vec::new();
-        // let mut equality_expls = Vec::new();
-        // let mut dep_instantiations = Vec::new();
-        // self.temp_dependencies.insert(line_no + 1, Vec::new());
-        // for (i, word) in l[semicolon_index + 1..].iter().enumerate() {
-        //     if let Some(first_term) = word.strip_prefix('(') {
-        //         // assumes that if we see "(#A", the next word in the split is "#B)"
-        //         let next_word = l[semicolon_index + i + 2];
-        //         let second_term = next_word.strip_suffix(')').unwrap();
-        //         if first_term != second_term {
-        //             let eq = self.eq_expls.get(first_term).unwrap();
-        //             equality_expls.push(first_term.to_string());
-        //             use crate::items::EqualityExpl::*;
-        //             match eq {
-        //                 Root { .. } => {}
-        //                 Literal { eq: from, .. } => {
-        //                     // let from = TermIdCow::parse(&**from);
-        //                     Z3Parser::add_dependency(
-        //                         &self.terms,
-        //                         *from,
-        //                         &mut self.instantiations,
-        //                         &mut self.temp_dependencies,
-        //                         &mut dep_instantiations,
-        //                         DepType::Equality,
-        //                         line_no + 1,
-        //                     );
-        //                 }
-        //                 Congruence { .. } => {} // need to implement this?
-        //                 Theory { .. } => {}
-        //                 Axiom { .. } => {}
-        //                 Unknown { .. } => {}
-        //             }
-        //         }
-        //         blamed_terms.push(BlamedTermItem::Pair(
-        //             first_term.to_string(),
-        //             next_word[..next_word.len() - 1].to_string(),
-        //         ));
-        //     } else if !word.ends_with(')') {
-        //         let word = TermIdCow::parse(*word).into_owned();
-        //         Z3Parser::add_dependency(
-        //             &mut self.terms,
-        //             &word,
-        //             &mut self.instantiations,
-        //             &mut self.temp_dependencies,
-        //             &mut dep_instantiations,
-        //             DepType::Term,
-        //             line_no + 1,
-        //         );
-
-        //         blamed_terms.push(BlamedTermItem::Single(word));
-        //     }
-        // }
-        // let tidx = self.parse_existing_id(id);
         if dep_instantiations.is_empty() {
             self.add_blank_dependency_if_needed(
                 quant,
@@ -607,14 +539,7 @@ impl Default for Z3Parser {
             instantiations: TiVec::new(),
             inst_stack: Vec::new(),
             temp_dependencies: FxHashMap::default(),
-            // eq_expls: BTreeMap::new(),
-            // fingerprints: BTreeMap::new(),
             dependencies: Vec::new(),
-            // continue_parsing: Arc::new(Mutex::new(true)),
-            // qvar_re: Regex::new(QVAR_REGEX_STR).unwrap(),
-            line_nr_of_node: FxHashMap::default(),
-            node_of_line_nr: FxHashMap::default(),
-            qi_graph: Graph::<usize, ()>::new(),
             idx_map: IdxMap::default(),
         }
     }
@@ -646,13 +571,8 @@ impl Z3Parser {
     #[must_use]
     fn add_dependency(
         &self,
-        // terms: &TiVec<TermIdx, Term>,
         from_term: TermIdx,
-        // instantiations: &TiVec<InstIdx, Instantiation>,
-        // dep_insts: &mut Vec<usize>,
         dep_type: DepType,
-        // match_line: usize,
-        // temp_deps: &mut BTreeMap<usize, Vec<Dependency>>,
     ) -> Option<(InstIdx, Dependency)> {
         let eq_term = &self.terms[from_term];
         eq_term.resp_inst.map(|inst| {

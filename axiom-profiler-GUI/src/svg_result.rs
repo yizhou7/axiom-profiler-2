@@ -1,9 +1,8 @@
 use std::time::Duration;
 
-use smt_log_parser::parsers::ToStreamParser;
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
 use yew::prelude::*;
-use smt_log_parser::parsers::{z3::z3parser, LogParser, StreamParser};
+use smt_log_parser::parsers::LogParser;
 use viz_js::VizInstance;
 use petgraph::dot::{Dot, Config};
 use crate::graph::{Graph, GraphProps};
@@ -33,7 +32,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
             //     max_line_nr: max_log_line_nr as u32, 
             //     max_instantiations: max_instantiations as u32, 
             // });
-            let parser = trace_file_text.as_str().smt_parser_from::<Z3Parser>();
+            let parser = Z3Parser::from_str(trace_file_text.as_str());
             let mut parser = parser.process_all();
             let qi_graph = parser.get_instantiation_graph();
             let dot_output = format!("{:?}", Dot::with_config(qi_graph, &[Config::EdgeNoLabel])); 
