@@ -1,17 +1,20 @@
-use std::str::Split;
 use fxhash::FxHashMap;
+use std::str::Split;
 use typed_index_collections::TiVec;
 
-use crate::{items::*, parsers::z3::{VersionInfo, Z3LogParser}};
+use crate::{
+    items::*,
+    parsers::z3::{VersionInfo, Z3LogParser},
+};
 
 #[derive(Debug)]
 pub struct Z3Parser {
     pub(super) version_info: Option<VersionInfo>,
     pub(super) idx_map: IdxMap,
-    pub(super) terms: TiVec<TermIdx, Term>,             // [namespace => [ID number => Term]]
+    pub(super) terms: TiVec<TermIdx, Term>, // [namespace => [ID number => Term]]
     pub(super) quantifiers: TiVec<QuantIdx, Quantifier>, // [namespace => [ID number => Quantifier]]
     pub(super) matches: FxHashMap<Fingerprint, Instantiation>, // [match line number => Instantiation]
-    pub(super) instantiations: TiVec<InstIdx, Instantiation>, // [line number => Instantiation]
+    pub(super) instantiations: TiVec<InstIdx, Instantiation>,  // [line number => Instantiation]
     pub(super) inst_stack: Vec<InstIdx>,
     pub(super) temp_dependencies: FxHashMap<usize, Vec<Dependency>>, // [match line number => Vec<Dependency>]
     pub(super) dependencies: Vec<Dependency>,
@@ -32,7 +35,11 @@ impl IdxMap {
     pub fn get_term(&self, id: TermIdCow) -> Option<TermIdx> {
         self.term_map.get(&id).copied()
     }
-    pub fn discovered_quant(&mut self, id: DiscoveredId, default: impl FnOnce() -> QuantIdx) -> QuantIdx {
+    pub fn discovered_quant(
+        &mut self,
+        id: DiscoveredId,
+        default: impl FnOnce() -> QuantIdx,
+    ) -> QuantIdx {
         *self.discovered_map.entry(id).or_insert_with(default)
     }
 }
@@ -52,7 +59,7 @@ impl Z3Parser {
     }
 
     pub fn discovered_quant(&mut self, id: DiscoveredId, method: &str) -> QuantIdx {
-        self.idx_map.discovered_quant(id, ||
+        self.idx_map.discovered_quant(id, || {
             self.quantifiers.push_and_get_key(Quantifier {
                 kind: QuantKind::Other(method.to_string()),
                 num_vars: 0,
@@ -61,7 +68,7 @@ impl Z3Parser {
                 cost: 0.0,
                 vars: None,
             })
-        )
+        })
     }
 
     #[must_use]
@@ -93,7 +100,9 @@ impl Z3Parser {
             }
             let tuples = t.map(|t| strip_bars(t?));
             let names_and_types = [strip_bars((first, second))].into_iter().chain(tuples);
-            Some(VarNames::NameAndType(names_and_types.collect::<Option<Vec<_>>>()?))
+            Some(VarNames::NameAndType(
+                names_and_types.collect::<Option<Vec<_>>>()?,
+            ))
         }
     }
     /// Gobble tuples with any of the following forms (`A` and `B` can be empty):
@@ -104,7 +113,9 @@ impl Z3Parser {
     /// If `FORMS_EQUAL` is true, then it will return `None` for any tuples which have a different
     /// form to the first tuple.
     #[must_use]
-    fn gobble_tuples<'a, const FORMS_EQUAL: bool>(mut l: impl Iterator<Item = &'a str>) -> impl Iterator<Item = Option<(&'a str, &'a str)>> {
+    fn gobble_tuples<'a, const FORMS_EQUAL: bool>(
+        mut l: impl Iterator<Item = &'a str>,
+    ) -> impl Iterator<Item = Option<(&'a str, &'a str)>> {
         let mut spaces = None;
         let mut gobble = move || {
             let Some(first) = l.next() else {
@@ -137,23 +148,30 @@ impl Z3Parser {
             let t = (first.strip_prefix('(')?, second.strip_suffix(')')?);
             Some(Some(t))
         };
-        let inverted_gobble = move |_|
-            gobble().map_or(Some(None), |x| x.map(Some));
+        let inverted_gobble = move |_| gobble().map_or(Some(None), |x| x.map(Some));
         std::iter::repeat(()).map_while(inverted_gobble)
     }
     #[must_use]
-    fn gobble_id_pairs<'a>(&self, l: impl Iterator<Item = &'a str>) -> Option<Vec<(TermIdx, TermIdx)>> {
-        Self::gobble_tuples::<true>(l).map(|t| {
-            let (first, second) = t?;
-            let first = self.parse_existing_id(first)?;
-            let second = self.parse_existing_id(second)?;
-            Some((first, second))
-        }).collect()
+    fn gobble_id_pairs<'a>(
+        &self,
+        l: impl Iterator<Item = &'a str>,
+    ) -> Option<Vec<(TermIdx, TermIdx)>> {
+        Self::gobble_tuples::<true>(l)
+            .map(|t| {
+                let (first, second) = t?;
+                let first = self.parse_existing_id(first)?;
+                let second = self.parse_existing_id(second)?;
+                Some((first, second))
+            })
+            .collect()
     }
     /// Create a new iterator which will only consume elements from `l` until
     /// it finds `end`. The element `end` will also be consumed but no other elements after that will.
     #[must_use]
-    fn iter_until_eq<'a, 's>(l: &'a mut Split<'s, char>, end: &'a str) -> impl Iterator<Item = &'s str> + 'a {
+    fn iter_until_eq<'a, 's>(
+        l: &'a mut Split<'s, char>,
+        end: &'a str,
+    ) -> impl Iterator<Item = &'s str> + 'a {
         l.take_while(move |elem| *elem != end)
     }
     #[must_use]
@@ -170,10 +188,7 @@ impl Z3LogParser for Z3Parser {
         l.next().map_or(Some(()), |_| None)?;
         let version = semver::Version::parse(version).ok()?;
         println!("{solver} {version}");
-        self.version_info = Some(VersionInfo {
-            solver,
-            version,
-        });
+        self.version_info = Some(VersionInfo { solver, version });
         Some(())
     }
 
@@ -247,10 +262,7 @@ impl Z3LogParser for Z3Parser {
         let id = l.next()?;
         let theory = l.next()?.to_string();
         let value = l.collect::<Vec<_>>().join(" ");
-        let meaning = Meaning {
-            theory,
-            value,
-        };
+        let meaning = Meaning { theory, value };
         let idx = self.parse_existing_id(id)?;
         if let Some(old) = &self.terms[idx].meaning {
             assert_eq!(old, &meaning);
@@ -301,20 +313,28 @@ impl Z3LogParser for Z3Parser {
                 "cg" => {
                     let arg_eqs = self.gobble_id_pairs(kind_dependent_info)?;
                     let to = self.parse_existing_id(l.next()?)?;
-                    EqualityExpl::Congruence { from: idx, arg_eqs, to }
+                    EqualityExpl::Congruence {
+                        from: idx,
+                        arg_eqs,
+                        to,
+                    }
                     // For each pair (#A #B), reconstruct dependent equality explanations connecting #A to #B ...
                 }
                 "th" => {
                     let theory = kind_dependent_info.next()?.to_string();
                     Self::expect_completed(kind_dependent_info)?;
                     let to = self.parse_existing_id(l.next()?)?;
-                    EqualityExpl::Theory { from: idx, theory, to }
-                },
+                    EqualityExpl::Theory {
+                        from: idx,
+                        theory,
+                        to,
+                    }
+                }
                 "ax" => {
                     Self::expect_completed(kind_dependent_info)?;
                     let to = self.parse_existing_id(l.next()?)?;
                     EqualityExpl::Axiom { from: idx, to }
-                },
+                }
                 kind => {
                     let args = kind_dependent_info.map(String::from).collect();
                     let to = self.parse_existing_id(l.next()?)?;
@@ -342,9 +362,9 @@ impl Z3LogParser for Z3Parser {
         let idx = self.parse_existing_id(l.next()?)?;
         let quant = self.terms[idx].kind.quant_idx().unwrap();
         let pattern = self.parse_existing_id(l.next()?)?;
-        let bound_terms = Self::iter_until_eq(&mut l, ";").map(
-            |id| self.parse_existing_id(id)
-        ).collect::<Option<Vec<_>>>()?;
+        let bound_terms = Self::iter_until_eq(&mut l, ";")
+            .map(|id| self.parse_existing_id(id))
+            .collect::<Option<Vec<_>>>()?;
 
         self.temp_dependencies.insert(line_no + 1, Vec::new());
 
@@ -363,14 +383,17 @@ impl Z3LogParser for Z3Parser {
                         // TODO: why could this never iterate, why could it iterate more than once?
                         match eq {
                             EqualityExpl::Root { .. } => (),
-                            EqualityExpl::Literal { eq, .. } =>
-                                if let Some((inst, dep)) = self.add_dependency(
-                                    *eq,
-                                    DepType::Equality,
-                                ) {
-                                    self.temp_dependencies.get_mut(&(line_no + 1)).unwrap().push(dep);
+                            EqualityExpl::Literal { eq, .. } => {
+                                if let Some((inst, dep)) =
+                                    self.add_dependency(*eq, DepType::Equality)
+                                {
+                                    self.temp_dependencies
+                                        .get_mut(&(line_no + 1))
+                                        .unwrap()
+                                        .push(dep);
                                     dep_instantiations.push(inst);
-                                },
+                                }
+                            }
                             EqualityExpl::Congruence { .. } => (), // TODO: need to implement this?
                             EqualityExpl::Theory { .. } => (),
                             EqualityExpl::Axiom { .. } => (),
@@ -382,22 +405,18 @@ impl Z3LogParser for Z3Parser {
                 blamed_terms.push(BlamedTermItem::Pair(fidx, sidx));
             } else {
                 let widx = self.parse_existing_id(word)?;
-                if let Some((inst, dep)) = self.add_dependency(
-                    widx,
-                    DepType::Term,
-                ) {
-                    self.temp_dependencies.get_mut(&(line_no + 1)).unwrap().push(dep);
+                if let Some((inst, dep)) = self.add_dependency(widx, DepType::Term) {
+                    self.temp_dependencies
+                        .get_mut(&(line_no + 1))
+                        .unwrap()
+                        .push(dep);
                     dep_instantiations.push(inst);
                 }
                 blamed_terms.push(BlamedTermItem::Single(widx));
             }
         }
         if dep_instantiations.is_empty() {
-            self.add_blank_dependency_if_needed(
-                quant,
-                false,
-                line_no + 1,
-            );
+            self.add_blank_dependency_if_needed(quant, false, line_no + 1);
         }
         let instant = Instantiation {
             match_line_no: line_no + 1,
@@ -430,21 +449,22 @@ impl Z3LogParser for Z3Parser {
                 let id = DiscoveredId::TheorySolving(ts_id.into_owned());
                 let quant = self.discovered_quant(id, method);
                 let maybe_semi = l.next(); // Skip `;`
-                // Return if there is unexpectedly some string other than `;`
-                maybe_semi.filter(|s| *s != ";").map_or(Some(()), |_| None)?;
+                                           // Return if there is unexpectedly some string other than `;`
+                maybe_semi
+                    .filter(|s| *s != ";")
+                    .map_or(Some(()), |_| None)?;
 
-                let blamed_terms = l
-                        .map(|id| {
-                            let id = self.parse_existing_id(id)?;
-                            if let Some((inst, dep)) = self.add_dependency(
-                                id,
-                                DepType::Term,
-                            ) {
-                                self.temp_dependencies.get_mut(&(line_no + 1)).unwrap().push(dep);
-                                dep_instantiations.push(inst);
-                            };
-                            Some(BlamedTermItem::Single(id))
-                        });
+                let blamed_terms = l.map(|id| {
+                    let id = self.parse_existing_id(id)?;
+                    if let Some((inst, dep)) = self.add_dependency(id, DepType::Term) {
+                        self.temp_dependencies
+                            .get_mut(&(line_no + 1))
+                            .unwrap()
+                            .push(dep);
+                        dep_instantiations.push(inst);
+                    };
+                    Some(BlamedTermItem::Single(id))
+                });
                 (quant, Vec::new(), blamed_terms.collect::<Option<Vec<_>>>()?)
             }
             "MBQI" => {
@@ -456,11 +476,7 @@ impl Z3LogParser for Z3Parser {
             _ => return None,
         };
         if dep_instantiations.is_empty() {
-            self.add_blank_dependency_if_needed(
-                quant,
-                true,
-                line_no + 1,
-            );
+            self.add_blank_dependency_if_needed(quant, true, line_no + 1);
         }
         let instant = Instantiation {
             match_line_no: line_no + 1,
@@ -561,7 +577,10 @@ impl Z3Parser {
             quant,
             quant_discovered,
         };
-        self.temp_dependencies.get_mut(&match_line).unwrap().push(dep);
+        self.temp_dependencies
+            .get_mut(&match_line)
+            .unwrap()
+            .push(dep);
     }
 
     /// Add a (partial) instantiation dependency from the quantifier that instantiated the term with ID `from`, if there is one.

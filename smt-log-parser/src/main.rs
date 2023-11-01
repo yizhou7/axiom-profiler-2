@@ -1,9 +1,7 @@
 use serde::Deserialize;
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
-use smt_log_parser::parsers::*;
-use std::borrow::Cow;
-use std::env;
-use std::time::Duration;
+use smt_log_parser::parsers::LogParser;
+use std::{borrow::Cow, env, time::Duration};
 use wasm_timer::Instant;
 
 fn main() {
@@ -32,7 +30,7 @@ fn main() {
         // let len = file.chars().filter(|c| *c == '\n').count();
         // let parsed = StreamParser::parse_entire_string(&file, Duration::from_secs_f32(10.0));
         let to = Duration::from_secs_f32(15.0);
-        let (_metadata, parser) = path.smt_try_parser_from::<Z3Parser>().unwrap();
+        let (_metadata, parser) = Z3Parser::from_file(path).unwrap();
         let (timeout, _result) = parser.process_all_timeout(to);
         let elapsed_time = time.elapsed();
         println!(
