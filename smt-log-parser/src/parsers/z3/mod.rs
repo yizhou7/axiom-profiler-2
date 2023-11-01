@@ -6,6 +6,7 @@ use super::LogParser;
 /// as long as the log format is the same for the important line cases.
 /// Compare with the log files in the `logs/` folder to see if this is the case.
 pub mod z3parser;
+pub mod results;
 // pub mod dump;
 
 impl<T: Z3LogParser + Default> LogParser for T {
