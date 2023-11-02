@@ -1,16 +1,8 @@
-use smt_log_parser::file_io::*;
-use smt_log_parser::parsers::*;
+use serde::Deserialize;
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
-use smt_log_parser::render::*;
-use std::borrow::Cow;
-use std::env;
-use std::time::Duration;
+use smt_log_parser::parsers::LogParser;
+use std::{borrow::Cow, env, time::Duration};
 use wasm_timer::Instant;
-
-// default output files
-const OUT_DOT: &str = "out/output.dot";
-const OUT_SVG_2: &str = "out/output2.svg";
-const OUT_SVG: &str = "out/output.svg";
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -23,7 +15,10 @@ fn main() {
 
     for path in &*filenames {
         let path = std::path::Path::new(path);
-        let filename = path.file_name().map(|f| f.to_string_lossy()).unwrap_or_default();
+        let filename = path
+            .file_name()
+            .map(|f| f.to_string_lossy())
+            .unwrap_or_default();
         if !path.is_file() {
             println!("Skipping {filename:?}");
             continue;
@@ -35,8 +30,8 @@ fn main() {
         // let len = file.chars().filter(|c| *c == '\n').count();
         // let parsed = StreamParser::parse_entire_string(&file, Duration::from_secs_f32(10.0));
         let to = Duration::from_secs_f32(15.0);
-        let parser = path.smt_try_parser_from::<Z3Parser>().unwrap();
-        let (timeout, mut result) = parser.process_all_timeout(to);
+        let (_metadata, parser) = Z3Parser::from_file(path).unwrap();
+        let (timeout, _result) = parser.process_all_timeout(to);
         let elapsed_time = time.elapsed();
         println!(
             "Finished parsing after {} seconds (timeout {timeout})\n",
@@ -50,8 +45,44 @@ fn main() {
         //     "Finished render sequence after {} seconds",
         //     time.elapsed().as_secs_f32()
         // );
-    
+
         // let elapsed_time = time.elapsed();
         // println!("Done, run took {} seconds.", elapsed_time.as_secs_f32());
     }
+}
+
+/// Parsing settings.
+#[derive(Default, Clone, Debug, Deserialize)]
+pub struct Settings {
+    // not all settings currently work
+    /// Name of file to parse.
+    pub file: String,
+    /// Whether to consider terms with reused IDs as separate from previous terms with the same ID. Does not work yet.
+    pub reuses: bool,
+    /// Print contents of parser to standard output item by item.
+    pub verbose: bool,
+    /// Whether to print all text/json files (Dot and SVG will always be generated regardless of this setting)
+    pub save_all_data: bool,
+    /// Select a sort type (by line number, cost, depth, etc.)
+    /// Does not work yet.
+    /// ## TODO
+    /// Replace with an enum
+    pub sort_by: String,
+    /// Stop parsing after a certain amount of time. Does not work yet.
+    pub timeout: f32,
+    /// Parse only up to a certain number of lines. Does not work yet.
+    pub line_limit: usize,
+    // add settings for:
+    // - number of instantiations to display in final visualization.
+}
+
+/// settings file
+const SETTINGS: &str = "settings.json";
+
+/// Read settings from `SETTINGS` json file, saving them to a `Settings` struct
+pub fn get_settings() -> Settings {
+    std::fs::read_to_string(SETTINGS)
+        .ok()
+        .map(|s| serde_json::from_str(&s).unwrap())
+        .unwrap_or_default()
 }

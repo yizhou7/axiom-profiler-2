@@ -1,14 +1,16 @@
+use futures::{AsyncBufRead, AsyncBufReadExt, AsyncRead};
 use std::fmt::Debug;
-use std::fs::File;
+use std::fs::{File, Metadata};
+use std::io::{BufRead, BufReader, Result};
 use std::path::Path;
-use futures::{AsyncRead, AsyncBufReadExt};
-use wasm_timer::Instant;
 use std::time::Duration;
-use std::io::{BufRead, BufReader, Read};
+use wasm_timer::Instant;
+pub use self::wrapper_stream_parser::*;
+pub use self::wrapper_async_parser::*;
 
 pub mod z3;
 
-/// Trait for a generic SMT solver trace parser. Intended to support different solvers or log formats. 
+/// Trait for a generic SMT solver trace parser. Intended to support different solvers or log formats.
 pub trait LogParser: Default + Debug {
     fn process_line(&mut self, line: &str, line_no: usize) -> bool;
 
@@ -16,205 +18,195 @@ pub trait LogParser: Default + Debug {
     /// convenience methods:
     /// - [`new_file`] for creating a streaming parser from a file path
     /// - [`new_str`] for creating a parser from a strings
-    /// 
+    ///
     /// The provided `end_data` will be seen with each callback to `stop` in
     /// [`process_until`].
-    fn from<R: BufRead, E>(reader: R, end_data: E) -> StreamParser<R, E, Self> {
-        let reader_state = ReaderState::new(end_data);
-        StreamParser { reader, reader_state, parser: Self::default(), finished: false }
+    fn from<'r, R: BufRead + 'r>(reader: R) -> StreamParser<'r, Self> {
+        StreamParser::new(reader)
     }
-    fn from_str<R: Read, E, ToStream: ToStreamParser<R, E>>(ts: ToStream) -> StreamParser<R, E, Self> {
-        ts.smt_parser_from()
+    fn from_async<'r, R: AsyncBufRead + Unpin + 'r>(reader: R) -> AsyncParser<'r, Self> {
+        AsyncParser::new(reader)
     }
+
+    /// Creates a new parser from the contents of a log file.
+    fn from_str<'r>(s: &'r str) -> StreamParser<'r, Self> {
+        s.as_bytes().into_parser()
+    }
+    /// Creates a new parser from the contents of a log file.
+    fn from_string(s: String) -> StreamParser<'static, Self> {
+        s.into_cursor().into_parser()
+    }
+
     /// Creates a new streaming parser from a file. The `end_data` is the total
     /// number of bytes in the file.
-    /// 
-    /// This method is an alternative to `fs::read_to_string(self)?.parser_from()`.
+    ///
+    /// This method is an alternative to `from_string(fs::read_to_string(self)?)`.
     /// This approach to parsing is ~5% slower, but should use only ~50% as much
     /// memory due to not having the entire loaded String in memory.
-    fn from_file<R: Read, E, Error, ToStream: ToStreamParserMaybe<R, E, Error>>(ts: ToStream) -> Result<StreamParser<R, E, Self>, Error> {
-        ts.smt_try_parser_from()
+    fn from_file<P: AsRef<Path>>(
+        p: P,
+    ) -> Result<(Metadata, StreamParser<'static, Self>)> {
+        let (meta, reader) = p.read_open()?;
+        Ok((meta, reader.into_parser()))
     }
 }
 
-pub trait ToStreamParser<R: Read, EndData> {
+////////////////////
+// Parser Creation
+////////////////////
+
+pub trait IntoStreamParser<'r> {
     /// TODO: doc
-    fn smt_parser_from<Parser: LogParser>(self) -> StreamParser<R, EndData, Parser>;
+    fn into_parser<Parser: LogParser>(self) -> StreamParser<'r, Parser>;
 }
-impl<'a> ToStreamParser<&'a [u8], usize> for &'a str {
-    fn smt_parser_from<Parser: LogParser>(self) -> StreamParser<&'a [u8], usize, Parser> {
-        Parser::from(self.as_bytes(), self.len())
+impl<'r, R: BufRead + 'r> IntoStreamParser<'r> for R {
+    fn into_parser<Parser: LogParser>(self) -> StreamParser<'r, Parser> {
+        Parser::from(self)
     }
 }
 
-pub trait ToStreamParserMaybe<R: Read, EndData, Error> {
-    /// Creates a new streaming parser from a file. The `end_data` is the total
-    /// number of bytes in the file.
-    /// 
-    /// This method is an alternative to `fs::read_to_string(self)?.smt_parser_from()`.
-    /// This approach to parsing is ~5% slower, but should use only ~50% as much
-    /// memory due to not having the entire loaded String in memory.
-    fn smt_try_parser_from<Parser: LogParser>(self) -> Result<StreamParser<R, EndData, Parser>, Error>;
+pub trait CursorRead: AsRef<[u8]> + Sized {
+    /// Turns any `[u8]` data such as a [`String`] into
+    /// a [`Cursor`](std::io::Cursor) which implements [`BufRead`](std::io::BufRead).
+    /// Intended to be chained with [`into_parser`](IntoStreamParser::into_parser).
+    fn into_cursor(self) -> std::io::Cursor<Self> {
+        std::io::Cursor::new(self)
+    }
 }
-impl<P: AsRef<Path>> ToStreamParserMaybe<BufReader<File>, u64, std::io::Error> for P {
-    fn smt_try_parser_from<Parser: LogParser>(self) -> std::io::Result<StreamParser<BufReader<File>, u64, Parser>> {
+impl<T: AsRef<[u8]>> CursorRead for T {}
+
+pub trait FileRead: AsRef<Path> + Sized {
+    fn read_open(self) -> Result<(Metadata, BufReader<File>)> {
         let file = File::open(self)?;
-        let bytes_size = file.metadata()?.len();
+        let metadata = file.metadata()?;
         let reader = BufReader::new(file);
-        Ok(Parser::from(reader, bytes_size))
+        Ok((metadata, reader))
+    }
+}
+impl<T: AsRef<Path>> FileRead for T {}
+
+pub trait IntoAsyncParser<'r> {
+    /// TODO: doc
+    fn into_async_parser<Parser: LogParser>(self) -> AsyncParser<'r, Parser>;
+}
+impl<'r, R: AsyncBufRead + Unpin + 'r> IntoAsyncParser<'r> for R {
+    fn into_async_parser<Parser: LogParser>(
+        self,
+    ) -> AsyncParser<'r, Parser> {
+        Parser::from_async(self)
     }
 }
 
-/// The result of a single call to [`StreamParser::process_until`].
-/// If the stopping condition is true then we yield the current parser state,
-/// otherwise once the parser is finished we return the final parser state.
-// TODO: use generators instead once they are stabilized
-pub enum ProcessResult<'a, T, S> {
-    Yield(&'a T, &'a S),
-    Return(T),
-}
-
-impl<'a, T, S> ProcessResult<'a, T, S> {
-    /// Return the parser state regardless of whether it is finished or not.
-    pub fn yield_state(&self) -> Option<(&T, &S)> {
-        match self {
-            ProcessResult::Yield(result, rs) => Some((*result, *rs)),
-            ProcessResult::Return(_) => None,
-        }
-    }
-    /// Return the parser state regardless of whether it is finished or not.
-    pub fn any_state(&self) -> &T {
-        match self {
-            ProcessResult::Yield(result, _) => *result,
-            ProcessResult::Return(result) => result,
-        }
-    }
-    /// Return the parser state if it is finished, otherwise return `None`.
-    pub fn return_state(self) -> Option<T> {
-        match self {
-            ProcessResult::Yield(..) => None,
-            ProcessResult::Return(result) => Some(result),
-        }
+pub trait AsyncBufferRead: AsyncRead + Sized {
+    fn buffer(self) -> futures::io::BufReader<Self> {
+        futures::io::BufReader::new(self)
     }
 }
+impl<T: AsyncRead> AsyncBufferRead for T {}
 
-#[derive(Debug, Clone, Copy)]
-pub struct ReaderState<E> {
+pub trait AsyncCursorRead: AsRef<[u8]> + Unpin + Sized {
+    fn into_async_cursor(self) -> futures::io::Cursor<Self> {
+        futures::io::Cursor::new(self)
+    }
+}
+impl<T: AsRef<[u8]> + Unpin> AsyncCursorRead for T {}
+
+////////////////////
+// Parser Execution
+////////////////////
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ReaderState {
     /// The number of bytes parsed so far.
     pub bytes_read: usize,
     /// The number of lines parsed so far.
     pub lines_read: usize,
-    /// The end data provided when crating the parser
-    /// state. Usually represents the total number of
-    /// bytes needed to parse.
-    pub end_data: E,
 }
-impl<E> ReaderState<E> {
-    fn new(end_data: E) -> Self {
-        Self { lines_read: 0, bytes_read: 0, end_data }
+
+#[duplicate::duplicate_item(
+    EitherParser   ReadBound              async   add_await(code);
+    [StreamParser] [BufRead + 'r]              []      [code];
+    [AsyncParser]  [AsyncBufRead + Unpin + 'r] [async] [code.await];
+)]
+mod wrapper {
+    use super::*;
+
+    /// Struct for a generic SMT solver trace parser. Supports parsing line-by-line with a callback to
+    /// indicate if or when to pause. Intended to support different solvers or log formats.
+    pub struct EitherParser<'r, P: LogParser> {
+        reader: Box<dyn ReadBound>,
+        reader_state: ReaderState,
+        parser: Option<P>,
     }
-}
-
-/// Struct for a generic SMT solver trace parser. Supports parsing line-by-line with a callback to
-/// indicate if or when to pause. Intended to support different solvers or log formats.
-pub struct StreamParser<R: Read, E, P: LogParser> {
-    reader: R,
-    reader_state: ReaderState<E>,
-    parser: P,
-    finished: bool,
-}
-
-impl<R: BufRead, E, Parser: LogParser> StreamParser<R, E, Parser> {
-    pub fn process_until<'a>(&'a mut self, stop: impl Fn(&Parser, &ReaderState<E>) -> bool) -> ProcessResult<'a, Parser, ReaderState<E>> {
-        assert!(!self.finished);
-        let mut buffer = String::new();
-        while !stop(&self.parser, &self.reader_state) {
-            buffer.clear();
-            let bytes_read = self.reader.read_line(&mut buffer).unwrap();
-            if bytes_read == 0 || !self.parser.process_line(buffer.trim_end(), self.reader_state.lines_read) {
-                self.finished = true;
-                let parser = std::mem::replace(&mut self.parser, Parser::default());
-                return ProcessResult::Return(parser);
-            }
-            self.reader_state.bytes_read += bytes_read;
-            self.reader_state.lines_read += 1;
+    impl<'r, P: LogParser, R: ReadBound> From<R> for EitherParser<'r, P> {
+        fn from(reader: R) -> Self {
+            Self::new(reader)
         }
-        ProcessResult::Yield(&self.parser, &self.reader_state)
     }
-    pub fn process_for<'a>(&'a mut self, time: Duration) -> ProcessResult<'a, Parser, ReaderState<E>> {
-        // Will actually process for up to (ms_per_line * 100)% longer than `time`, thus
-        // we are assuming that we can process lines faster than 0.1ms per line.
-        let check_freq = time.as_millis().try_into().unwrap_or(usize::MAX);
-        let start = Instant::now();
-        self.process_until(
-            |_, state| state.lines_read % check_freq == 0 && Instant::now() - start > time
-        )
-    }
-
-    /// Parse the entire file as a stream. Using [`process_all_timeout`] instead is
-    /// recommended as this method will cause the process to hang if given a very large file.
-    pub fn process_all(mut self) -> Parser {
-        let ProcessResult::Return(result) = self.process_until(|_, _| false) else {
-            unreachable!()
-        };
-        result
-    }
-    /// Try to parse everything, but stop after a given timeout. The result tuple
-    /// contains `true` if the timeout was reached, and the parser state at the end (i.e. the
-    /// state is complete only if `false` was returned).
-    /// 
-    /// Parsing cannot be resumed if the timeout is reached. If you need support for resuming,
-    /// use [`process_for`] or [`process_until`] instead.
-    pub fn process_all_timeout(mut self, timeout: Duration) -> (bool, Parser) {
-        let result = self.process_for(timeout);
-        let result = result.return_state();
-        (result.is_none(), result.unwrap_or(self.parser))
-    }
-}
-
-/// Struct for a generic SMT solver trace parser. Intended to support different solvers or log formats.
-pub struct AsyncStreamParser<R: AsyncRead, E, P: LogParser> {
-    reader: R,
-    reader_state: ReaderState<E>,
-    parser: P,
-    finished: bool,
-}
-impl<R: AsyncBufReadExt + Unpin, E, Parser: LogParser> AsyncStreamParser<R, E, Parser> {
-    pub fn new(reader: R, end_data: E) -> Self {
-        let reader_state = ReaderState::new(end_data);
-        Self { reader, reader_state, parser: Parser::default(), finished: false }
-    }
-    pub async fn process_until<'a>(&'a mut self, stop: impl Fn(&Parser, &ReaderState<E>) -> bool) -> ProcessResult<'a, Parser, ReaderState<E>> {
-        assert!(!self.finished);
-        let mut buffer = String::new();
-        while !stop(&self.parser, &self.reader_state) {
-            buffer.clear();
-            let bytes_read = self.reader.read_line(&mut buffer).await.unwrap();
-            if bytes_read == 0 || !self.parser.process_line(buffer.trim_end_matches('\n'), self.reader_state.lines_read) {
-                self.finished = true;
-                let parser = std::mem::replace(&mut self.parser, Parser::default());
-                return ProcessResult::Return(parser);
+    impl<'r, Parser: LogParser> EitherParser<'r, Parser> {
+        pub(super) fn new(reader: impl ReadBound) -> Self {
+            Self {
+                reader: Box::new(reader),
+                reader_state: ReaderState::default(),
+                parser: Some(Parser::default()),
             }
-            self.reader_state.bytes_read += bytes_read;
-            self.reader_state.lines_read += 1;
         }
-        ProcessResult::Yield(&self.parser, &self.reader_state)
-    }
-    pub async fn process_all(&mut self) -> Parser {
-        let ProcessResult::Return(result) = self.process_until(|_, _| false).await else {
-            unreachable!()
-        };
-        result
-    }
-}
-impl<R: AsyncRead + Unpin, Parser: LogParser> AsyncStreamParser<futures::io::BufReader<R>, (), Parser> {
-    pub fn new_read(reader: R) -> Self {
-        let reader = futures::io::BufReader::new(reader);
-        Self::new(reader, ())
-    }
-}
-impl<'a, Parser: LogParser> AsyncStreamParser<&'a [u8], usize, Parser> {
-    pub fn new_string(file: &'a str) -> Self {
-        Self::new(file.as_bytes(), file.len())
+
+        pub fn parser(&self) -> Option<&Parser> {
+            self.parser.as_ref()
+        }
+        pub fn reader_state(&self) -> &ReaderState {
+            &self.reader_state
+        }
+        pub async fn process_until<'a>(
+            &'a mut self,
+            stop: impl Fn(&Parser, &ReaderState) -> bool,
+        ) -> Option<Parser> {
+            let Some(parser) = self.parser.as_mut() else {
+                return None;
+            };
+            let mut buffer = String::new();
+            while !stop(&*parser, &self.reader_state) {
+                buffer.clear();
+                let bytes_read = add_await([self.reader.read_line(&mut buffer)]).unwrap();
+                if bytes_read == 0
+                    || !parser
+                        .process_line(buffer.trim_end(), self.reader_state.lines_read)
+                {
+                    return self.parser.take();
+                }
+                self.reader_state.bytes_read += bytes_read;
+                self.reader_state.lines_read += 1;
+            }
+            None
+        }
+        pub async fn process_for<'a>(
+            &'a mut self,
+            time: Duration,
+        ) -> Option<Parser> {
+            // Will actually process for up to (ms_per_line * 100)% longer than `time`, thus
+            // we are assuming that we can process lines faster than 0.1ms per line.
+            let check_freq = time.as_millis().try_into().unwrap_or(usize::MAX);
+            let start = Instant::now();
+            add_await([self.process_until(|_, state| {
+                state.lines_read % check_freq == 0 && Instant::now() - start > time
+            })])
+        }
+    
+        /// Parse the entire file as a stream. Using [`process_all_timeout`] instead is
+        /// recommended as this method will cause the process to hang if given a very large file.
+        pub async fn process_all(mut self) -> Parser {
+            add_await([self.process_until(|_, _| false)]).unwrap()
+        }
+        /// Try to parse everything, but stop after a given timeout. The result tuple
+        /// contains `true` if the timeout was reached, and the parser state at the end (i.e. the
+        /// state is complete only if `false` was returned).
+        ///
+        /// Parsing cannot be resumed if the timeout is reached. If you need support for resuming,
+        /// use [`process_for`] or [`process_until`] instead.
+        pub async fn process_all_timeout(mut self, timeout: Duration) -> (bool, Parser) {
+            let result = add_await([self.process_for(timeout)]);
+            (result.is_none(), result.unwrap_or_else(|| self.parser.unwrap()))
+        }
     }
 }

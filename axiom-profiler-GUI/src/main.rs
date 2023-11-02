@@ -1,10 +1,8 @@
 use gloo_file::{callbacks::FileReader, File, FileList};
-use smt_log_parser::parsers::AsyncStreamParser;
+use smt_log_parser::parsers::{LogParser, AsyncBufferRead, AsyncCursorRead, AsyncParser};
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
 use wasm_bindgen::JsCast;
 use wasm_streams::ReadableStream;
-use std::{collections::HashMap, ops::Deref};
-use std::str::from_utf8;
 use web_sys::{Event, HtmlInputElement};
 use yew::prelude::*;
 use yew_router::prelude::*;
@@ -21,7 +19,8 @@ pub enum Msg {
 
 pub struct FileDataComponent {
     files: Vec<String>,
-    readers: HashMap<String, FileReader>,
+    parsers: Vec<ParserData>,
+    readers: Vec<FileReader>,
 }
 
 impl Component for FileDataComponent {
@@ -31,7 +30,8 @@ impl Component for FileDataComponent {
     fn create(_ctx: &Context<Self>) -> Self {
         Self {
             files: Vec::new(),
-            readers: HashMap::default(),
+            parsers: Vec::new(),
+            readers: Vec::new(),
         }
     }
 
@@ -39,42 +39,61 @@ impl Component for FileDataComponent {
         match msg {
             Msg::Files(files) => {
                 let Some(files) = files else {
-                    return true;
+                    return false;
                 };
+                let mut changed = !self.files.is_empty() || !self.readers.is_empty();
+                self.files.clear();
+                self.readers.clear();
                 log::info!("Files selected: {}", files.len());
                 for file in files.into_iter() {
                     let file_name = file.name();
-                    // Turn into stream
-                    let blob: &web_sys::Blob = file.as_ref();
-                    let stream = ReadableStream::from_raw(blob.stream().unchecked_into());
-                    let read = stream.into_async_read();
-                    let mut read = AsyncStreamParser::<_, Z3Parser>::new_read(read);
-                    wasm_bindgen_futures::spawn_local(async move {
-                        // TODO: read file here
-                        // let result = read.process_all().await;
-                    });
-                    let task = {
-                        let file_name = file_name.clone();
-                        let link = ctx.link().clone();
-
-                        gloo_file::callbacks::read_as_bytes(&file, move |res| {
-                            link.send_message(Msg::LoadedBytes(
-                                file_name,
-                                res.expect("failed to read file"),
-                            ))
-                        })
-                    };
-                    self.readers.insert(file_name, task);
+                    if true {
+                        // Old reader where all files are loaded as strings
+                        let task = {
+                            let link = ctx.link().clone();
+                            gloo_file::callbacks::read_as_bytes(&file, move |res| {
+                                link.send_message(Msg::LoadedBytes(
+                                    file_name,
+                                    res.expect("failed to read file"),
+                                ))
+                            })
+                        };
+                        self.readers.push(task);
+                    } else {
+                        // Turn into stream
+                        let blob: &web_sys::Blob = file.as_ref();
+                        let stream = ReadableStream::from_raw(blob.stream().unchecked_into());
+                        match stream.try_into_async_read() {
+                            Ok(stream) => {
+                                let parser = Z3Parser::from_async(stream.buffer());
+                                self.parsers.push(ParserData::new(parser));
+                                changed = true;
+                            }
+                            Err((_err, _stream)) => {
+                                let link = ctx.link().clone();
+                                let reader = gloo_file::callbacks::read_as_bytes(file, move |res| {
+                                    link.send_message(Msg::LoadedBytes(
+                                        file_name,
+                                        res.expect("failed to read file"),
+                                    ))
+                                });
+                                self.readers.push(reader);
+                            }
+                        };
+                    }
                 }
-                true
+                changed
             }
             Msg::LoadedBytes(file_name, data) => {
                 log::info!("Processing: {}", file_name);
-
-                let text_data = from_utf8(&data).unwrap().to_string(); //base64::encode(data);
-                self.files.pop();
-                self.files.push(text_data);
-                self.readers.remove(&file_name);
+                if true {
+                    // Old reader where all files are loaded as strings
+                    let text_data = String::from_utf8(data).unwrap();
+                    self.files.push(text_data);
+                } else {
+                    let parser = Z3Parser::from_async(data.into_async_cursor());
+                    self.parsers.push(ParserData::new(parser));
+                }
                 true
             }
         }
@@ -108,6 +127,19 @@ impl FileDataComponent {
             <div>
             <SVGResult trace_file_text={AttrValue::from(data.to_string())}/>
             </div>
+        }
+    }
+}
+
+pub struct ParserData {
+    parser: AsyncParser<'static, Z3Parser>,
+    parsed: Option<Z3Parser>,
+}
+impl ParserData {
+    pub fn new(parser: AsyncParser<'static, Z3Parser>) -> Self {
+        Self {
+            parser,
+            parsed: None,
         }
     }
 }

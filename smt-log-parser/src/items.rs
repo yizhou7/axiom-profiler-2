@@ -1,9 +1,9 @@
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cell::RefCell;
+use std::collections::{btree_map, BTreeMap, HashMap};
 use std::fmt;
-use std::collections::{HashMap, BTreeMap, btree_map};
 use std::rc::Rc;
-use serde::{Serialize, Deserialize};
 use typed_index_collections::TiVec;
 
 #[macro_export]
@@ -57,9 +57,11 @@ impl fmt::Display for Term {
 }
 impl Term {
     pub fn pretty_text(&self, map: &TiVec<TermIdx, Term>) -> String {
-        let child_text: Vec<String> = self.child_ids.iter().map(|c| {
-            map[*c].pretty_text(map)
-        }).collect();
+        let child_text: Vec<String> = self
+            .child_ids
+            .iter()
+            .map(|c| map[*c].pretty_text(map))
+            .collect();
         if child_text.is_empty() {
             format!("{}[{}]", self.kind, self.id)
         } else {
@@ -71,10 +73,7 @@ impl Term {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TermKind {
     Var(usize),
-    ProofOrApp {
-        is_proof: bool,
-        name: String,
-    },
+    ProofOrApp { is_proof: bool, name: String },
     Quant(QuantIdx),
 }
 impl fmt::Display for TermKind {
@@ -93,7 +92,8 @@ impl TermKind {
         value.parse::<usize>().map(TermKind::Var).ok()
     }
     pub(crate) fn parse_proof_app(is_proof: bool, name: &str) -> Self {
-        Self::ProofOrApp { is_proof, name: name.to_string() }
+        let name = name.to_string();
+        Self::ProofOrApp { is_proof, name }
     }
     pub fn quant_idx(&self) -> Option<QuantIdx> {
         match self {
@@ -113,7 +113,7 @@ pub enum QuantKind {
     UnnamedQuant {
         name: String,
         id: usize,
-    }
+    },
 }
 impl fmt::Display for QuantKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -128,17 +128,22 @@ impl fmt::Display for QuantKind {
 
 impl QuantKind {
     /// Splits an ID string into name and ID number (if unnamed).
-    /// 0 is used for identifiers without a number 
+    /// 0 is used for identifiers without a number
     /// (usually for theory-solving 'quantifiers' such as "basic#", "arith#")    
     pub(crate) fn parse(value: &str) -> Self {
         if value == "<null>" {
-            return Self::Lambda
+            return Self::Lambda;
         }
         let mut split = value.split('!');
         let name = split.next().expect(value);
-        split.next().and_then(|id| id.parse::<usize>().ok()).map(|id|
-            Self::UnnamedQuant { name: name.to_string(), id }
-        ).unwrap_or_else(|| Self::NamedQuant(name.to_string()))
+        split
+            .next()
+            .and_then(|id| id.parse::<usize>().ok())
+            .map(|id| Self::UnnamedQuant {
+                name: name.to_string(),
+                id,
+            })
+            .unwrap_or_else(|| Self::NamedQuant(name.to_string()))
     }
     pub fn is_discovered(&self) -> bool {
         matches!(self, Self::Other(_))
@@ -152,7 +157,6 @@ pub struct Meaning {
     /// The value of the term (e.g. `#x0000000000000001` or `#b1`)
     pub value: String,
 }
-
 
 /// A Z3 quantifier and associated data.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -173,18 +177,32 @@ impl fmt::Display for Quantifier {
         } else {
             write!(f, "[N/A]")?;
         }
-        write!(f, ", vars: {:?}({}), cost: {}, instances: {} {:?})\n", self.vars, self.num_vars, self.cost, self.instances.len(), self.instances)
+        write!(
+            f,
+            ", vars: {:?}({}), cost: {}, instances: {} {:?})\n",
+            self.vars,
+            self.num_vars,
+            self.cost,
+            self.instances.len(),
+            self.instances
+        )
     }
 }
 impl Quantifier {
     pub fn pretty_text(&self, map: &TiVec<TermIdx, Term>) -> String {
         if let Some(term) = &self.term {
-            let var_text: Vec<String> = (0..self.num_vars).map(|idx| {
-                let name = VarNames::get_name(&self.vars, idx);
-                let ty = VarNames::get_type(&self.vars, idx);
-                format!("{name}{ty}")
-            }).collect();
-            format!("FORALL {}({})", var_text.join(", "), map[*term].pretty_text(map))
+            let var_text: Vec<String> = (0..self.num_vars)
+                .map(|idx| {
+                    let name = VarNames::get_name(&self.vars, idx);
+                    let ty = VarNames::get_type(&self.vars, idx);
+                    format!("{name}{ty}")
+                })
+                .collect();
+            format!(
+                "FORALL {}({})",
+                var_text.join(", "),
+                map[*term].pretty_text(map)
+            )
         } else {
             self.kind.to_string()
         }
@@ -204,13 +222,15 @@ impl VarNames {
         }
     }
     pub fn get_type(this: &Option<Self>, idx: usize) -> String {
-        this.as_ref().map(|this| {
-            let ty = match this {
-                Self::TypeOnly(names) => &names[idx],
-                Self::NameAndType(names) => &names[idx].1,
-            };
-            format!(": {ty}")
-        }).unwrap_or_default()        
+        this.as_ref()
+            .map(|this| {
+                let ty = match this {
+                    Self::TypeOnly(names) => &names[idx],
+                    Self::NameAndType(names) => &names[idx].1,
+                };
+                format!(": {ty}")
+            })
+            .unwrap_or_default()
     }
     pub fn len(&self) -> usize {
         match self {
@@ -236,15 +256,33 @@ pub struct Instantiation {
     pub bound_terms: Vec<TermIdx>,
     pub blamed_terms: Vec<BlamedTermItem>,
     pub equality_expls: Vec<TermIdx>,
-    pub dep_instantiations: Vec<InstIdx>
+    pub dep_instantiations: Vec<InstIdx>,
 }
 
 impl fmt::Display for Instantiation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "(@{}, @{}, {:x}, resulting: {:?}, gen: {:?}, cost: {}, Q: {}, ",
-            self.line_no.unwrap_or_default(), self.match_line_no, *self.fingerprint, self.resulting_term, self.z3_gen, self.cost, self.quant)?;
-        write!(f, "pattern: {:?}, yields: {:?}({}), bound: {:?}, blamed: {:?}, eq: {:?}, dep: {:?})\n",
-            self.pattern, self.yields_terms, self.yields_terms.len(), self.bound_terms, self.blamed_terms, self.equality_expls, self.dep_instantiations)
+        write!(
+            f,
+            "(@{}, @{}, {:x}, resulting: {:?}, gen: {:?}, cost: {}, Q: {}, ",
+            self.line_no.unwrap_or_default(),
+            self.match_line_no,
+            *self.fingerprint,
+            self.resulting_term,
+            self.z3_gen,
+            self.cost,
+            self.quant
+        )?;
+        write!(
+            f,
+            "pattern: {:?}, yields: {:?}({}), bound: {:?}, blamed: {:?}, eq: {:?}, dep: {:?})\n",
+            self.pattern,
+            self.yields_terms,
+            self.yields_terms.len(),
+            self.bound_terms,
+            self.blamed_terms,
+            self.equality_expls,
+            self.dep_instantiations
+        )
     }
 }
 
@@ -255,7 +293,9 @@ pub struct Fingerprint(pub u64);
 impl Fingerprint {
     #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
-        u64::from_str_radix(value.strip_prefix("0x").unwrap_or(value), 16).map(Self).ok()
+        u64::from_str_radix(value.strip_prefix("0x").unwrap_or(value), 16)
+            .map(Self)
+            .ok()
     }
 }
 impl std::ops::Deref for Fingerprint {
@@ -271,7 +311,7 @@ impl std::ops::Deref for Fingerprint {
 /// - Pair: a pair of identifiers grouped in parentheses. (#A #B)
 pub enum BlamedTermItem {
     Single(TermIdx),
-    Pair(TermIdx, TermIdx)
+    Pair(TermIdx, TermIdx),
 }
 
 /// Represents an ID string of the form `name#id` or `name#`.
@@ -293,7 +333,7 @@ impl<'a> TermIdCow<'a> {
     pub fn parse(value: &'a str) -> Option<Self> {
         let hash_idx = value.find('#')?;
         let namespace = Cow::Borrowed(&value[..hash_idx]);
-        let id = &value[hash_idx+1..];
+        let id = &value[hash_idx + 1..];
         let id = match id {
             "" => None,
             id => Some(id.parse::<usize>().ok()?),
@@ -301,7 +341,10 @@ impl<'a> TermIdCow<'a> {
         Some(Self { namespace, id })
     }
     pub fn into_owned(&self) -> TermId {
-        TermId { namespace: self.namespace.clone().into_owned().into(), id: self.id }
+        TermId {
+            namespace: self.namespace.clone().into_owned().into(),
+            id: self.id,
+        }
     }
 }
 pub type TermId = TermIdCow<'static>;
@@ -327,13 +370,20 @@ impl<T> Default for TwoDMap<T> {
 impl<V: fmt::Debug> TwoDMap<V> {
     /// Inserts given term into given HashMap (uses given ID)
     pub fn insert(&mut self, id: TermIdCow, item: V) {
-        let old = self.0.entry(id.namespace.to_string()).or_default().insert(id.id, item);
+        let old = self
+            .0
+            .entry(id.namespace.to_string())
+            .or_default()
+            .insert(id.id, item);
         assert!(old.is_none(), "Duplicate ID: {id} ({old:?})");
     }
 
     /// Gets the given key's corresponding entry in the map for in-place manipulation.
     pub fn entry(&mut self, id: TermIdCow) -> btree_map::Entry<'_, std::option::Option<usize>, V> {
-        self.0.entry(id.namespace.to_string()).or_default().entry(id.id)
+        self.0
+            .entry(id.namespace.to_string())
+            .or_default()
+            .entry(id.id)
     }
 
     /// Gets item with given ID as an immutable reference
@@ -352,7 +402,6 @@ pub type RcBTreeMap<K, V> = BTreeMap<K, Rc<RefCell<V>>>;
 pub type RcVec<T> = Vec<Rc<RefCell<T>>>;
 pub type RcOption<T> = Option<Rc<RefCell<T>>>;
 
-
 /// The type of dependency between two quantifier instantiations.
 /// - None: no dependency, because an instantiation is not dependent on any others.
 /// - Term: dependency based on a match without equalities.
@@ -361,7 +410,7 @@ pub type RcOption<T> = Option<Rc<RefCell<T>>>;
 pub enum DepType {
     None,
     Term,
-    Equality
+    Equality,
 }
 
 /// A dependency between two quantifier instantiations.
@@ -379,16 +428,26 @@ pub struct Dependency {
 
 impl fmt::Display for Dependency {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "@{} -> @{} ({:?}, {:?}, {})\n", self.from, self.to.unwrap_or_default(), self.blamed, self.dep_type, self.quant)
+        write!(
+            f,
+            "@{} -> @{} ({:?}, {:?}, {})\n",
+            self.from,
+            self.to.unwrap_or_default(),
+            self.blamed,
+            self.dep_type,
+            self.quant
+        )
     }
 }
 
-/// A Z3 equality explanation. 
+/// A Z3 equality explanation.
 /// Root represents a term that is a root of its equivalence class.
 /// All other variants represent an equality between two terms and where it came from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EqualityExpl {
-    Root { id: TermIdx },
+    Root {
+        id: TermIdx,
+    },
     Literal {
         from: TermIdx,
         eq: TermIdx,
@@ -414,7 +473,7 @@ pub enum EqualityExpl {
         from: TermIdx,
         args: Vec<String>,
         to: TermIdx,
-    }
+    },
 }
 
 impl fmt::Display for EqualityExpl {
@@ -422,11 +481,28 @@ impl fmt::Display for EqualityExpl {
         // println!("{:?}", self);
         match self {
             EqualityExpl::Root { id } => write!(f, "Root {id}\n"),
-            EqualityExpl::Literal { from: id, eq: from, to } => write!(f, "Lit. {id}: {from}, {to}\n"),
-            EqualityExpl::Congruence { from: id, arg_eqs: terms, to } => write!(f, "Cong. {id}: {terms:?}, {to}\n"),
-            EqualityExpl::Theory { from: id, theory, to: term } => write!(f, "Theory {id}: {theory} {term}\n"),
+            EqualityExpl::Literal {
+                from: id,
+                eq: from,
+                to,
+            } => write!(f, "Lit. {id}: {from}, {to}\n"),
+            EqualityExpl::Congruence {
+                from: id,
+                arg_eqs: terms,
+                to,
+            } => write!(f, "Cong. {id}: {terms:?}, {to}\n"),
+            EqualityExpl::Theory {
+                from: id,
+                theory,
+                to: term,
+            } => write!(f, "Theory {id}: {theory} {term}\n"),
             EqualityExpl::Axiom { from: id, to: term } => write!(f, "Axiom {id}: {term}\n"),
-            EqualityExpl::Unknown { kind, from: id, args, to: term } => write!(f, "Unknown ({kind} {args:?}) {id}: {term}\n"),
+            EqualityExpl::Unknown {
+                kind,
+                from: id,
+                args,
+                to: term,
+            } => write!(f, "Unknown ({kind} {args:?}) {id}: {term}\n"),
         }
     }
 }
@@ -435,11 +511,11 @@ impl EqualityExpl {
     pub fn from_to(&self) -> (TermIdx, TermIdx) {
         match *self {
             EqualityExpl::Root { id } => (id, id),
-            EqualityExpl::Literal { from, to, .. } |
-            EqualityExpl::Congruence { from, to, .. } |
-            EqualityExpl::Theory { from, to, .. } |
-            EqualityExpl::Axiom { from, to, .. } |
-            EqualityExpl::Unknown { from, to, .. } => (from, to),
+            EqualityExpl::Literal { from, to, .. }
+            | EqualityExpl::Congruence { from, to, .. }
+            | EqualityExpl::Theory { from, to, .. }
+            | EqualityExpl::Axiom { from, to, .. }
+            | EqualityExpl::Unknown { from, to, .. } => (from, to),
         }
     }
 }

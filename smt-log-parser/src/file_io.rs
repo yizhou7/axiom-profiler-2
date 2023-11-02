@@ -4,8 +4,6 @@ use std::io::{self, BufRead, Write, BufWriter};
 use std::path::Path;
 use serde::Deserialize;
 
-/// settings file
-const SETTINGS: &str = "settings.json";
 /// hard-coded write buffer capacity
 const CAPACITY: usize = 1 << 25; // 32 MiB
 
@@ -42,37 +40,4 @@ pub fn open_file_truncate(filename: &str) -> BufWriter<File> {
                     .create(true)
                     .truncate(true)
                     .open(filename).unwrap_or_else(|_| panic!("Error opening {}", filename)))
-}
-
-/// Parsing settings.
-#[derive(Default, Clone, Debug, Deserialize)]
-pub struct Settings {
-    // not all settings currently work
-    /// Name of file to parse.
-    pub file: String,
-    /// Whether to consider terms with reused IDs as separate from previous terms with the same ID. Does not work yet.
-    pub reuses: bool,
-    /// Print contents of parser to standard output item by item.
-    pub verbose: bool,
-    /// Whether to print all text/json files (Dot and SVG will always be generated regardless of this setting)
-    pub save_all_data: bool,
-    /// Select a sort type (by line number, cost, depth, etc.)
-    /// Does not work yet.
-    /// ## TODO
-    /// Replace with an enum
-    pub sort_by: String,
-    /// Stop parsing after a certain amount of time. Does not work yet.
-    pub timeout: f32,
-    /// Parse only up to a certain number of lines. Does not work yet.
-    pub line_limit: usize,
-    // add settings for:
-    // - number of instantiations to display in final visualization.
-}
-
-/// Read settings from `SETTINGS` json file, saving them to a `Settings` struct
-pub fn get_settings() -> Settings {
-    fs::read_to_string(SETTINGS)
-        .ok()
-        .map(|s| serde_json::from_str(&s).unwrap())
-        .unwrap_or_default()
 }
