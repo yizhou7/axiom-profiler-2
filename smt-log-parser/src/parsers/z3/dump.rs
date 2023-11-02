@@ -1,5 +1,7 @@
 use std::{time::Instant, collections::{BTreeMap, HashSet}, io::Write, fmt::Display};
 
+use petgraph::Graph;
+use petgraph::graph::NodeIndex;
 use serde::Serialize;
 
 use crate::{parsers::z3::z3parser::Z3Parser, file_io::{Settings, open_file_truncate, write_str, write}, items::{Term, Instantiation, Dependency, Quantifier, TermIdCow}};
@@ -242,35 +244,39 @@ impl Z3Parser {
         Self::filter_dependencies_by_cost(&insts_sorted, &self.dependencies)
     } 
 
-    pub fn get_instantiation_graph(&mut self) -> &petgraph::Graph<usize, ()> {
-        if self.qi_graph.node_count() <= 0 {
-            let sorted_deps = self.get_sorted_dependencies();
-            let is_not_theory_inst: fn(&Dependency) -> bool = |d| d.quant != TermIdCow::parse("arith#") && d.quant != TermIdCow::parse("basic#"); 
-            for dep in sorted_deps {
-                if is_not_theory_inst(&dep) {
+    pub fn get_instantiation_graph(&self) -> (petgraph::Graph<usize, ()>, BTreeMap<usize, usize>) {
+        let mut qi_graph = Graph::<usize, ()>::new();
+        let sorted_deps = self.get_sorted_dependencies();
+        let is_not_theory_inst: fn(&Dependency) -> bool = |d| d.quant != "arith#" && d.quant != "basic#"; 
+        let fresh_line_nr = |qi_graph: &Graph::<usize, ()>, line_nr: usize| qi_graph.node_weights().all(|&line| line != line_nr);
+        let mut node_of_line_nr: BTreeMap<usize, NodeIndex> = BTreeMap::new(); 
+        let mut line_nr_of_node: BTreeMap<usize, usize> = BTreeMap::new(); 
+        for dep in sorted_deps {
+            if is_not_theory_inst(&dep) {
+                // check first that it has not yet been inserted into self.line_nr_of_node
+                // if !node_of_line_nr.contains_key(&dep.to) {
+                if fresh_line_nr(&qi_graph, dep.to) {
+                    let to_node = qi_graph.add_node(dep.to);
+                    node_of_line_nr.insert(dep.to, to_node);
+                    line_nr_of_node.insert(to_node.index(), dep.to);
+                }
+                if dep.from != 0 {
                     // check first that it has not yet been inserted into self.line_nr_of_node
-                    if !self.node_of_line_nr.contains_key(&dep.to) {
-                        let to_node = self.qi_graph.add_node(dep.to);
-                        self.line_nr_of_node.insert(to_node.index(), dep.to);
-                        self.node_of_line_nr.insert(dep.to, to_node);
+                    // if !self.node_of_line_nr.contains_key(&dep.from) {
+                    if fresh_line_nr(&qi_graph, dep.from) {
+                        let from_node = qi_graph.add_node(dep.from);
+                        node_of_line_nr.insert(dep.from, from_node);
+                        line_nr_of_node.insert(from_node.index(), dep.from);
                     }
-                    if dep.from != 0 {
-                        // check first that it has not yet been inserted into self.line_nr_of_node
-                        if !self.node_of_line_nr.contains_key(&dep.from) {
-                            let from_node = self.qi_graph.add_node(dep.from);
-                            self.line_nr_of_node.insert(from_node.index(), dep.from);
-                            self.node_of_line_nr.insert(dep.from, from_node);
-                        }
-                        if let Some(&from_node) = self.node_of_line_nr.get(&dep.from) {
-                            if let Some(&to_node) = self.node_of_line_nr.get(&dep.to) {
-                                self.qi_graph.add_edge(from_node, to_node, ());
-                            }
+                    if let Some(&from_node_idx) = node_of_line_nr.get(&dep.from) {
+                        if let Some(&to_node_idx) = node_of_line_nr.get(&dep.to) {
+                            qi_graph.add_edge(from_node_idx,to_node_idx, ());
                         }
                     }
                 }
             }
         }
-        &self.qi_graph
+        (qi_graph, line_nr_of_node)
     }
 }
 
