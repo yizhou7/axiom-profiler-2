@@ -5,7 +5,7 @@ use web_sys::{Event, HtmlElement};
 use yew::{function_component, html, use_effect_with, use_node_ref, Html};
 use std::collections::BTreeMap;
 
-use crate::input_state::{InputValue, IntegerInput};
+use crate::input_state::{InputValue, UsizeInput};
 
 #[derive(Properties, PartialEq, Default)]
 pub struct GraphProps {
@@ -75,7 +75,7 @@ pub fn graph(props: &GraphProps) -> Html {
                     let text_element = node.query_selector("text").expect("Failed to select text element");
                     if let Some(text) = text_element {
                         if let Some(text_content) = text.text_content() {
-                            let visibility = match text_content.parse::<i32>() {
+                            let visibility = match text_content.parse::<usize>() {
                                 Ok(line_nr) => if line_nr > max_line_nr {
                                     "hidden"
                                 } else {
@@ -125,7 +125,7 @@ pub fn graph(props: &GraphProps) -> Html {
 
     html! {
         <>
-            <IntegerInput label={"Render graph up to line number: "} dependency={props.svg_text.clone()} input_value={max_line_nr} />
+            <UsizeInput label={"Render graph up to line number: "} dependency={props.svg_text.clone()} input_value={max_line_nr} />
             <div ref={div_ref}>
                 {svg_result}
             </div>

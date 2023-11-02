@@ -3,19 +3,19 @@ use yew::prelude::*;
 use wasm_bindgen::{UnwrapThrowExt, JsCast};
 
 pub enum InputAction {
-    SetValueTo(i32),
+    SetValueTo(usize),
     ResetState,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct InputValue {
-    pub value: i32,
+    pub value: usize,
 }
 
 impl Default for InputValue {
     fn default() -> Self {
         Self {
-            value: i32::MAX,
+            value: usize::MAX,
         }
     }
 }
@@ -36,14 +36,17 @@ impl Reducible for InputValue {
 }
 
 #[derive(Properties, PartialEq)] 
-pub struct IntegerInputProps where {
+pub struct UsizeInputProps where {
     pub label: AttrValue,
     pub dependency: AttrValue,
     pub input_value: UseReducerHandle<InputValue>,
 }
 
-#[function_component(IntegerInput)]
-pub fn integer_input(props: &IntegerInputProps) -> Html {
+/// Function component for input fields that accept usize
+/// Must specify label: AttrValue, dependency: AttrValue, input_value: UseReducerHandle<InputValue>
+/// Resets the value whenever the dependency changes
+#[function_component(UsizeInput)]
+pub fn integer_input(props: &UsizeInputProps) -> Html {
     let input_value = props.input_value.clone(); 
     let input_ref = use_node_ref();
 
@@ -55,7 +58,7 @@ pub fn integer_input(props: &IntegerInputProps) -> Html {
                 .unwrap_throw()
                 .dyn_into()
                 .unwrap_throw();
-            match target.value().to_string().parse::<i32>() {
+            match target.value().to_string().parse::<usize>() {
                 Ok(value) => {
                     input_value.dispatch(InputAction::SetValueTo(value));
                 },

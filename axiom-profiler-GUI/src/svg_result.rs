@@ -1,12 +1,13 @@
 use std::time::Duration;
 
+use smt_log_parser::parsers::ProcessResult;
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
 use yew::prelude::*;
 use smt_log_parser::parsers::LogParser;
 use viz_js::VizInstance;
 use petgraph::dot::{Dot, Config};
 use crate::graph::{Graph, GraphProps};
-use crate::input_state::{IntegerInput, InputValue};
+use crate::input_state::{UsizeInput, InputValue};
 
 #[derive(Properties, PartialEq)]
 pub struct SVGProps {
@@ -40,7 +41,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
                         .render_svg_element(dot_output, viz_js::Options::default())
                         .expect("Could not render graphviz");
                     let svg_text = svg.outer_html();
-                    graph_props.set(GraphProps{svg_text: AttrValue::from(svg_text), line_nr_of_node: line_nr_of_node});
+                    graph_props.set(GraphProps{svg_text: AttrValue::from(svg_text), line_nr_of_node});
                 },
             );
         })
@@ -57,8 +58,8 @@ pub fn svg_result(props: &SVGProps) -> Html {
     html! {
         <>
             <div>
-                <IntegerInput label={"Parse log up to which line number? "} dependency={props.trace_file_text.clone()} input_value={max_log_line_nr} />
-                <IntegerInput label={"Parse log up to how many instantiations? "} dependency={props.trace_file_text.clone()} input_value={max_instantiations} />
+                <UsizeInput label={"Parse log up to which line number? "} dependency={props.trace_file_text.clone()} input_value={max_log_line_nr} />
+                <UsizeInput label={"Parse log up to how many instantiations? "} dependency={props.trace_file_text.clone()} input_value={max_instantiations} />
                 <button onclick={parse_log}>{"Parse log and render results"}</button>
             </div>
             <Graph svg_text={graph_props.svg_text.clone()} line_nr_of_node={graph_props.line_nr_of_node.clone()} /> 
