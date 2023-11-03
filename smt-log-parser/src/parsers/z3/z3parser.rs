@@ -7,6 +7,8 @@ use crate::{
     parsers::z3::{VersionInfo, Z3LogParser},
 };
 
+/// A parser for Z3 log files. Use one of the various `Z3Parser::from_*` methods
+/// to construct this parser.
 #[derive(Debug)]
 pub struct Z3Parser {
     pub(super) version_info: Option<VersionInfo>,
@@ -532,7 +534,7 @@ impl Z3LogParser for Z3Parser {
         Some(())
     }
 
-    fn end_of_instance(&mut self) {
+    fn end_of_instance(&mut self, mut l: Split<'_, char>) -> Option<()> {
         let iidx = self.inst_stack.pop().unwrap();
         let inst = &mut self.instantiations[iidx];
         let deps = self.temp_dependencies.get_mut(&inst.match_line_no).unwrap();
@@ -541,6 +543,9 @@ impl Z3LogParser for Z3Parser {
             dep.quant = inst.quant;
         });
         self.dependencies.append(deps);
+
+        // Return if there is unexpectedly more data
+        l.next().map_or(Some(()), |_| None)
     }
 }
 

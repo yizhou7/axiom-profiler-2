@@ -26,10 +26,7 @@ impl<T: Z3LogParser + Default> LogParser for T {
             "[new-match]" => self.new_match(split, line_no),
             "[inst-discovered]" => self.inst_discovered(split, line_no),
             "[instance]" => self.instance(split, line_no),
-            "[end-of-instance]" => {
-                self.end_of_instance();
-                Some(())
-            }
+            "[end-of-instance]" => self.end_of_instance(split),
             "[decide-and-or]" => self.decide_and_or(split),
             "[decide]" => self.decide(split),
             "[assign]" => self.assign(split),
@@ -65,7 +62,7 @@ pub trait Z3LogParser: Debug {
     fn new_match(&mut self, l: Split<'_, char>, line_no: usize) -> Option<()>;
     fn inst_discovered(&mut self, l: Split<'_, char>, line_no: usize) -> Option<()>;
     fn instance(&mut self, l: Split<'_, char>, line_no: usize) -> Option<()>;
-    fn end_of_instance(&mut self);
+    fn end_of_instance(&mut self, l: Split<'_, char>) -> Option<()>;
 
     // unused in original parser
     fn decide_and_or(&mut self, _l: Split<'_, char>) -> Option<()> {

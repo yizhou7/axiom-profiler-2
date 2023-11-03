@@ -34,7 +34,7 @@ fn main() {
         let (timeout, _result) = parser.process_all_timeout(to);
         let elapsed_time = time.elapsed();
         println!(
-            "Finished parsing after {} seconds (timeout {timeout})\n",
+            "Finished parsing after {} seconds (timeout {timeout:?})\n",
             elapsed_time.as_secs_f32()
         );
         // result.save_output_to_files(&settings, &time);
