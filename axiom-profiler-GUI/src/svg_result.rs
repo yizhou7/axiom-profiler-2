@@ -28,14 +28,10 @@ pub fn svg_result(props: &SVGProps) -> Html {
         Callback::from(move |_| {
             let graph_props = graph_props.clone();
             let trace_file_text = trace_file_text.clone();
-            // z3parser::new_with_settings(ParserSettings{
-            //     max_line_nr: max_log_line_nr as u32, 
-            //     max_instantiations: max_instantiations as u32, 
-            // });
             let parser = Z3Parser::from_str(trace_file_text.as_str());
             let mut parser = parser.process_all();
-            let qi_graph = parser.get_instantiation_graph();
-            let dot_output = format!("{:?}", Dot::with_config(qi_graph, &[Config::EdgeNoLabel])); 
+            let (qi_graph, line_nr_of_node) = parser.get_instantiation_graph();
+            let dot_output = format!("{:?}", Dot::with_config(&qi_graph, &[Config::EdgeNoLabel])); 
             log::debug!("use effect");
             wasm_bindgen_futures::spawn_local(
                 async move {
@@ -44,7 +40,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
                         .render_svg_element(dot_output, viz_js::Options::default())
                         .expect("Could not render graphviz");
                     let svg_text = svg.outer_html();
-                    graph_props.set(GraphProps{svg_text: AttrValue::from(svg_text), line_nr_of_node: parser.line_nr_of_node});
+                    graph_props.set(GraphProps{svg_text: AttrValue::from(svg_text), line_nr_of_node: line_nr_of_node});
                 },
             );
         })
