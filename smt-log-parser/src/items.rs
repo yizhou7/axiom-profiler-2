@@ -1,9 +1,7 @@
+use fxhash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::cell::RefCell;
-use std::collections::{btree_map, BTreeMap, HashMap};
 use std::fmt;
-use std::rc::Rc;
 use typed_index_collections::TiVec;
 
 #[macro_export]
@@ -346,6 +344,9 @@ impl<'a> TermIdCow<'a> {
             id: self.id,
         }
     }
+    pub fn order(&self) -> usize {
+        self.id.map(|id| id + 1).unwrap_or_default()
+    }
 }
 pub type TermId = TermIdCow<'static>;
 
@@ -356,51 +357,53 @@ pub enum DiscoveredIdCow<'a> {
 }
 pub type DiscoveredId = DiscoveredIdCow<'static>;
 
-/// A 2D map (Map of containing Maps). The `String` key is the namespace of a term/quantifier
-/// and the `usize` key is the term/quantifier's number.
-#[derive(Debug)]
-pub struct TwoDMap<V>(pub HashMap<String, BTreeMap<Option<usize>, V>>);
-
-impl<T> Default for TwoDMap<T> {
-    fn default() -> Self {
-        TwoDMap(HashMap::new())
+/// Remapping from `TermId` to `TermIdx`. We want to have a single flat vector
+/// of terms but `TermId`s don't map to this nicely, additionally the `TermId`s
+/// may repeat and so we want to map to the latest current `TermIdx`. Has a
+/// special fast path for the common empty namespace case.
+#[derive(Debug, Default)]
+pub struct TermIdToIdxMap {
+    empty_namespace: Vec<Option<TermIdx>>,
+    namespace_map: FxHashMap<String, Vec<Option<TermIdx>>>,
+}
+impl TermIdToIdxMap {
+    fn get_vec_mut(&mut self, idx: Cow<'_, str>) -> &mut Vec<Option<TermIdx>> {
+        if idx.is_empty() {
+            // Special handling of common case for empty namespace
+            &mut self.empty_namespace
+        } else {
+            // Use raw entry to avoid cloning the key if not necessary
+            self.namespace_map
+                .raw_entry_mut()
+                .from_key(&*idx)
+                .or_insert_with(|| (idx.into_owned(), Vec::new()))
+                .1
+        }
+    }
+    pub fn register_term(&mut self, id: TermIdCow, idx: TermIdx) {
+        let id_idx = id.order();
+        let vec = self.get_vec_mut(id.namespace);
+        if id_idx >= vec.len() {
+            vec.resize(id_idx + 1, None);
+        }
+        // The `id` of two different terms may clash and so we may remove
+        // a `TermIdx` from the map. This is fine since we want future uses of
+        // `id` to refer to the new term and not the old one.
+        vec[id_idx] = Some(idx);
+    }
+    fn get_vec(&self, namespace: &str) -> Option<&Vec<Option<TermIdx>>> {
+        if namespace.is_empty() {
+            Some(&self.empty_namespace)
+        } else {
+            self.namespace_map.get(namespace)
+        }
+    }
+    pub fn get_term(&self, id: &TermIdCow) -> Option<TermIdx> {
+        self.get_vec(&id.namespace)
+            .and_then(|vec| vec.get(id.order()).and_then(|x| x.as_ref()))
+            .copied()
     }
 }
-
-impl<V: fmt::Debug> TwoDMap<V> {
-    /// Inserts given term into given HashMap (uses given ID)
-    pub fn insert(&mut self, id: TermIdCow, item: V) {
-        let old = self
-            .0
-            .entry(id.namespace.to_string())
-            .or_default()
-            .insert(id.id, item);
-        assert!(old.is_none(), "Duplicate ID: {id} ({old:?})");
-    }
-
-    /// Gets the given key's corresponding entry in the map for in-place manipulation.
-    pub fn entry(&mut self, id: TermIdCow) -> btree_map::Entry<'_, std::option::Option<usize>, V> {
-        self.0
-            .entry(id.namespace.to_string())
-            .or_default()
-            .entry(id.id)
-    }
-
-    /// Gets item with given ID as an immutable reference
-    pub fn get<'a>(&'a self, id: &TermIdCow) -> Option<&'a V> {
-        self.0.get(&*id.namespace)?.get(&id.id)
-    }
-
-    /// Gets item with given ID as a mutable reference
-    pub fn get_mut<'a>(&'a mut self, id: &TermIdCow) -> Option<&'a mut V> {
-        self.0.get_mut(&*id.namespace)?.get_mut(&id.id)
-    }
-}
-
-pub type RcHashMap<K, V> = HashMap<K, Rc<RefCell<V>>>;
-pub type RcBTreeMap<K, V> = BTreeMap<K, Rc<RefCell<V>>>;
-pub type RcVec<T> = Vec<Rc<RefCell<T>>>;
-pub type RcOption<T> = Option<Rc<RefCell<T>>>;
 
 /// The type of dependency between two quantifier instantiations.
 /// - None: no dependency, because an instantiation is not dependent on any others.
