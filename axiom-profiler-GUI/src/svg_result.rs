@@ -1,6 +1,3 @@
-use std::time::Duration;
-
-use smt_log_parser::parsers::ProcessResult;
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
 use yew::prelude::*;
 use smt_log_parser::parsers::LogParser;
@@ -24,13 +21,13 @@ pub fn svg_result(props: &SVGProps) -> Html {
     let parse_log = {
         let graph_props = graph_props.clone();
         let trace_file_text = props.trace_file_text.clone();
-        let max_log_line_nr = max_log_line_nr.value.clone();
-        let max_instantiations = max_instantiations.value.clone();
+        // let max_log_line_nr = max_log_line_nr.value.clone();
+        // let max_instantiations = max_instantiations.value.clone();
         Callback::from(move |_| {
             let graph_props = graph_props.clone();
             let trace_file_text = trace_file_text.clone();
             let parser = Z3Parser::from_str(trace_file_text.as_str());
-            let mut parser = parser.process_all();
+            let parser = parser.process_all();
             let (qi_graph, line_nr_of_node) = parser.get_instantiation_graph();
             let dot_output = format!("{:?}", Dot::with_config(&qi_graph, &[Config::EdgeNoLabel])); 
             log::debug!("use effect");

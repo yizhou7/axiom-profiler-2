@@ -1,4 +1,4 @@
-use gloo_file::{callbacks::FileReader, File, FileList};
+use gloo_file::{callbacks::FileReader, FileList};
 use smt_log_parser::parsers::{LogParser, AsyncBufferRead, AsyncCursorRead, AsyncParser};
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
 use wasm_bindgen::JsCast;
