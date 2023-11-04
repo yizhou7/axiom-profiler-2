@@ -1,3 +1,4 @@
+use smt_log_parser::parsers::z3::results::InstGraph;
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
 use yew::prelude::*;
 use smt_log_parser::parsers::LogParser;
@@ -28,8 +29,9 @@ pub fn svg_result(props: &SVGProps) -> Html {
             let trace_file_text = trace_file_text.clone();
             let parser = Z3Parser::from_str(trace_file_text.as_str());
             let parser = parser.process_all();
-            let (qi_graph, line_nr_of_node) = parser.get_instantiation_graph();
-            let dot_output = format!("{:?}", Dot::with_config(&qi_graph, &[Config::EdgeNoLabel])); 
+            // let (qi_graph, line_nr_of_node) = parser.get_instantiation_graph();
+            let InstGraph{inst_graph, line_nr_of_node, ..} = parser.get_instantiation_graph();
+            let dot_output = format!("{:?}", Dot::with_config(&inst_graph, &[Config::EdgeNoLabel])); 
             log::debug!("use effect");
             wasm_bindgen_futures::spawn_local(
                 async move {

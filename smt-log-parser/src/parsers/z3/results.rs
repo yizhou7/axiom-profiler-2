@@ -6,38 +6,52 @@ use gloo_console::log;
 
 use super::z3parser::Z3Parser;
 
+#[derive(Default)]
+pub struct InstGraph {
+    pub inst_graph: Graph::<usize, ()>, // weights are the line numbers and have type usize
+    pub line_nr_of_node: BTreeMap<usize, usize>, // node-index => line number
+    node_of_line_nr: BTreeMap<usize, NodeIndex>, // line number => node-index
+}
+
+impl InstGraph {
+    fn fresh_line_nr(&self, line_nr: usize) -> bool {
+        self.inst_graph.node_weights().all(|&line| line != line_nr)
+    } 
+
+    pub fn add_node(&mut self, line_nr: usize) {
+        if self.fresh_line_nr(line_nr) {
+            let node = self.inst_graph.add_node(line_nr);
+            self.node_of_line_nr.insert(line_nr, node);
+            self.line_nr_of_node.insert(node.index(), line_nr);
+        }
+    }
+
+    pub fn add_edge(&mut self, from: usize, to: usize) {
+        if let (Some(&from_node_idx), Some(&to_node_idx)) = (self.node_of_line_nr.get(&from), self.node_of_line_nr.get(&to)) {
+            self.inst_graph.add_edge(from_node_idx, to_node_idx, ());
+        }
+    }
+}
+
 impl Z3Parser {
-    pub fn get_instantiation_graph(&self) -> (petgraph::Graph<usize, ()>, BTreeMap<usize, usize>) {
-        let mut qi_graph = Graph::<usize, ()>::new();
-        let mut line_nr_of_node: BTreeMap<usize, usize> = BTreeMap::new(); 
-        let mut node_of_line_nr: BTreeMap<usize, NodeIndex> = BTreeMap::new(); 
-        let fresh_line_nr = |qi_graph: &Graph::<usize, ()>, line_nr: usize| qi_graph.node_weights().all(|&line| line != line_nr);
+    pub fn get_instantiation_graph(&self) -> InstGraph {
+        let mut graph = InstGraph::default(); 
         let insts = &self.instantiations;
+        // quant_discovered <=> instantiation not due to pattern-match in e-graph
         for to_inst in insts.iter().filter(|inst| !inst.quant_discovered) {
-            let from_iidxs = &to_inst.dep_instantiations;
             if let Some(to) = to_inst.line_no {
-                if fresh_line_nr(&qi_graph, to) {
-                    let to_node = qi_graph.add_node(to);
-                    node_of_line_nr.insert(to, to_node);
-                    line_nr_of_node.insert(to_node.index(), to);
-                }
+                graph.add_node(to);
+                let from_iidxs = &to_inst.dep_instantiations;
                 for from_inst in from_iidxs.iter().filter_map(|&iidx| insts.get(iidx)) {
                     if let Some(from) = from_inst.line_no {
                         if from > 0 {
-                            if fresh_line_nr(&qi_graph, from) {
-                                let from_node = qi_graph.add_node(from);
-                                node_of_line_nr.insert(from, from_node);
-                                line_nr_of_node.insert(from_node.index(), from);
-                            }
-                            if let (Some(&from_node_idx), Some(&to_node_idx)) = (node_of_line_nr.get(&from), node_of_line_nr.get(&to)) {
-                                qi_graph.add_edge(from_node_idx, to_node_idx, ());
-                            }
+                            graph.add_node(from);
+                            graph.add_edge(from, to);
                         }
                     }
                 }
             }
         }
-        (qi_graph, line_nr_of_node)
+        graph
     }
-
 }
