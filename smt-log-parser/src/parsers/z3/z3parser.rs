@@ -1,5 +1,4 @@
 use fxhash::FxHashMap;
-use std::str::Split;
 use typed_index_collections::TiVec;
 
 use crate::{
@@ -12,7 +11,8 @@ use crate::{
 #[derive(Debug)]
 pub struct Z3Parser {
     pub(super) version_info: Option<VersionInfo>,
-    pub(super) idx_map: IdxMap,
+    pub(super) term_id_map: TermIdToIdxMap,
+    pub(super) discovered_map: DiscoveredQuantToIdxMap,
     pub(super) terms: TiVec<TermIdx, Term>, // [namespace => [ID number => Term]]
     pub(super) quantifiers: TiVec<QuantIdx, Quantifier>, // [namespace => [ID number => Quantifier]]
     pub(super) matches: FxHashMap<Fingerprint, Instantiation>, // [match line number => Instantiation]
@@ -23,20 +23,10 @@ pub struct Z3Parser {
 }
 
 #[derive(Debug, Default)]
-pub struct IdxMap {
-    term_map: FxHashMap<TermId, TermIdx>,
+pub struct DiscoveredQuantToIdxMap {
     discovered_map: FxHashMap<DiscoveredId, QuantIdx>,
 }
-impl IdxMap {
-    pub fn register_term(&mut self, id: TermIdCow, idx: TermIdx) {
-        // The `id` of two different terms may clash and so we may remove
-        // a `TermIdx` from the map. This is fine since we want future uses of
-        // `id` to refer to the new term and not the old one.
-        self.term_map.insert(id.into_owned(), idx);
-    }
-    pub fn get_term(&self, id: TermIdCow) -> Option<TermIdx> {
-        self.term_map.get(&id).copied()
-    }
+impl DiscoveredQuantToIdxMap {
     pub fn discovered_quant(
         &mut self,
         id: DiscoveredId,
@@ -56,12 +46,12 @@ impl Z3Parser {
             self.terms[*c].dep_term_ids.push(idx);
         }
         self.terms.push(term);
-        self.idx_map.register_term(id, idx);
+        self.term_id_map.register_term(id, idx);
         idx
     }
 
     pub fn discovered_quant(&mut self, id: DiscoveredId, method: &str) -> QuantIdx {
-        self.idx_map.discovered_quant(id, || {
+        self.discovered_map.discovered_quant(id, || {
             self.quantifiers.push_and_get_key(Quantifier {
                 kind: QuantKind::Other(method.to_string()),
                 num_vars: 0,
@@ -75,14 +65,14 @@ impl Z3Parser {
 
     #[must_use]
     fn parse_existing_id(&self, id: &str) -> Option<TermIdx> {
-        Some(self.idx_map.get_term(TermIdCow::parse(id)?).unwrap())
+        Some(self.term_id_map.get_term(&TermIdCow::parse(id)?).unwrap())
     }
     #[must_use]
-    fn gobble_children(&self, l: Split<'_, char>) -> Option<Vec<TermIdx>> {
+    fn gobble_children<'a>(&self, l: impl Iterator<Item = &'a str>) -> Option<Vec<TermIdx>> {
         l.map(|id| self.parse_existing_id(id)).collect()
     }
     #[must_use]
-    fn gobble_var_names_list(l: Split<'_, char>) -> Option<VarNames> {
+    fn gobble_var_names_list<'a>(l: impl Iterator<Item = &'a str>) -> Option<VarNames> {
         let mut t = Self::gobble_tuples::<true>(l);
         // TODO: if the list can be empty then remove the first `?` and
         // replace with default case.
@@ -171,7 +161,7 @@ impl Z3Parser {
     /// it finds `end`. The element `end` will also be consumed but no other elements after that will.
     #[must_use]
     fn iter_until_eq<'a, 's>(
-        l: &'a mut Split<'s, char>,
+        l: &'a mut impl Iterator<Item = &'s str>,
         end: &'a str,
     ) -> impl Iterator<Item = &'s str> + 'a {
         l.take_while(move |elem| *elem != end)
@@ -183,7 +173,7 @@ impl Z3Parser {
 }
 
 impl Z3LogParser for Z3Parser {
-    fn version_info(&mut self, mut l: Split<'_, char>) -> Option<()> {
+    fn version_info<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let solver = l.next()?.to_string();
         let version = l.next()?;
         // Return if there is unexpectedly more data
@@ -194,7 +184,7 @@ impl Z3LogParser for Z3Parser {
         Some(())
     }
 
-    fn mk_quant(&mut self, mut l: Split<'_, char>) -> Option<()> {
+    fn mk_quant<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let full_id = l.next().and_then(TermIdCow::parse)?;
         let quant_name = l.next().map(QuantKind::parse)?;
         let num_vars = l.next()?.parse().ok()?;
@@ -224,7 +214,7 @@ impl Z3LogParser for Z3Parser {
         Some(())
     }
 
-    fn mk_var(&mut self, mut l: Split<'_, char>) -> Option<()> {
+    fn mk_var<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let full_id = l.next().and_then(TermIdCow::parse)?;
         let kind = l.next().and_then(TermKind::parse_var)?;
         // Return if there is unexpectedly more data
@@ -242,7 +232,11 @@ impl Z3LogParser for Z3Parser {
         Some(())
     }
 
-    fn mk_proof_app(&mut self, mut l: Split<'_, char>, is_proof: bool) -> Option<()> {
+    fn mk_proof_app<'a>(
+        &mut self,
+        mut l: impl Iterator<Item = &'a str>,
+        is_proof: bool,
+    ) -> Option<()> {
         let full_id = l.next().and_then(TermIdCow::parse)?;
         let kind = TermKind::parse_proof_app(is_proof, l.next()?);
         // TODO: add rewrite, monotonicity cases
@@ -260,7 +254,7 @@ impl Z3LogParser for Z3Parser {
         Some(())
     }
 
-    fn attach_meaning(&mut self, mut l: Split<'_, char>) -> Option<()> {
+    fn attach_meaning<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let id = l.next()?;
         let theory = l.next()?.to_string();
         let value = l.collect::<Vec<_>>().join(" ");
@@ -274,7 +268,7 @@ impl Z3LogParser for Z3Parser {
         Some(())
     }
 
-    fn attach_var_names(&mut self, mut l: Split<'_, char>) -> Option<()> {
+    fn attach_var_names<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let id = l.next()?;
         let var_names = Self::gobble_var_names_list(l)?;
         let tidx = self.parse_existing_id(id)?;
@@ -284,7 +278,7 @@ impl Z3LogParser for Z3Parser {
         Some(())
     }
 
-    fn attach_enode(&mut self, mut l: Split<'_, char>) -> Option<()> {
+    fn attach_enode<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let idx = self.parse_existing_id(l.next()?)?;
         // TODO
         let _some_number = l.next()?.parse::<usize>().ok()?;
@@ -298,7 +292,7 @@ impl Z3LogParser for Z3Parser {
         Some(())
     }
 
-    fn eq_expl(&mut self, mut l: Split<'_, char>) -> Option<()> {
+    fn eq_expl<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let idx = self.parse_existing_id(l.next()?)?;
         let kind = l.next()?;
         let eq_expl = {
@@ -359,7 +353,11 @@ impl Z3LogParser for Z3Parser {
         Some(())
     }
 
-    fn new_match(&mut self, mut l: Split<'_, char>, line_no: usize) -> Option<()> {
+    fn new_match<'a>(
+        &mut self,
+        mut l: impl Iterator<Item = &'a str>,
+        line_no: usize,
+    ) -> Option<()> {
         let fingerprint = l.next().and_then(Fingerprint::parse)?;
         let idx = self.parse_existing_id(l.next()?)?;
         let quant = self.terms[idx].kind.quant_idx().unwrap();
@@ -440,7 +438,11 @@ impl Z3LogParser for Z3Parser {
         Some(())
     }
 
-    fn inst_discovered(&mut self, mut l: Split<'_, char>, line_no: usize) -> Option<()> {
+    fn inst_discovered<'a>(
+        &mut self,
+        mut l: impl Iterator<Item = &'a str>,
+        line_no: usize,
+    ) -> Option<()> {
         let method = l.next()?;
         let fingerprint = Fingerprint::parse(l.next()?)?;
         let mut dep_instantiations = Vec::new();
@@ -501,7 +503,7 @@ impl Z3LogParser for Z3Parser {
         Some(())
     }
 
-    fn instance(&mut self, mut l: Split<'_, char>, line_no: usize) -> Option<()> {
+    fn instance<'a>(&mut self, mut l: impl Iterator<Item = &'a str>, line_no: usize) -> Option<()> {
         let fingerprint = l.next().and_then(Fingerprint::parse)?;
 
         let mut inst = self
@@ -534,7 +536,7 @@ impl Z3LogParser for Z3Parser {
         Some(())
     }
 
-    fn end_of_instance(&mut self, mut l: Split<'_, char>) -> Option<()> {
+    fn end_of_instance<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let iidx = self.inst_stack.pop().unwrap();
         let inst = &mut self.instantiations[iidx];
         let deps = self.temp_dependencies.get_mut(&inst.match_line_no).unwrap();
@@ -554,6 +556,8 @@ impl Default for Z3Parser {
     fn default() -> Z3Parser {
         Z3Parser {
             version_info: None,
+            term_id_map: TermIdToIdxMap::default(),
+            discovered_map: DiscoveredQuantToIdxMap::default(),
             terms: TiVec::new(),
             quantifiers: TiVec::new(),
             matches: FxHashMap::default(),
@@ -561,7 +565,6 @@ impl Default for Z3Parser {
             inst_stack: Vec::new(),
             temp_dependencies: FxHashMap::default(),
             dependencies: Vec::new(),
-            idx_map: IdxMap::default(),
         }
     }
 }

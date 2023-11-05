@@ -1,3 +1,5 @@
+pub use self::wrapper_async_parser::*;
+pub use self::wrapper_stream_parser::*;
 use futures::{AsyncBufRead, AsyncBufReadExt, AsyncRead};
 use std::fmt::Debug;
 use std::fs::{File, Metadata};
@@ -5,8 +7,6 @@ use std::io::{BufRead, BufReader, Result};
 use std::path::Path;
 use std::time::Duration;
 use wasm_timer::Instant;
-pub use self::wrapper_stream_parser::*;
-pub use self::wrapper_async_parser::*;
 
 pub mod z3;
 
@@ -52,9 +52,7 @@ pub trait LogParser: Default + Debug {
     /// `from_string(fs::read_to_string(self)?)`. This approach to parsing is
     /// ~5% slower, but should use only ~50% as much memory due to not having
     /// the entire loaded String in memory.
-    fn from_file<P: AsRef<Path>>(
-        p: P,
-    ) -> Result<(Metadata, StreamParser<'static, Self>)> {
+    fn from_file<P: AsRef<Path>>(p: P) -> Result<(Metadata, StreamParser<'static, Self>)> {
         let (meta, reader) = p.read_open()?;
         Ok((meta, reader.into_parser()))
     }
@@ -103,9 +101,7 @@ pub trait IntoAsyncParser<'r> {
     fn into_async_parser<Parser: LogParser>(self) -> AsyncParser<'r, Parser>;
 }
 impl<'r, R: AsyncBufRead + Unpin + 'r> IntoAsyncParser<'r> for R {
-    fn into_async_parser<Parser: LogParser>(
-        self,
-    ) -> AsyncParser<'r, Parser> {
+    fn into_async_parser<Parser: LogParser>(self) -> AsyncParser<'r, Parser> {
         Parser::from_async(self)
     }
 }
@@ -199,7 +195,7 @@ mod wrapper {
         /// return the current progress as `Some`. Otherwise, if we are at the
         /// end, return `None`. After this function returns, use
         /// [`parser`](Self::parser) to retrieve the parser state.
-        /// 
+        ///
         /// The `predicate` callback should aim to return quickly since **it is
         /// called between each line!** If heavier processing is required
         /// consider using [`process_check_every`] or doing it under a
@@ -211,17 +207,22 @@ mod wrapper {
             let Some(reader) = self.reader.as_mut() else {
                 return None;
             };
-            let mut buffer = String::new();
+            let mut buf = String::new();
             while predicate(&self.parser, self.reader_state) {
-                buffer.clear();
-                let bytes_read = add_await([reader.read_line(&mut buffer)]).unwrap();
-                if bytes_read == 0
-                    || !self
-                        .parser
-                        .process_line(buffer.trim_end(), self.reader_state.lines_read)
+                buf.clear();
+                // Read line
+                let bytes_read = add_await([reader.read_line(&mut buf)]).unwrap();
+                // Remove newline from end
+                if buf.ends_with('\n') {
+                    buf.pop();
+                    if buf.ends_with('\r') {
+                        buf.pop();
+                    }
+                }
+                // Parse line
+                if bytes_read == 0 || !self.parser.process_line(&buf, self.reader_state.lines_read)
                 {
-                    let reader = self.reader.take();
-                    drop(reader); // Release file handle/free up memory
+                    self.reader.take(); // Release file handle/free up memory
                     return None;
                 }
                 self.reader_state.bytes_read += bytes_read;
@@ -247,7 +248,8 @@ mod wrapper {
             // does not drop by more than `MAX_TIME_OVER_APPROX` between checks.
             // The closer this is to `1`, the fewer checks we'll do.
             const MAX_LINES_PER_TIME_VARIATION: u128 = 10;
-            let initial_lines_per_check = delta.as_millis().try_into().unwrap_or(usize::MAX).max(10);
+            let initial_lines_per_check =
+                delta.as_millis().try_into().unwrap_or(usize::MAX).max(10);
             // How many lines must pass before we check time again?
             let mut lines_per_check = initial_lines_per_check;
             // How many lines until the next time check?
@@ -267,7 +269,9 @@ mod wrapper {
                             if check_delta < MAX_LINES_PER_TIME_VARIATION {
                                 lines_per_check = 1;
                             } else {
-                                let check_delta = check_delta.checked_mul(MAX_LINES_PER_TIME_VARIATION).unwrap_or(u128::MAX);
+                                let check_delta = check_delta
+                                    .checked_mul(MAX_LINES_PER_TIME_VARIATION)
+                                    .unwrap_or(u128::MAX);
                                 // How much smaller is `lines_per_check` than it
                                 // should be?
                                 let under_approx = (time_left / check_delta)
@@ -280,10 +284,8 @@ mod wrapper {
                                 let over_approx = (check_delta + time_left - 1) / time_left;
                                 // How much larger is `lines_per_check` than it
                                 // should be?
-                                let over_approx = over_approx
-                                    .try_into()
-                                    .unwrap_or(usize::MAX)
-                                    .max(1);
+                                let over_approx =
+                                    over_approx.try_into().unwrap_or(usize::MAX).max(1);
                                 let new_lpc = (lines_per_check * under_approx) / over_approx;
                                 lines_per_check = new_lpc.min(max_lpc).max(1);
                             }
@@ -319,7 +321,10 @@ mod wrapper {
         /// Parsing cannot be resumed if the timeout is reached. If you need
         /// support for resuming, use [`process_check_every`] or
         /// [`process_until`] instead.
-        pub async fn process_all_timeout(mut self, timeout: Duration) -> (Option<ReaderState>, Parser) {
+        pub async fn process_all_timeout(
+            mut self,
+            timeout: Duration,
+        ) -> (Option<ReaderState>, Parser) {
             let result = add_await([self.process_check_every(timeout, |_, _| false)]);
             (result, self.parser)
         }

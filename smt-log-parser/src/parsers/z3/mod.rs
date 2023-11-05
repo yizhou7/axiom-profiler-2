@@ -1,4 +1,4 @@
-use std::{fmt::Debug, str::Split};
+use std::fmt::Debug;
 
 use super::LogParser;
 
@@ -11,8 +11,10 @@ pub mod results;
 
 impl<T: Z3LogParser + Default> LogParser for T {
     fn process_line(&mut self, line: &str, line_no: usize) -> bool {
+        // Much faster than `split_whitespace` or `split(' ')` since it works on
+        // [u8] instead of [char] and so doesn't need to convert to UTF-8.
+        let mut split = line.split_ascii_whitespace();
         // println!("Processing {line:?} ({line_no})");
-        let mut split = line.split(' ');
         let parse = match split.next().unwrap() {
             // match the line case
             "[tool-version]" => self.version_info(split),
@@ -52,48 +54,52 @@ pub trait Z3LogParser: Debug {
      `l` is a line split with spaces as delimiters,
      and `l0` is the raw line (used only when )
     */
-    fn version_info(&mut self, l: Split<'_, char>) -> Option<()>;
-    fn mk_quant(&mut self, l: Split<'_, char>) -> Option<()>;
-    fn mk_var(&mut self, l: Split<'_, char>) -> Option<()>;
-    fn mk_proof_app(&mut self, l: Split<'_, char>, is_proof: bool) -> Option<()>;
-    fn attach_meaning(&mut self, l: Split<'_, char>) -> Option<()>;
-    fn attach_var_names(&mut self, l: Split<'_, char>) -> Option<()>;
-    fn attach_enode(&mut self, l: Split<'_, char>) -> Option<()>;
-    fn eq_expl(&mut self, l: Split<'_, char>) -> Option<()>;
-    fn new_match(&mut self, l: Split<'_, char>, line_no: usize) -> Option<()>;
-    fn inst_discovered(&mut self, l: Split<'_, char>, line_no: usize) -> Option<()>;
-    fn instance(&mut self, l: Split<'_, char>, line_no: usize) -> Option<()>;
-    fn end_of_instance(&mut self, l: Split<'_, char>) -> Option<()>;
+    fn version_info<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()>;
+    fn mk_quant<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()>;
+    fn mk_var<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()>;
+    fn mk_proof_app<'a>(&mut self, l: impl Iterator<Item = &'a str>, is_proof: bool) -> Option<()>;
+    fn attach_meaning<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()>;
+    fn attach_var_names<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()>;
+    fn attach_enode<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()>;
+    fn eq_expl<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()>;
+    fn new_match<'a>(&mut self, l: impl Iterator<Item = &'a str>, line_no: usize) -> Option<()>;
+    fn inst_discovered<'a>(
+        &mut self,
+        l: impl Iterator<Item = &'a str>,
+        line_no: usize,
+    ) -> Option<()>;
+    fn instance<'a>(&mut self, l: impl Iterator<Item = &'a str>, line_no: usize) -> Option<()>;
+    fn end_of_instance<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()>;
 
     // unused in original parser
-    fn decide_and_or(&mut self, _l: Split<'_, char>) -> Option<()> {
+    fn decide_and_or<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()> {
         DEFAULT
     }
-    fn decide(&mut self, _l: Split<'_, char>) -> Option<()> {
+    fn decide<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()> {
         DEFAULT
     }
-    fn assign(&mut self, _l: Split<'_, char>) -> Option<()> {
+    fn assign<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()> {
         DEFAULT
     }
-    fn push(&mut self, _l: Split<'_, char>) -> Option<()> {
+    fn push<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()> {
         DEFAULT
     }
-    fn pop(&mut self, _l: Split<'_, char>) -> Option<()> {
+    fn pop<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()> {
         DEFAULT
     }
-    fn begin_check(&mut self, _l: Split<'_, char>) -> Option<()> {
+    fn begin_check<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()> {
         DEFAULT
     }
-    fn query_done(&mut self, _l: Split<'_, char>) -> Option<()> {
+    fn query_done<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()> {
         DEFAULT
     }
-    fn resolve_process(&mut self, _l: Split<'_, char>) -> Option<()> {
+    fn resolve_process<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()> {
         DEFAULT
     }
-    fn resolve_lit(&mut self, _l: Split<'_, char>) -> Option<()> {
+    fn resolve_lit<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()> {
         DEFAULT
     }
-    fn conflict(&mut self, _l: Split<'_, char>) -> Option<()> {
+    fn conflict<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()> {
         DEFAULT
     }
 }

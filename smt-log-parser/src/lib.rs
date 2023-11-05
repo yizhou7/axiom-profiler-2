@@ -1,3 +1,5 @@
+#![feature(hash_raw_entry)]
+
 /// Commonly used file reading/writing sequences.
 // pub mod file_io;
 
