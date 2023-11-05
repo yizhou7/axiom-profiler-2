@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use smt_log_parser::parsers::z3::results::InstGraph;
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
 use yew::prelude::*;
@@ -28,16 +30,26 @@ pub fn svg_result(props: &SVGProps) -> Html {
             let graph_props = graph_props.clone();
             let trace_file_text = trace_file_text.clone();
             let parser = Z3Parser::from_str(trace_file_text.as_str());
-            let parser = parser.process_all();
+            // let parser = parser.process_all();
+            let (result, parser) = parser.process_all_timeout(Duration::new(0, 100_000_000));
+            match result {
+                None => log::debug!("processed entire log"),
+                _ => log::debug!("timeout reached before processing entire log"),
+            }
             // let (qi_graph, line_nr_of_node) = parser.get_instantiation_graph();
             let InstGraph{inst_graph, line_nr_of_node, ..} = parser.get_instantiation_graph();
             let dot_output = format!("{:?}", Dot::with_config(&inst_graph, &[Config::EdgeNoLabel])); 
-            log::debug!("use effect");
             wasm_bindgen_futures::spawn_local(
                 async move {
                    let graphviz = VizInstance::new().await;
+                //    log::debug!("Available engines in GraphViz:");
+                //    for format in graphviz.engines() {
+                //     log::debug!("{format}");
+                //    } 
+                   let mut options = viz_js::Options::default();
+                //    options.engine = "fdp".to_string();
                     let svg = graphviz
-                        .render_svg_element(dot_output, viz_js::Options::default())
+                        .render_svg_element(dot_output, options)
                         .expect("Could not render graphviz");
                     let svg_text = svg.outer_html();
                     graph_props.set(GraphProps{svg_text: AttrValue::from(svg_text), line_nr_of_node});
