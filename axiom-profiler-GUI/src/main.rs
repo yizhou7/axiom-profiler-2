@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use gloo_file::{callbacks::FileReader, FileList};
 use smt_log_parser::parsers::{LogParser, AsyncBufferRead, AsyncCursorRead, AsyncParser};
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
@@ -8,7 +6,7 @@ use wasm_streams::ReadableStream;
 use web_sys::{Event, HtmlInputElement};
 use yew::prelude::*;
 use yew_router::prelude::*;
-use crate::graph::{Graph, GraphProps};
+use crate::svg_result::*;
 
 mod svg_result;
 mod graph;
@@ -49,33 +47,53 @@ impl Component for FileDataComponent {
                 log::info!("Files selected: {}", files.len());
                 for file in files.into_iter() {
                     let file_name = file.name();
-                    // Turn into stream
-                    let blob: &web_sys::Blob = file.as_ref();
-                    let stream = ReadableStream::from_raw(blob.stream().unchecked_into());
-                    match stream.try_into_async_read() {
-                        Ok(stream) => {
-                            let parser = Z3Parser::from_async(stream.buffer());
-                            self.parsers.push(ParserData::new(parser));
-                            changed = true;
-                        }
-                        Err((_err, _stream)) => {
+                    if true {
+                        // Old reader where all files are loaded as strings
+                        let task = {
                             let link = ctx.link().clone();
-                            let reader = gloo_file::callbacks::read_as_bytes(file, move |res| {
+                            gloo_file::callbacks::read_as_bytes(&file, move |res| {
                                 link.send_message(Msg::LoadedBytes(
                                     file_name,
                                     res.expect("failed to read file"),
                                 ))
-                            });
-                            self.readers.push(reader);
-                        }
-                    };
+                            })
+                        };
+                        self.readers.push(task);
+                    } else {
+                        // Turn into stream
+                        let blob: &web_sys::Blob = file.as_ref();
+                        let stream = ReadableStream::from_raw(blob.stream().unchecked_into());
+                        match stream.try_into_async_read() {
+                            Ok(stream) => {
+                                let parser = Z3Parser::from_async(stream.buffer());
+                                self.parsers.push(ParserData::new(parser));
+                                changed = true;
+                            }
+                            Err((_err, _stream)) => {
+                                let link = ctx.link().clone();
+                                let reader = gloo_file::callbacks::read_as_bytes(file, move |res| {
+                                    link.send_message(Msg::LoadedBytes(
+                                        file_name,
+                                        res.expect("failed to read file"),
+                                    ))
+                                });
+                                self.readers.push(reader);
+                            }
+                        };
+                    }
                 }
                 changed
             }
             Msg::LoadedBytes(file_name, data) => {
                 log::info!("Processing: {}", file_name);
-                let parser = Z3Parser::from_async(data.into_async_cursor());
-                self.parsers.push(ParserData::new(parser));
+                if true {
+                    // Old reader where all files are loaded as strings
+                    let text_data = String::from_utf8(data).unwrap();
+                    self.files.push(text_data);
+                } else {
+                    let parser = Z3Parser::from_async(data.into_async_cursor());
+                    self.parsers.push(ParserData::new(parser));
+                }
                 true
             }
         }
@@ -95,7 +113,7 @@ impl Component for FileDataComponent {
                     <input type="file" accept=".log" onchange={on_change} multiple=false/>
                 </div>
                 <div>
-                {for self.parsers.iter().map(|parser_data| Self::parse(parser_data))}
+                { for self.files.iter().map(|f| Self::view_file(f))}
                 </div>
             </div>
         }
@@ -103,31 +121,12 @@ impl Component for FileDataComponent {
 }
 
 impl FileDataComponent {
-    fn parse(parser_data: &ParserData) -> Html {
-        log::debug!("Parsing log");
-        let parse_log = Callback::from(|_| {
-                wasm_bindgen_futures::spawn_local(
-                    async move {
-                        let result = parser_data.parser.process_check_every(Duration::new(1,0), |_, _| false).await;
-                    },
-                );
-            });
+    fn view_file(data: &str) -> Html {
+        log::debug!("Viewing file");
         html! {
-            // contains parser options (max line nr.) that user can specify
-            // contains button "Parse log" that allows user to start parsing log
-            // calls process_check_every to stop at the max line nr.
-            // contains progress-bar that shows how many lines have already been processed
-            // the process_check_every updates the progress-bar after each delta
-        <>
-            // <div>
-            //     <UsizeInput label={"Parse log up to which line number? "} input_value={max_log_line_nr} />
-            //     <UsizeInput label={"Parse log up to how many instantiations? "} input_value={max_instantiations} />
-                <button onclick={parse_log}>{"Parse log"}</button>
-            // </div>
-            // <Graph svg_text={svg_text.clone()} line_nr_of_node={line_nr_of_node.clone()} /> 
-        </>
-
-
+            <div>
+            <SVGResult trace_file_text={AttrValue::from(data.to_string())}/>
+            </div>
         }
     }
 }
