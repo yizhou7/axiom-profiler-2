@@ -37,7 +37,10 @@ impl<T: Z3LogParser + Default> LogParser for T {
             "[pop]" => self.pop(split),
             "[begin-check]" => self.begin_check(split),
             "[query-done]" => self.query_done(split),
-            "[eof]" => return false,
+            "[eof]" => {
+                self.compute_costs();
+                return false
+            },
             "[resolve-process]" => self.resolve_process(split),
             "[resolve-lit]" => self.resolve_lit(split),
             "[conflict]" => self.conflict(split),
@@ -70,6 +73,7 @@ pub trait Z3LogParser: Debug {
     ) -> Option<()>;
     fn instance<'a>(&mut self, l: impl Iterator<Item = &'a str>, line_no: usize) -> Option<()>;
     fn end_of_instance<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()>;
+    fn compute_costs<'a>(&mut self);
 
     // unused in original parser
     fn decide_and_or<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()> {

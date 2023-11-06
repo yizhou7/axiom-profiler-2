@@ -31,14 +31,16 @@ pub fn svg_result(props: &SVGProps) -> Html {
             let trace_file_text = trace_file_text.clone();
             let parser = Z3Parser::from_str(trace_file_text.as_str());
             // let parser = parser.process_all();
-            let (result, parser) = parser.process_all_timeout(Duration::new(0, 100_000_000));
-            match result {
-                None => log::debug!("processed entire log"),
-                _ => log::debug!("timeout reached before processing entire log"),
-            }
-            // let (qi_graph, line_nr_of_node) = parser.get_instantiation_graph();
+            // let (result, parser) = parser.process_all(Duration::new(0, 200_000_000));
+            let parser = parser.process_all();
+            // match result {
+            //     None => log::debug!("processed entire log"),
+            //     _ => log::debug!("timeout reached before processing entire log"),
+            // }
             let InstGraph{inst_graph, line_nr_of_node, ..} = parser.get_instantiation_graph();
+            log::debug!("Finished building QI graph");
             let dot_output = format!("{:?}", Dot::with_config(&inst_graph, &[Config::EdgeNoLabel])); 
+            log::debug!("Finished building dot output");
             wasm_bindgen_futures::spawn_local(
                 async move {
                    let graphviz = VizInstance::new().await;
@@ -47,7 +49,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
                 //     log::debug!("{format}");
                 //    } 
                    let mut options = viz_js::Options::default();
-                //    options.engine = "fdp".to_string();
+                //    options.engine = "osage".to_string();
                     let svg = graphviz
                         .render_svg_element(dot_output, options)
                         .expect("Could not render graphviz");

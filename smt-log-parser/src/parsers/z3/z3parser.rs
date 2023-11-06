@@ -549,6 +549,20 @@ impl Z3LogParser for Z3Parser {
         // Return if there is unexpectedly more data
         l.next().map_or(Some(()), |_| None)
     }
+
+    fn compute_costs(&mut self) {
+        for (iidx, inst) in self.instantiations.clone().iter_enumerated().rev() {
+            let num_deps = inst.dep_instantiations.len() as f32;
+            let cost = self.instantiations.get(iidx).unwrap().cost / num_deps;
+            for &dep_iidx in &inst.dep_instantiations {
+                let dep_inst = self.instantiations.get_mut(dep_iidx).unwrap();
+                dep_inst.cost += cost;
+                let qidx = dep_inst.quant;
+                let dep_inst_quant = self.quantifiers.get_mut(qidx).unwrap();
+                dep_inst_quant.cost += cost;
+            }
+        }
+    }
 }
 
 impl Default for Z3Parser {

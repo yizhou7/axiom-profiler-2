@@ -36,7 +36,15 @@ impl InstGraph {
 impl Z3Parser {
     pub fn get_instantiation_graph(&self) -> InstGraph {
         let mut graph = InstGraph::default(); 
-        let insts = &self.instantiations;
+        let mut insts = self.instantiations.clone();
+        insts.sort_by(|inst1, inst2| inst2.cost.partial_cmp(&inst1.cost).unwrap());
+        // for inst in &insts {
+        //     log!("Inst at line nr ", inst.line_no, " has cost ", inst.cost);
+        // } 
+        insts.truncate(250);
+        for inst in &insts {
+            log!("Inst at line nr ", inst.line_no, " has cost ", inst.cost);
+        }
         // quant_discovered <=> instantiation not due to pattern-match in e-graph
         for to_inst in insts.iter().filter(|inst| !inst.quant_discovered) {
             if let Some(to) = to_inst.line_no {
