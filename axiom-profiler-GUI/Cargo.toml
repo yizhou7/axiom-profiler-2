@@ -24,3 +24,4 @@ smt-log-parser = { path = "../smt-log-parser" }
 petgraph = "0.6.4"
 viz-js = "3.1.0"
 wasm-streams = "0.3.0"
+yew-hooks = "0.3.0"

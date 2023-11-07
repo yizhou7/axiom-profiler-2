@@ -39,9 +39,9 @@ impl InstGraph {
 }
 
 impl Z3Parser {
-    pub fn get_instantiation_graph(&self) -> InstGraph {
-        // TODO: turn settings into an argument of this function
-        let RenderSettings {max_line_nr, exclude_theory_solving_inst, max_instantiations} = RenderSettings::default();
+    pub fn get_instantiation_graph(&self, settings: RenderSettings) -> InstGraph {
+        let RenderSettings {max_line_nr, exclude_theory_inst, max_instantiations} = settings;
+        log!("max_instantiations is set to ", max_instantiations);
         let mut graph = InstGraph::default(); 
         let mut insts: TiVec<InstIdx, Instantiation> = self.instantiations
             .iter()
@@ -50,16 +50,13 @@ impl Z3Parser {
             .filter(|inst| inst.line_no.unwrap() <= max_line_nr)
             // if exlude_theory_solving_inst == true then only include inst if inst.quant_discovered = false 
             // since inst.quant_discovered == true iff inst is is a theory-solving inst (not due to mattern patch in e-graph) 
-            .filter(|inst| !exclude_theory_solving_inst || !inst.quant_discovered)
+            .filter(|inst| !exclude_theory_inst || !inst.quant_discovered)
             .cloned()
             .collect();
 
         // only keep the max_instantiations most expensive instantiations
         insts.sort_by(|inst1, inst2| inst2.cost.partial_cmp(&inst1.cost).unwrap());
         insts.truncate(max_instantiations);
-        for inst in &insts {
-            log!("Inst at line nr ", inst.line_no, " has cost ", inst.cost);
-        } 
         let insts_lines: HashSet<usize> = insts.iter().filter_map(|inst| inst.line_no).collect();
         for dep in &self.dependencies {
             if dep.from > 0 {
@@ -98,16 +95,16 @@ impl Z3Parser {
 }
 
 pub struct RenderSettings {
-    max_line_nr: usize,
-    exclude_theory_solving_inst: bool,
-    max_instantiations: usize,
+    pub max_line_nr: usize,
+    pub exclude_theory_inst: bool,
+    pub max_instantiations: usize,
 }
 
 impl Default for RenderSettings {
     fn default() -> Self {
         Self {
             max_line_nr: usize::MAX,
-            exclude_theory_solving_inst: true,
+            exclude_theory_inst: true,
             max_instantiations: 100,
         }
     }

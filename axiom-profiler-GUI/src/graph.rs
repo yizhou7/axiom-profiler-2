@@ -125,7 +125,7 @@ pub fn graph(props: &GraphProps) -> Html {
 
     html! {
         <>
-            <UsizeInput label={"Render graph up to line number: "} dependency={props.svg_text.clone()} input_value={max_line_nr} />
+            // <UsizeInput label={"Render graph up to line number: "} dependency={props.svg_text.clone()} input_value={max_line_nr} />
             <div ref={div_ref}>
                 {svg_result}
             </div>

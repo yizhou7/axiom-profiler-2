@@ -4,7 +4,6 @@ use wasm_bindgen::{UnwrapThrowExt, JsCast};
 
 pub enum InputAction {
     SetValueTo(usize),
-    ResetState,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -28,9 +27,6 @@ impl Reducible for InputValue {
             InputAction::SetValueTo(value) => Self {
                 value,
             }.into(),
-            InputAction::ResetState => {
-                Self::default().into()
-            },
         }
     }
 }
@@ -40,6 +36,7 @@ pub struct UsizeInputProps where {
     pub label: AttrValue,
     pub dependency: AttrValue,
     pub input_value: UseReducerHandle<InputValue>,
+    pub default_value: usize,
 }
 
 /// Function component for input fields that accept usize
@@ -52,6 +49,7 @@ pub fn integer_input(props: &UsizeInputProps) -> Html {
 
     let set_value = {
         let input_value = input_value.clone();
+        let default_value = props.default_value.clone();
         move |input_event: Event| {
             let target: HtmlInputElement = input_event
                 .target()
@@ -60,10 +58,11 @@ pub fn integer_input(props: &UsizeInputProps) -> Html {
                 .unwrap_throw();
             match target.value().to_string().parse::<usize>() {
                 Ok(value) => {
+                    log::debug!("Setting the value to {}", value);
                     input_value.dispatch(InputAction::SetValueTo(value));
                 },
                 Err(_) => {
-                    input_value.dispatch(InputAction::ResetState);
+                    input_value.dispatch(InputAction::SetValueTo(default_value));
                 }
             }
         }
@@ -92,10 +91,11 @@ pub fn integer_input(props: &UsizeInputProps) -> Html {
         let dep = props.dependency.clone();
         let input_value = input_value.clone();
         let input_ref = input_ref.clone();
+        let default_value = props.default_value.clone();
         use_effect_with(dep, {
             let input_value = input_value.clone();
             move |_| {
-                input_value.dispatch(InputAction::ResetState);
+                input_value.dispatch(InputAction::SetValueTo(default_value));
                 let input = input_ref
                     .cast::<HtmlInputElement>()
                     .expect("div_ref not attached to div element");

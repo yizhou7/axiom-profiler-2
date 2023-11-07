@@ -1,13 +1,13 @@
-use std::time::Duration;
-
-use smt_log_parser::parsers::z3::results::InstGraph;
+use smt_log_parser::parsers::z3::results::{InstGraph, RenderSettings};
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
 use yew::prelude::*;
+use yew_hooks::prelude::*;
 use smt_log_parser::parsers::LogParser;
 use viz_js::VizInstance;
 use petgraph::dot::{Dot, Config};
 use crate::graph::{Graph, GraphProps};
 use crate::input_state::{UsizeInput, InputValue};
+use crate::toggle_switch::ToggleSwitch;
 
 #[derive(Properties, PartialEq)]
 pub struct SVGProps {
@@ -18,36 +18,32 @@ pub struct SVGProps {
 pub fn svg_result(props: &SVGProps) -> Html {
     log::debug!("SVG result");
     let graph_props = use_state(|| GraphProps::default());
-    let max_log_line_nr = use_reducer(InputValue::default);
+    let max_line_nr = use_reducer(InputValue::default);
+    let exclude_theory_inst = use_bool_toggle(true);
     let max_instantiations = use_reducer(InputValue::default);
 
     let parse_log = {
         let graph_props = graph_props.clone();
         let trace_file_text = props.trace_file_text.clone();
-        // let max_log_line_nr = max_log_line_nr.value.clone();
-        // let max_instantiations = max_instantiations.value.clone();
+        let max_line_nr = max_line_nr.value.clone();
+        let exclude_theory_inst = *exclude_theory_inst.clone();
+        let max_instantiations = max_instantiations.value.clone();
         Callback::from(move |_| {
             let graph_props = graph_props.clone();
             let trace_file_text = trace_file_text.clone();
             let parser = Z3Parser::from_str(trace_file_text.as_str());
-            // let parser = parser.process_all();
-            // let (result, parser) = parser.process_all(Duration::new(0, 200_000_000));
             let parser = parser.process_all();
-            // match result {
-            //     None => log::debug!("processed entire log"),
-            //     _ => log::debug!("timeout reached before processing entire log"),
-            // }
-            let InstGraph{inst_graph, line_nr_of_node, ..} = parser.get_instantiation_graph();
+            let InstGraph{inst_graph, line_nr_of_node, ..} = parser.get_instantiation_graph(RenderSettings{
+                max_line_nr,
+                exclude_theory_inst,
+                max_instantiations,
+            });
             log::debug!("Finished building QI graph");
             let dot_output = format!("{:?}", Dot::with_config(&inst_graph, &[Config::EdgeNoLabel])); 
             log::debug!("Finished building dot output");
             wasm_bindgen_futures::spawn_local(
                 async move {
                    let graphviz = VizInstance::new().await;
-                //    log::debug!("Available engines in GraphViz:");
-                //    for format in graphviz.engines() {
-                //     log::debug!("{format}");
-                //    } 
                    let mut options = viz_js::Options::default();
                 //    options.engine = "osage".to_string();
                     let svg = graphviz
@@ -71,8 +67,9 @@ pub fn svg_result(props: &SVGProps) -> Html {
     html! {
         <>
             <div>
-                <UsizeInput label={"Parse log up to which line number? "} dependency={props.trace_file_text.clone()} input_value={max_log_line_nr} />
-                <UsizeInput label={"Parse log up to how many instantiations? "} dependency={props.trace_file_text.clone()} input_value={max_instantiations} />
+                <UsizeInput label={"Render graph up to line number _:"} dependency={props.trace_file_text.clone()} input_value={max_line_nr} default_value={usize::MAX} />
+                <ToggleSwitch label={"Ignore theory-solving instantiations:"} dependency={props.trace_file_text.clone()} input_value={exclude_theory_inst} />
+                <UsizeInput label={"Render the _ most expensive instantiations:"} dependency={props.trace_file_text.clone()} input_value={max_instantiations} default_value={250}/>
                 <button onclick={parse_log}>{"Parse log and render results"}</button>
             </div>
             <Graph svg_text={graph_props.svg_text.clone()} line_nr_of_node={graph_props.line_nr_of_node.clone()} /> 

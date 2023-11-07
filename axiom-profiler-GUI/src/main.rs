@@ -10,8 +10,8 @@ use crate::svg_result::*;
 
 mod svg_result;
 mod graph;
-mod graph_state;
 mod input_state;
+mod toggle_switch;
 pub enum Msg {
     LoadedBytes(String, Vec<u8>),
     Files(Option<FileList>),
