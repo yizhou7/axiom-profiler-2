@@ -1,6 +1,7 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use petgraph::Graph;
+use petgraph::graph::DiGraph;
 use petgraph::graph::NodeIndex;
 use gloo_console::log;
 
@@ -38,28 +39,41 @@ impl Z3Parser {
         let mut graph = InstGraph::default(); 
         let mut insts = self.instantiations.clone();
         insts.sort_by(|inst1, inst2| inst2.cost.partial_cmp(&inst1.cost).unwrap());
-        // for inst in &insts {
-        //     log!("Inst at line nr ", inst.line_no, " has cost ", inst.cost);
-        // } 
         insts.truncate(250);
         for inst in &insts {
             log!("Inst at line nr ", inst.line_no, " has cost ", inst.cost);
-        }
-        // quant_discovered <=> instantiation not due to pattern-match in e-graph
-        for to_inst in insts.iter().filter(|inst| !inst.quant_discovered) {
-            if let Some(to) = to_inst.line_no {
+        } 
+        let insts_lines: HashSet<usize> = insts.iter().filter_map(|inst| inst.line_no).collect();
+        let sorted_deps = self.dependencies.iter().filter(|dep| dep.to.is_some()).filter(|dep| insts_lines.contains(&dep.to.unwrap()));
+        for dep in sorted_deps {
+            if !dep.quant_discovered && dep.from > 0 {
+                let from = dep.from;
+                let to = dep.to.unwrap();
+                // log!("Adding edge from ", from, " to ", to);
+                graph.add_node(from);
                 graph.add_node(to);
-                let from_iidxs = &to_inst.dep_instantiations;
-                for from_inst in from_iidxs.iter().filter_map(|&iidx| insts.get(iidx)) {
-                    if let Some(from) = from_inst.line_no {
-                        if from > 0 {
-                            graph.add_node(from);
-                            graph.add_edge(from, to);
-                        }
-                    }
-                }
+                graph.add_edge(from, to);
             }
         }
         graph
+        
+        // quant_discovered <=> instantiation not due to pattern-match in e-graph
+        // for to_inst in insts.iter().filter(|inst| !inst.quant_discovered) {
+        //     if let Some(to) = to_inst.line_no {
+        //         graph.add_node(to);
+        //         let from_iidxs = &to_inst.dep_instantiations;
+        //         log!("The node at line nr ", to);
+        //         for from_inst in from_iidxs.iter().filter_map(|&iidx| insts.get(iidx)) {
+        //             if let Some(from) = from_inst.line_no {
+        //                 if from > 0 {
+        //                     log!("depends on the node at line nr ", from);
+        //                     graph.add_node(from);
+        //                     graph.add_edge(from, to);
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+        // graph
     }
 }

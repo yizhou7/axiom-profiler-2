@@ -551,17 +551,35 @@ impl Z3LogParser for Z3Parser {
     }
 
     fn compute_costs(&mut self) {
-        for (iidx, inst) in self.instantiations.clone().iter_enumerated().rev() {
-            let num_deps = inst.dep_instantiations.len() as f32;
-            let cost = self.instantiations.get(iidx).unwrap().cost / num_deps;
-            for &dep_iidx in &inst.dep_instantiations {
-                let dep_inst = self.instantiations.get_mut(dep_iidx).unwrap();
-                dep_inst.cost += cost;
-                let qidx = dep_inst.quant;
-                let dep_inst_quant = self.quantifiers.get_mut(qidx).unwrap();
-                dep_inst_quant.cost += cost;
+        let insts = self.instantiations.as_mut_slice();
+        for iidx in insts.keys().rev() {
+            let (before, current_and_after) = insts.split_at_mut(iidx);
+            if let Some((current, after)) = current_and_after.split_first_mut() {
+                let num_deps = current.dep_instantiations.len() as f32;
+                let cost = current.cost / num_deps;
+                for &dep_iidx in current.dep_instantiations.as_slice() {
+                    let dep_inst = match before.get_mut(dep_iidx) {
+                        Some(inst) => inst,
+                        None => after.get_mut(dep_iidx).unwrap(),
+                    };
+                    dep_inst.cost += cost;
+                    let qidx = dep_inst.quant;
+                    let dep_inst_quant = self.quantifiers.get_mut(qidx).unwrap();
+                    dep_inst_quant.cost += cost;
+                }
             }
         }
+        // for (iidx, inst) in self.instantiations.clone().iter_enumerated().rev() {
+        //     let num_deps = inst.dep_instantiations.len() as f32;
+        //     let cost = self.instantiations.get(iidx).unwrap().cost / num_deps;
+        //     for &dep_iidx in &inst.dep_instantiations {
+        //         let dep_inst = self.instantiations.get_mut(dep_iidx).unwrap();
+        //         dep_inst.cost += cost;
+        //         let qidx = dep_inst.quant;
+        //         let dep_inst_quant = self.quantifiers.get_mut(qidx).unwrap();
+        //         dep_inst_quant.cost += cost;
+        //     }
+        // }
     }
 }
 
