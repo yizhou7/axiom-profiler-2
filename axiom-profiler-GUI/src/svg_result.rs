@@ -67,10 +67,10 @@ pub fn svg_result(props: &SVGProps) -> Html {
     html! {
         <>
             <div>
-                <UsizeInput label={"Render graph up to line number _:"} dependency={props.trace_file_text.clone()} input_value={max_line_nr} default_value={usize::MAX} />
-                <ToggleSwitch label={"Ignore theory-solving instantiations:"} dependency={props.trace_file_text.clone()} input_value={exclude_theory_inst} />
-                <UsizeInput label={"Render the _ most expensive instantiations:"} dependency={props.trace_file_text.clone()} input_value={max_instantiations} default_value={250}/>
-                <button onclick={parse_log}>{"Parse log and render results"}</button>
+                <UsizeInput label={"Render graph up to line number "} dependency={props.trace_file_text.clone()} input_value={max_line_nr} default_value={usize::MAX} />
+                <ToggleSwitch label={"Ignore theory-solving instantiations: "} dependency={props.trace_file_text.clone()} input_value={exclude_theory_inst} />
+                <UsizeInput label={"Render the n most expensive instantiations where n = "} dependency={props.trace_file_text.clone()} input_value={max_instantiations} default_value={250}/>
+                <button onclick={parse_log}>{"Render graph"}</button>
             </div>
             <Graph svg_text={graph_props.svg_text.clone()} line_nr_of_node={graph_props.line_nr_of_node.clone()} /> 
         </>
