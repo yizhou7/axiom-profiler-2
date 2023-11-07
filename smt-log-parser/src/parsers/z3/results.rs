@@ -4,6 +4,10 @@ use petgraph::Graph;
 use petgraph::graph::DiGraph;
 use petgraph::graph::NodeIndex;
 use gloo_console::log;
+use typed_index_collections::TiVec;
+
+use crate::items::InstIdx;
+use crate::items::Instantiation;
 
 use super::z3parser::Z3Parser;
 
@@ -36,23 +40,38 @@ impl InstGraph {
 
 impl Z3Parser {
     pub fn get_instantiation_graph(&self) -> InstGraph {
+        // TODO: turn settings into an argument of this function
+        let RenderSettings {max_line_nr, exclude_theory_solving_inst, max_instantiations} = RenderSettings::default();
         let mut graph = InstGraph::default(); 
-        let mut insts = self.instantiations.clone();
+        let mut insts: TiVec<InstIdx, Instantiation> = self.instantiations
+            .iter()
+            // only keep instantiations up to max_line_nr
+            .filter(|inst| inst.line_no.is_some())
+            .filter(|inst| inst.line_no.unwrap() <= max_line_nr)
+            // if exlude_theory_solving_inst == true then only include inst if inst.quant_discovered = false 
+            // since inst.quant_discovered == true iff inst is is a theory-solving inst (not due to mattern patch in e-graph) 
+            .filter(|inst| !exclude_theory_solving_inst || !inst.quant_discovered)
+            .cloned()
+            .collect();
+
+        // only keep the max_instantiations most expensive instantiations
         insts.sort_by(|inst1, inst2| inst2.cost.partial_cmp(&inst1.cost).unwrap());
-        insts.truncate(250);
+        insts.truncate(max_instantiations);
         for inst in &insts {
             log!("Inst at line nr ", inst.line_no, " has cost ", inst.cost);
         } 
         let insts_lines: HashSet<usize> = insts.iter().filter_map(|inst| inst.line_no).collect();
-        let sorted_deps = self.dependencies.iter().filter(|dep| dep.to.is_some()).filter(|dep| insts_lines.contains(&dep.to.unwrap()));
-        for dep in sorted_deps {
-            if !dep.quant_discovered && dep.from > 0 {
+        for dep in &self.dependencies {
+            if dep.from > 0 {
                 let from = dep.from;
-                let to = dep.to.unwrap();
-                // log!("Adding edge from ", from, " to ", to);
-                graph.add_node(from);
-                graph.add_node(to);
-                graph.add_edge(from, to);
+                if let Some(to) = dep.to {
+                    if insts_lines.contains(&from) && insts_lines.contains(&to) {
+                        graph.add_node(from);
+                        graph.add_node(to);
+                        graph.add_edge(from, to);
+
+                    }
+                }
             }
         }
         graph
@@ -75,5 +94,21 @@ impl Z3Parser {
         //     }
         // }
         // graph
+    }
+}
+
+pub struct RenderSettings {
+    max_line_nr: usize,
+    exclude_theory_solving_inst: bool,
+    max_instantiations: usize,
+}
+
+impl Default for RenderSettings {
+    fn default() -> Self {
+        Self {
+            max_line_nr: usize::MAX,
+            exclude_theory_solving_inst: true,
+            max_instantiations: 100,
+        }
     }
 }
