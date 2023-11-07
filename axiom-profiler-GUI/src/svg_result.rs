@@ -67,6 +67,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
     html! {
         <>
             <div>
+                <h2>{"Specify (optional) render settings"}</h2>
                 <UsizeInput label={"Render graph up to line number "} dependency={props.trace_file_text.clone()} input_value={max_line_nr} default_value={usize::MAX} />
                 <ToggleSwitch label={"Ignore theory-solving instantiations: "} dependency={props.trace_file_text.clone()} input_value={exclude_theory_inst} />
                 <UsizeInput label={"Render the n most expensive instantiations where n = "} dependency={props.trace_file_text.clone()} input_value={max_instantiations} default_value={250}/>

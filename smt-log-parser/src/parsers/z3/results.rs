@@ -38,10 +38,15 @@ impl InstGraph {
     }
 }
 
+pub struct RenderSettings {
+    pub max_line_nr: usize,
+    pub exclude_theory_inst: bool,
+    pub max_instantiations: usize,
+}
+
 impl Z3Parser {
     pub fn get_instantiation_graph(&self, settings: RenderSettings) -> InstGraph {
         let RenderSettings {max_line_nr, exclude_theory_inst, max_instantiations} = settings;
-        log!("max_instantiations is set to ", max_instantiations);
         let mut graph = InstGraph::default(); 
         let mut insts: TiVec<InstIdx, Instantiation> = self.instantiations
             .iter()
@@ -94,18 +99,3 @@ impl Z3Parser {
     }
 }
 
-pub struct RenderSettings {
-    pub max_line_nr: usize,
-    pub exclude_theory_inst: bool,
-    pub max_instantiations: usize,
-}
-
-impl Default for RenderSettings {
-    fn default() -> Self {
-        Self {
-            max_line_nr: usize::MAX,
-            exclude_theory_inst: true,
-            max_instantiations: 100,
-        }
-    }
-}

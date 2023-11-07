@@ -106,9 +106,7 @@ impl Component for FileDataComponent {
         });
         html! {
             <div>
-                <div>
-                    {"Choose a log file:"}
-                </div>
+                <h2>{"Choose a log file:"}</h2>
                 <div>
                     <input type="file" accept=".log" onchange={on_change} multiple=false/>
                 </div>
