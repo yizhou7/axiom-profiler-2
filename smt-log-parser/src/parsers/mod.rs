@@ -17,6 +17,8 @@ pub trait LogParser: Default + Debug {
     /// continue, or `false` if parsing should stop.
     fn process_line(&mut self, line: &str, line_no: usize) -> bool;
 
+    fn end_of_file(&mut self);
+
     /// Creates a new parser. Only use this if you cannot use the following
     /// convenience methods:
     /// - [`new_file`] for creating a streaming parser from a file path
@@ -222,6 +224,7 @@ mod wrapper {
                 // Parse line
                 if bytes_read == 0 || !self.parser.process_line(&buf, self.reader_state.lines_read)
                 {
+                    self.parser.end_of_file();
                     self.reader.take(); // Release file handle/free up memory
                     return None;
                 }

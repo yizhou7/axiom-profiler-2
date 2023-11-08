@@ -37,7 +37,7 @@ impl<T: Z3LogParser + Default> LogParser for T {
             "[pop]" => self.pop(split),
             "[begin-check]" => self.begin_check(split),
             "[query-done]" => self.query_done(split),
-            "[eof]" => { self.eof(); return false },
+            "[eof]" => return false,
             "[resolve-process]" => self.resolve_process(split),
             "[resolve-lit]" => self.resolve_lit(split),
             "[conflict]" => self.conflict(split),
@@ -45,6 +45,10 @@ impl<T: Z3LogParser + Default> LogParser for T {
         };
         parse.unwrap_or_else(|| eprintln!("Error parsing line: {line:?}"));
         true
+    }
+
+    fn end_of_file(&mut self) {
+        self.eof();
     }
 }
 

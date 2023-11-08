@@ -629,12 +629,11 @@ impl Z3Parser {
             let num_deps = last.dep_instantiations.len() as f32;
             let cost = last.cost / num_deps;
             for &dep_iidx in &last.dep_instantiations {
-                if let Some(dep_inst) = insts.get_mut(dep_iidx) {
-                    dep_inst.cost += cost;
-                    let qidx = dep_inst.quant;
-                    let dep_inst_quant = self.quantifiers.get_mut(qidx).unwrap();
-                    dep_inst_quant.cost += cost;
-                };
+                let dep_inst = insts.get_mut(dep_iidx).unwrap();
+                dep_inst.cost += cost;
+                let qidx = dep_inst.quant;
+                let dep_inst_quant = self.quantifiers.get_mut(qidx).unwrap();
+                dep_inst_quant.cost += cost;
             }
         }
     }
