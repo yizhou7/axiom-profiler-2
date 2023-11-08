@@ -1,7 +1,5 @@
-use std::collections::{BTreeMap, HashSet};
-
+use fxhash::{FxHashMap, FxHashSet};
 use petgraph::Graph;
-use petgraph::graph::DiGraph;
 use petgraph::graph::NodeIndex;
 use gloo_console::log;
 use typed_index_collections::TiVec;
@@ -14,8 +12,7 @@ use super::z3parser::Z3Parser;
 #[derive(Default)]
 pub struct InstGraph {
     pub inst_graph: Graph::<usize, ()>, // weights are the line numbers and have type usize
-    pub line_nr_of_node: BTreeMap<usize, usize>, // node-index => line number
-    node_of_line_nr: BTreeMap<usize, NodeIndex>, // line number => node-index
+    node_of_line_nr: FxHashMap<usize, NodeIndex>, // line number => node-index
 }
 
 impl InstGraph {
@@ -27,7 +24,6 @@ impl InstGraph {
         if self.fresh_line_nr(line_nr) {
             let node = self.inst_graph.add_node(line_nr);
             self.node_of_line_nr.insert(line_nr, node);
-            self.line_nr_of_node.insert(node.index(), line_nr);
         }
     }
 
@@ -62,7 +58,7 @@ impl Z3Parser {
         // only keep the max_instantiations most expensive instantiations
         insts.sort_by(|inst1, inst2| inst2.cost.partial_cmp(&inst1.cost).unwrap());
         insts.truncate(max_instantiations);
-        let insts_lines: HashSet<usize> = insts.iter().filter_map(|inst| inst.line_no).collect();
+        let insts_lines: FxHashSet<usize> = insts.iter().filter_map(|inst| inst.line_no).collect();
         for dep in &self.dependencies {
             if dep.from > 0 {
                 let from = dep.from;

@@ -33,7 +33,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
             let trace_file_text = trace_file_text.clone();
             let parser = Z3Parser::from_str(trace_file_text.as_str());
             let parser = parser.process_all();
-            let InstGraph{inst_graph, line_nr_of_node, ..} = parser.get_instantiation_graph(RenderSettings{
+            let InstGraph{inst_graph, ..} = parser.get_instantiation_graph(RenderSettings{
                 max_line_nr,
                 exclude_theory_inst,
                 max_instantiations,
@@ -50,7 +50,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
                         .render_svg_element(dot_output, options)
                         .expect("Could not render graphviz");
                     let svg_text = svg.outer_html();
-                    graph_props.set(GraphProps{svg_text: AttrValue::from(svg_text), line_nr_of_node});
+                    graph_props.set(GraphProps{svg_text: AttrValue::from(svg_text)});
                 },
             );
         })
@@ -73,7 +73,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
                 <UsizeInput label={"Render the n most expensive instantiations where n = "} dependency={props.trace_file_text.clone()} input_value={max_instantiations} default_value={250}/>
                 <button onclick={parse_log}>{"Render graph"}</button>
             </div>
-            <Graph svg_text={graph_props.svg_text.clone()} line_nr_of_node={graph_props.line_nr_of_node.clone()} /> 
+            <Graph svg_text={graph_props.svg_text.clone()} /> 
         </>
     }
 }
