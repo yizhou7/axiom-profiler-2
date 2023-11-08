@@ -372,12 +372,13 @@ impl TermIdToIdxMap {
             // Special handling of common case for empty namespace
             &mut self.empty_namespace
         } else {
-            // Use raw entry to avoid cloning the key if not necessary
-            self.namespace_map
-                .raw_entry_mut()
-                .from_key(&*idx)
-                .or_insert_with(|| (idx.into_owned(), Vec::new()))
-                .1
+            // Double lookup avoids cloning if already contained and should
+            // be optimized away. Switch to `raw_entry_mut` once stabilized.
+            if !self.namespace_map.contains_key(&*idx) {
+                self.namespace_map.entry(idx.into_owned()).or_default()
+            } else {
+                self.namespace_map.get_mut(&*idx).unwrap()
+            }
         }
     }
     pub fn register_term(&mut self, id: TermIdCow, idx: TermIdx) {
