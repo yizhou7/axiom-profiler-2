@@ -7,6 +7,7 @@ use viz_js::VizInstance;
 use petgraph::dot::{Dot, Config};
 use crate::graph::{Graph, GraphProps};
 use crate::input_state::{UsizeInput, InputValue};
+// use crate::select_dropdown::SelectDropDown;
 use crate::toggle_switch::ToggleSwitch;
 
 #[derive(Properties, PartialEq)]
@@ -22,6 +23,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
     let exclude_theory_inst = use_bool_toggle(true);
     let max_instantiations = use_reducer(InputValue::default);
     let parser = use_state(|| Z3Parser::from_str(&props.trace_file_text.as_str()).process_all());
+    // let layout_engine = use_state(|| AttrValue::from("dot".to_string()));
 
     let parse_log = {
         let graph_props = graph_props.clone();
@@ -42,7 +44,7 @@ pub fn svg_result(props: &SVGProps) -> Html {
                 async move {
                     let graphviz = VizInstance::new().await;
                     let mut options = viz_js::Options::default();
-                    // options.engine = "sfdp".to_string();
+                    options.engine = "circo".to_string();
                     let svg = graphviz
                         .render_svg_element(dot_output, options)
                         .expect("Could not render graphviz");
@@ -61,13 +63,41 @@ pub fn svg_result(props: &SVGProps) -> Html {
         graph_props.set(GraphProps::default());
     }});
 
+    // let layout_engines: Vec<AttrValue> = vec![
+    //     AttrValue::from("dot".to_string()), 
+    //     AttrValue::from("twopi".to_string()),
+    //     AttrValue::from("circo".to_string()),
+    //     AttrValue::from("sfdp".to_string()),
+    //     AttrValue::from("fdp".to_string()),
+    //     AttrValue::from("neato".to_string()),
+    // ];
+
     html! {
         <>
             <div>
                 <h2>{"Specify (optional) render settings:"}</h2>
-                <UsizeInput label={"Render graph up to line number "} dependency={props.trace_file_text.clone()} input_value={max_line_nr} default_value={usize::MAX} />
-                <ToggleSwitch label={"Ignore theory-solving instantiations: "} dependency={props.trace_file_text.clone()} input_value={exclude_theory_inst} />
-                <UsizeInput label={"Render the n most expensive instantiations where n = "} dependency={props.trace_file_text.clone()} input_value={max_instantiations} default_value={250}/>
+                <UsizeInput 
+                    label={"Render graph up to line number "} 
+                    dependency={props.trace_file_text.clone()} 
+                    input_value={max_line_nr} 
+                    default_value={usize::MAX} 
+                />
+                <ToggleSwitch 
+                    label={"Ignore theory-solving instantiations: "} 
+                    dependency={props.trace_file_text.clone()} 
+                    input_value={exclude_theory_inst} 
+                />
+                <UsizeInput 
+                    label={"Render the n most expensive instantiations where n = "} 
+                    dependency={props.trace_file_text.clone()} 
+                    input_value={max_instantiations} 
+                    default_value={250}
+                />
+                // <SelectDropDown
+                //     label={"Select a layout engine:"}
+                //     options={layout_engines}
+                //     selected_option={layout_engine}
+                // />
                 <button onclick={parse_log}>{"Render graph"}</button>
             </div>
             <Graph svg_text={graph_props.svg_text.clone()} /> 

@@ -12,6 +12,7 @@ mod svg_result;
 mod graph;
 mod input_state;
 mod toggle_switch;
+// mod select_dropdown;
 pub enum Msg {
     LoadedBytes(String, Vec<u8>),
     Files(Option<FileList>),
