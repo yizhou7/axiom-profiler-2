@@ -1,14 +1,11 @@
-use smt_log_parser::parsers::z3::results::{InstGraph, RenderSettings};
+use smt_log_parser::parsers::z3::results::FilterSettings;
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
 use yew::prelude::*;
-use yew_hooks::prelude::*;
 use smt_log_parser::parsers::LogParser;
 use viz_js::VizInstance;
 use petgraph::dot::{Dot, Config};
 use crate::graph::{Graph, GraphProps};
-use crate::input_state::{UsizeInput, InputValue};
-// use crate::select_dropdown::SelectDropDown;
-use crate::toggle_switch::ToggleSwitch;
+use crate::graph_filter::*;
 
 #[derive(Properties, PartialEq)]
 pub struct SVGProps {
@@ -18,27 +15,20 @@ pub struct SVGProps {
 #[function_component(SVGResult)]
 pub fn svg_result(props: &SVGProps) -> Html {
     log::debug!("SVG result");
+    let filter_params = use_state(|| FilterSettings::default());
     let graph_props = use_state(|| GraphProps::default());
-    let max_line_nr = use_reducer(InputValue::default);
-    let exclude_theory_inst = use_bool_toggle(true);
-    let max_instantiations = use_reducer(InputValue::default);
     let parser = use_state(|| Z3Parser::from_str(&props.trace_file_text.as_str()).process_all());
-    // let layout_engine = use_state(|| AttrValue::from("dot".to_string()));
+    let inst_graph = use_state(|| parser.compute_instantiation_graph());
 
-    let parse_log = {
+    {
         let graph_props = graph_props.clone();
-        let max_line_nr = max_line_nr.value.clone();
-        let exclude_theory_inst = *exclude_theory_inst.clone();
-        let max_instantiations = max_instantiations.value.clone();
-        Callback::from(move |_| {
-            let graph_props = graph_props.clone();
-            let InstGraph{inst_graph, ..} = parser.get_instantiation_graph(RenderSettings{
-                max_line_nr,
-                exclude_theory_inst,
-                max_instantiations,
-            });
+        let filter_params = *filter_params;
+        let inst_graph = &mut (*inst_graph);
+        use_effect_with(filter_params, move |_| {
+            inst_graph.filter(filter_params);
             log::debug!("Finished building QI graph");
-            let dot_output = format!("{:?}", Dot::with_config(&inst_graph, &[Config::EdgeNoLabel])); 
+            let graph = &inst_graph.filtered_inst_graph;
+            let dot_output = format!("{:?}", Dot::with_config(graph, &[Config::EdgeNoLabel])); 
             log::debug!("Finished building dot output");
             wasm_bindgen_futures::spawn_local(
                 async move {
@@ -52,8 +42,8 @@ pub fn svg_result(props: &SVGProps) -> Html {
                     graph_props.set(GraphProps{svg_text: AttrValue::from(svg_text)});
                 },
             );
-        })
-    };
+        });
+    }
 
     // this resets the graph-props whenever a new log-file has been uploaded
     let uploaded_log = props.trace_file_text.clone();
@@ -63,43 +53,9 @@ pub fn svg_result(props: &SVGProps) -> Html {
         graph_props.set(GraphProps::default());
     }});
 
-    // let layout_engines: Vec<AttrValue> = vec![
-    //     AttrValue::from("dot".to_string()), 
-    //     AttrValue::from("twopi".to_string()),
-    //     AttrValue::from("circo".to_string()),
-    //     AttrValue::from("sfdp".to_string()),
-    //     AttrValue::from("fdp".to_string()),
-    //     AttrValue::from("neato".to_string()),
-    // ];
-
     html! {
-        <>
-            <div>
-                <h2>{"Specify (optional) render settings:"}</h2>
-                <UsizeInput 
-                    label={"Render graph up to line number "} 
-                    dependency={props.trace_file_text.clone()} 
-                    input_value={max_line_nr} 
-                    default_value={usize::MAX} 
-                />
-                <ToggleSwitch 
-                    label={"Ignore theory-solving instantiations: "} 
-                    dependency={props.trace_file_text.clone()} 
-                    input_value={exclude_theory_inst} 
-                />
-                <UsizeInput 
-                    label={"Render the n most expensive instantiations where n = "} 
-                    dependency={props.trace_file_text.clone()} 
-                    input_value={max_instantiations} 
-                    default_value={250}
-                />
-                // <SelectDropDown
-                //     label={"Select a layout engine:"}
-                //     options={layout_engines}
-                //     selected_option={layout_engine}
-                // />
-                <button onclick={parse_log}>{"Render graph"}</button>
-            </div>
+        <>  
+            <GraphFilter title={"Specify (optional) render settings:"} filter_settings={filter_params} dependency={props.trace_file_text.clone() }/>
             <Graph svg_text={graph_props.svg_text.clone()} /> 
         </>
     }
