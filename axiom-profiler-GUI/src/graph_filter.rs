@@ -19,7 +19,10 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
     let update_settings = {
         let max_line_nr = max_line_nr.clone();
         let exclude_theory_inst = exclude_theory_inst.clone();
-        props.update_settings.reform(move |_| FilterSettings {max_line_nr: max_line_nr.value, exclude_theory_inst: *exclude_theory_inst})
+        props.update_settings.reform(move |_| FilterSettings {
+            max_line_nr: max_line_nr.value, 
+            exclude_theory_inst: *exclude_theory_inst
+        })
     };
 
     html! {

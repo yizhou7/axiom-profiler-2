@@ -6,13 +6,12 @@ use petgraph::dot::{Dot, Config};
 use viz_js::VizInstance;
 
 pub enum Msg {
-    UpdateSettings(FilterSettings),
+    RecomputeSvg(FilterSettings),
     UpdateSvgText(AttrValue),
 }
 
 pub struct SVGResult {
     pub svg_text: AttrValue,
-    pub filter_params: FilterSettings,
     pub inst_graph: InstGraph,
 }
 
@@ -29,17 +28,15 @@ impl Component for SVGResult {
         let parser = Z3Parser::from_str(ctx.props().trace_file_text.as_str()).process_all();
         Self {
             svg_text: AttrValue::default(),
-            filter_params: FilterSettings::default(),
             inst_graph: parser.compute_instantiation_graph(), 
         }
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
-            Msg::UpdateSettings(settings) => {
-                self.inst_graph.filter(settings);
-                let graph = &self.inst_graph.filtered_inst_graph;
-                let dot_output = format!("{:?}", Dot::with_config(graph, &[Config::EdgeNoLabel])); 
+            Msg::RecomputeSvg(settings) => {
+                let filtered_graph = self.inst_graph.filter(settings);
+                let dot_output = format!("{:?}", Dot::with_config(filtered_graph, &[Config::EdgeNoLabel])); 
                 log::debug!("Finished building dot output");
                 let link = ctx.link().clone();
                 wasm_bindgen_futures::spawn_local(async move {
@@ -53,7 +50,8 @@ impl Component for SVGResult {
                     link.send_message(Msg::UpdateSvgText(AttrValue::from(svg_text)));
                     },
                 );
-                true
+                // only need to re-render once the new SVG has been set
+                false 
             },
             Msg::UpdateSvgText(svg_text) => {
                 self.svg_text = svg_text;
@@ -63,7 +61,7 @@ impl Component for SVGResult {
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {
-        let on_clicked = ctx.link().callback(Msg::UpdateSettings);
+        let on_clicked = ctx.link().callback(Msg::RecomputeSvg);
         html! {
             <>  
                 <GraphFilter title={"Specify (optional) render settings:"} update_settings={on_clicked.clone()} dependency={ctx.props().trace_file_text.clone()}/>

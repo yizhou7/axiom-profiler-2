@@ -36,12 +36,13 @@ impl InstGraph {
         }
     }
 
-    pub fn filter(&mut self, settings: FilterSettings) {
+    pub fn filter(&mut self, settings: FilterSettings) -> &Graph::<usize, ()> {
         let FilterSettings{max_line_nr, exclude_theory_inst} = settings;
         self.filtered_inst_graph = self.orig_inst_graph.filter_map(
             |_, &node_data| if node_data <= max_line_nr { Some(node_data) } else { None }, 
-            |_, &edge_data| Some(edge_data), 
+            |_, _| Some(()), 
         );
+        &self.filtered_inst_graph
     }
 }
 
