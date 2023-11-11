@@ -15,13 +15,16 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
 
     let max_line_nr = use_reducer(InputValue::default);
     let exclude_theory_inst = use_bool_toggle(true);
+    let max_instantiations = use_reducer(InputValue::default);
 
     let update_settings = {
         let max_line_nr = max_line_nr.clone();
         let exclude_theory_inst = exclude_theory_inst.clone();
+        let max_instantiations = max_instantiations.clone();
         props.update_settings.reform(move |_| FilterSettings {
             max_line_nr: max_line_nr.value, 
-            exclude_theory_inst: *exclude_theory_inst
+            exclude_theory_inst: *exclude_theory_inst,
+            max_instantiations: max_instantiations.value, 
         })
     };
 
@@ -39,12 +42,12 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
                 dependency={props.dependency.clone()} 
                 input_value={exclude_theory_inst} 
             />
-            // <UsizeInput 
-            //     label={"Render the n most expensive instantiations where n = "} 
-            //     dependency={props.dependency.clone()} 
-            //     input_value={max_instantiations} 
-            //     default_value={250}
-            // />
+            <UsizeInput 
+                label={"Render the n most expensive instantiations where n = "} 
+                dependency={props.dependency.clone()} 
+                input_value={max_instantiations} 
+                default_value={250}
+            />
             // <SelectDropDown
             //     label={"Select a layout engine:"}
             //     options={layout_engines}
