@@ -7,7 +7,7 @@ use yew::{function_component, html, use_effect_with, use_node_ref, Html};
 #[derive(Properties, PartialEq, Default)]
 pub struct GraphProps {
     pub svg_text: AttrValue,
-    pub update_selected_node: Callback<String>,
+    pub update_selected_node: Callback<usize>,
 }
 
 #[function_component(Graph)]
@@ -35,9 +35,10 @@ pub fn graph(props: &GraphProps) -> Html {
                     let node = descendant_nodes.item(i).unwrap(); 
                     let title_element = node.query_selector("title").expect("Failed to select title element").unwrap();
                     let title_content = title_element.text_content().unwrap();
+                    let node_index = title_content.parse::<usize>().unwrap();
                     let callback = callback.clone();
                     let closure: Closure<dyn Fn(Event)> = Closure::new(move |_: Event| {
-                        callback.emit(title_content.clone());
+                        callback.emit(node_index);
                     });
                     closure
                 })
