@@ -25,10 +25,9 @@ impl Component for SVGResult {
     type Properties = SVGProps;
 
     fn create(ctx: &Context<Self>) -> Self {
-        let parser = Z3Parser::from_str(ctx.props().trace_file_text.as_str()).process_all();
         Self {
             svg_text: AttrValue::default(),
-            inst_graph: parser.compute_instantiation_graph(), 
+            inst_graph: InstGraph::from(ctx.props().trace_file_text.as_ref()), 
         }
     }
 

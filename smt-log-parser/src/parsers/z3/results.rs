@@ -3,6 +3,8 @@ use petgraph::Graph;
 use petgraph::graph::NodeIndex;
 use std::fmt;
 
+use crate::parsers::LogParser;
+
 use super::z3parser::Z3Parser;
 
 #[derive(Clone, Copy)]
@@ -20,31 +22,20 @@ impl fmt::Debug for NodeData {
 
 #[derive(Default)]
 pub struct InstGraph {
-    // orig_inst_graph: Graph::<usize, ()>, // weights are the line numbers and have type usize
     orig_inst_graph: Graph::<NodeData, ()>, // weights are the line numbers and have type usize
-    // pub filtered_inst_graph: Graph::<usize, ()>, 
-    inst_graph: Graph::<NodeData, ()>, 
+    inst_graph: Graph::<NodeData, ()>, // same as orig_inst_graph but possibly filtered 
     node_of_line_nr: FxHashMap<usize, NodeIndex>, // line number => node-index
+    parser: Z3Parser, // contains all information needed to construct this instantiation graph
 }
 
 impl InstGraph {
-    fn fresh_line_nr(&self, line_nr: usize) -> bool {
-        // self.orig_inst_graph.node_weights().all(|&line| line != line_nr)
-        self.orig_inst_graph.node_weights().all(|node| node.line_nr != line_nr)
-    } 
 
-    pub fn add_node(&mut self, node_data: NodeData) {
-        let line_nr = node_data.line_nr;
-        if self.fresh_line_nr(line_nr) {
-            let node = self.orig_inst_graph.add_node(node_data);
-            self.node_of_line_nr.insert(line_nr, node);
-        }
-    }
-
-    pub fn add_edge(&mut self, from: usize, to: usize) {
-        if let (Some(&from_node_idx), Some(&to_node_idx)) = (self.node_of_line_nr.get(&from), self.node_of_line_nr.get(&to)) {
-            self.orig_inst_graph.add_edge(from_node_idx, to_node_idx, ());
-        }
+    pub fn from(trace_file_text: &str) -> Self {
+        let mut inst_graph = Self::default();
+        let parser = Z3Parser::from_str(trace_file_text).process_all();
+        inst_graph.compute_instantiation_graph(&parser);
+        inst_graph.parser = parser;
+        inst_graph
     }
 
     pub fn filter(&mut self, settings: FilterSettings) -> &Graph::<NodeData, ()> {
@@ -71,6 +62,51 @@ impl InstGraph {
         self.inst_graph.retain_nodes(|_, node| most_costly_insts.contains(&node));
         &self.inst_graph
     }
+
+    fn compute_instantiation_graph(&mut self, parser: &Z3Parser) {
+        // first add all nodes
+        for dep in &parser.dependencies {
+            if let Some(to) = dep.to {
+                let qidx = dep.quant;
+                let cost = parser.quantifiers.get(qidx).unwrap().cost; 
+                self.add_node(NodeData{
+                    line_nr: to, 
+                    is_theory_inst: dep.quant_discovered, 
+                    cost
+                });
+            }
+        }
+        // then add all edges between nodes 
+        for dep in &parser.dependencies {
+            let from = dep.from;
+            if let Some(to) = dep.to {
+                if from > 0 {
+                    self.add_edge(from, to);
+                }
+            }
+        }
+    }
+
+    fn fresh_line_nr(&self, line_nr: usize) -> bool {
+        // self.orig_inst_graph.node_weights().all(|&line| line != line_nr)
+        self.orig_inst_graph.node_weights().all(|node| node.line_nr != line_nr)
+    } 
+
+    fn add_node(&mut self, node_data: NodeData) {
+        let line_nr = node_data.line_nr;
+        if self.fresh_line_nr(line_nr) {
+            let node = self.orig_inst_graph.add_node(node_data);
+            self.node_of_line_nr.insert(line_nr, node);
+        }
+    }
+
+    fn add_edge(&mut self, from: usize, to: usize) {
+        if let (Some(&from_node_idx), Some(&to_node_idx)) = (self.node_of_line_nr.get(&from), self.node_of_line_nr.get(&to)) {
+            self.orig_inst_graph.add_edge(from_node_idx, to_node_idx, ());
+        }
+    }
+
+    
 
     // fn retain_nodes_and_reconnect(&mut self, retain_if: impl Fn(&NodeData) -> bool) {
     //     let nodes_to_remove: Vec<NodeIndex> = self.inst_graph
@@ -111,31 +147,31 @@ impl Default for FilterSettings {
 
 impl Z3Parser {
 
-    pub fn compute_instantiation_graph(&self) -> InstGraph {
-        let mut graph = InstGraph::default();
-        // first add all nodes
-        for dep in &self.dependencies {
-            if let Some(to) = dep.to {
-                let qidx = dep.quant;
-                let cost = self.quantifiers.get(qidx).unwrap().cost; 
-                graph.add_node(NodeData{
-                    line_nr: to, 
-                    is_theory_inst: dep.quant_discovered, 
-                    cost
-                });
-            }
-        }
-        // then add all edges between nodes 
-        for dep in &self.dependencies {
-            let from = dep.from;
-            if let Some(to) = dep.to {
-                if from > 0 {
-                    graph.add_edge(from, to);
-                }
-            }
-        }
-        graph
-    }
+    // pub fn compute_instantiation_graph(&self) -> InstGraph {
+    //     let mut graph = InstGraph::from_parser();
+    //     // first add all nodes
+    //     for dep in &self.dependencies {
+    //         if let Some(to) = dep.to {
+    //             let qidx = dep.quant;
+    //             let cost = self.quantifiers.get(qidx).unwrap().cost; 
+    //             graph.add_node(NodeData{
+    //                 line_nr: to, 
+    //                 is_theory_inst: dep.quant_discovered, 
+    //                 cost
+    //             });
+    //         }
+    //     }
+    //     // then add all edges between nodes 
+    //     for dep in &self.dependencies {
+    //         let from = dep.from;
+    //         if let Some(to) = dep.to {
+    //             if from > 0 {
+    //                 graph.add_edge(from, to);
+    //             }
+    //         }
+    //     }
+    //     graph
+    // }
 
     pub fn get_instantiation_graph(&self, settings: FilterSettings) -> InstGraph {
         // let RenderSettings {max_line_nr, exclude_theory_inst, max_instantiations} = settings;

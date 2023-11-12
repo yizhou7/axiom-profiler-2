@@ -49,10 +49,8 @@ pub fn graph(props: &GraphProps) -> Html {
         });
     }
     html! {
-        <>
-            <div ref={div_ref}>
-                {svg_result}
-            </div>
-        </>
+        <div ref={div_ref}>
+            {svg_result}
+        </div>
     }
 }
