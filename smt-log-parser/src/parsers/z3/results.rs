@@ -54,6 +54,7 @@ impl InstGraph {
             |_, &node| if node.line_nr <= max_line_nr && (!exclude_theory_inst || !node.is_theory_inst) { Some(node) } else { None }, 
             |_, _| Some(()), 
         );
+        // then only keep the max_instantiations most costly instantiations
         let mut most_costly_insts: Vec<NodeIndex> = self.inst_graph.node_indices().collect();
         most_costly_insts.sort_by(|node_a, node_b| {
             let node_a_data = self.inst_graph.node_weight(*node_a).unwrap();

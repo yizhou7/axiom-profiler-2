@@ -64,7 +64,11 @@ impl Component for SVGResult {
         let on_clicked = ctx.link().callback(Msg::RecomputeSvg);
         html! {
             <>  
-                <GraphFilter title={"Specify (optional) render settings:"} update_settings={on_clicked.clone()} dependency={ctx.props().trace_file_text.clone()}/>
+                <GraphFilter 
+                    title={"Specify (optional) render settings:"} 
+                    update_settings={on_clicked.clone()} 
+                    dependency={ctx.props().trace_file_text.clone()}
+                />
                 <Graph svg_text={self.svg_text.clone()} /> 
             </>
         }
