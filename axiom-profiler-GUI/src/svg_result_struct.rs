@@ -8,6 +8,7 @@ use viz_js::VizInstance;
 pub enum Msg {
     RecomputeSvg(FilterSettings),
     UpdateSvgText(AttrValue),
+    SelectedNode(bool),
 }
 
 pub struct SVGResult {
@@ -55,12 +56,17 @@ impl Component for SVGResult {
             Msg::UpdateSvgText(svg_text) => {
                 self.svg_text = svg_text;
                 true
+            },
+            Msg::SelectedNode(_) => {
+                log::debug!("node clicked!");
+                false
             }
         }
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {
         let on_clicked = ctx.link().callback(Msg::RecomputeSvg);
+        let on_node_select = ctx.link().callback(Msg::SelectedNode);
         html! {
             <>  
                 <GraphFilter 
@@ -68,7 +74,10 @@ impl Component for SVGResult {
                     update_settings={on_clicked.clone()} 
                     dependency={ctx.props().trace_file_text.clone()}
                 />
-                <Graph svg_text={self.svg_text.clone()} /> 
+                <Graph 
+                    svg_text={self.svg_text.clone()}
+                    update_selected_node={on_node_select.clone()} 
+                /> 
             </>
         }
     }

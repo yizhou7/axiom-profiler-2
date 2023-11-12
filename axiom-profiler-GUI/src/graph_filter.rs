@@ -21,10 +21,18 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
         let max_line_nr = max_line_nr.clone();
         let exclude_theory_inst = exclude_theory_inst.clone();
         let max_instantiations = max_instantiations.clone();
-        props.update_settings.reform(move |_| FilterSettings {
-            max_line_nr: max_line_nr.value, 
-            exclude_theory_inst: *exclude_theory_inst,
-            max_instantiations: max_instantiations.value, 
+        let callback = props.update_settings.clone();
+        // props.update_settings.reform(move |_| FilterSettings {
+        //     max_line_nr: max_line_nr.value, 
+        //     exclude_theory_inst: *exclude_theory_inst,
+        //     max_instantiations: max_instantiations.value, 
+        // })
+        Callback::from(move |_| {
+            callback.emit(FilterSettings {
+                max_line_nr: max_line_nr.value, 
+                exclude_theory_inst: *exclude_theory_inst,
+                max_instantiations: max_instantiations.value, 
+            })
         })
     };
 
