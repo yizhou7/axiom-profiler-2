@@ -106,8 +106,6 @@ impl InstGraph {
         }
     }
 
-    
-
     // fn retain_nodes_and_reconnect(&mut self, retain_if: impl Fn(&NodeData) -> bool) {
     //     let nodes_to_remove: Vec<NodeIndex> = self.inst_graph
     //         .node_indices()
@@ -144,86 +142,3 @@ impl Default for FilterSettings {
         }
     }
 }
-
-impl Z3Parser {
-
-    // pub fn compute_instantiation_graph(&self) -> InstGraph {
-    //     let mut graph = InstGraph::from_parser();
-    //     // first add all nodes
-    //     for dep in &self.dependencies {
-    //         if let Some(to) = dep.to {
-    //             let qidx = dep.quant;
-    //             let cost = self.quantifiers.get(qidx).unwrap().cost; 
-    //             graph.add_node(NodeData{
-    //                 line_nr: to, 
-    //                 is_theory_inst: dep.quant_discovered, 
-    //                 cost
-    //             });
-    //         }
-    //     }
-    //     // then add all edges between nodes 
-    //     for dep in &self.dependencies {
-    //         let from = dep.from;
-    //         if let Some(to) = dep.to {
-    //             if from > 0 {
-    //                 graph.add_edge(from, to);
-    //             }
-    //         }
-    //     }
-    //     graph
-    // }
-
-    pub fn get_instantiation_graph(&self, settings: FilterSettings) -> InstGraph {
-        // let RenderSettings {max_line_nr, exclude_theory_inst, max_instantiations} = settings;
-        // let FilterSettings {max_line_nr, exclude_theory_inst} = settings;
-        let mut graph = InstGraph::default(); 
-        // let mut insts: TiVec<InstIdx, Instantiation> = self.instantiations
-        //     .iter()
-        // //     // only keep instantiations up to max_line_nr
-        //     .filter(|inst| inst.line_no.is_some())
-        //     .filter(|inst| inst.line_no.unwrap() <= max_line_nr)
-        // //     // if exlude_theory_solving_inst == true then only include inst if inst.quant_discovered = false 
-        // //     // since inst.quant_discovered == true iff inst is is a theory-solving inst (not due to mattern patch in e-graph) 
-        //     .filter(|inst| !exclude_theory_inst || !inst.quant_discovered)
-        //     .cloned()
-        //     .collect();
-
-        // // only keep the max_instantiations most expensive instantiations
-        // insts.sort_by(|inst1, inst2| inst2.cost.partial_cmp(&inst1.cost).unwrap());
-        // // insts.truncate(max_instantiations);
-        // let insts_lines: FxHashSet<usize> = insts.iter().filter_map(|inst| inst.line_no).collect();
-        // for dep in &self.dependencies {
-        //     if dep.from > 0 {
-        //         let from = dep.from;
-        //         if let Some(to) = dep.to {
-        //             // if insts_lines.contains(&from) && insts_lines.contains(&to) {
-        //                 graph.add_node(from);
-        //                 graph.add_node(to);
-        //                 graph.add_edge(from, to);
-        //             // }
-        //         }
-        //     }
-        // }
-        graph
-        
-        // quant_discovered <=> instantiation not due to pattern-match in e-graph
-        // for to_inst in insts.iter().filter(|inst| !inst.quant_discovered) {
-        //     if let Some(to) = to_inst.line_no {
-        //         graph.add_node(to);
-        //         let from_iidxs = &to_inst.dep_instantiations;
-        //         log!("The node at line nr ", to);
-        //         for from_inst in from_iidxs.iter().filter_map(|&iidx| insts.get(iidx)) {
-        //             if let Some(from) = from_inst.line_no {
-        //                 if from > 0 {
-        //                     log!("depends on the node at line nr ", from);
-        //                     graph.add_node(from);
-        //                     graph.add_edge(from, to);
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-        // graph
-    }
-}
-

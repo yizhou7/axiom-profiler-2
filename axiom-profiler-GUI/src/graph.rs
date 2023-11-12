@@ -1,5 +1,5 @@
 use yew::prelude::*;
-use wasm_bindgen::{prelude::Closure};
+use wasm_bindgen::prelude::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::{Event, HtmlElement};
 use yew::{function_component, html, use_effect_with, use_node_ref, Html};

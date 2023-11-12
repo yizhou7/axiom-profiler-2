@@ -7,15 +7,13 @@ use web_sys::{Event, HtmlInputElement};
 use yew::prelude::*;
 use yew_router::prelude::*;
 
-use crate::svg_result_struct::SVGResult;
-// use crate::svg_result::*;
+use crate::svg_result::SVGResult;
 
-// mod svg_result;
+mod svg_result;
 mod graph;
+mod graph_filter;
 mod input_state;
 mod toggle_switch;
-mod graph_filter;
-mod svg_result_struct;
 // mod select_dropdown;
 pub enum Msg {
     LoadedBytes(String, Vec<u8>),
