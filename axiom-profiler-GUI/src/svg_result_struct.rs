@@ -8,7 +8,7 @@ use viz_js::VizInstance;
 pub enum Msg {
     RecomputeSvg(FilterSettings),
     UpdateSvgText(AttrValue),
-    SelectedNode(bool),
+    SelectedNode(String),
 }
 
 pub struct SVGResult {
@@ -57,8 +57,8 @@ impl Component for SVGResult {
                 self.svg_text = svg_text;
                 true
             },
-            Msg::SelectedNode(_) => {
-                log::debug!("node clicked!");
+            Msg::SelectedNode(content) => {
+                log::debug!("{content}");
                 false
             }
         }
