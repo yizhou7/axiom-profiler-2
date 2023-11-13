@@ -1,10 +1,13 @@
 use fxhash::FxHashMap;
 use petgraph::Graph;
 use petgraph::graph::NodeIndex;
+use std::collections::{HashSet, HashMap};
 use std::fmt;
 
-use crate::items::{InstIdx, Instantiation};
+use crate::items::{InstIdx, Instantiation, TermIdx};
 use crate::parsers::LogParser;
+
+use self::colors::{HSVColour, make_hsv_colours};
 
 use super::z3parser::Z3Parser;
 
@@ -14,12 +17,28 @@ pub struct NodeData {
     is_theory_inst: bool,
     cost: f32,
     inst_idx: Option<InstIdx>,
+    fill_colour: HSVColour,
 }
 
 impl fmt::Debug for NodeData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.line_nr)
     }
+}
+
+impl fmt::Display for NodeData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
+        self.line_nr,
+        self.fill_colour)
+    }
+}
+
+pub struct InstInfo {
+    pub inst: Instantiation,
+    pub formula: String,
+    pub bound_terms: Vec<String>,
+    pub yields_terms: Vec<String>,
 }
 
 #[derive(Default)]
@@ -31,7 +50,6 @@ pub struct InstGraph {
 }
 
 impl InstGraph {
-
     pub fn from(trace_file_text: &str) -> Self {
         let mut inst_graph = Self::default();
         let parser = Z3Parser::from_str(trace_file_text).process_all();
@@ -65,27 +83,60 @@ impl InstGraph {
         &self.inst_graph
     }
 
-    pub fn get_instantiation_info(&self, node_index: usize) -> Option<Instantiation> {
+    pub fn get_instantiation_info(&self, node_index: usize) -> Option<InstInfo> {
         let NodeData {inst_idx, ..} = self.inst_graph.node_weight(NodeIndex::new(node_index)).unwrap();
         if let Some(iidx) = inst_idx {
             let inst = self.parser.instantiations.get(*iidx).unwrap();
-            Some(inst.clone())
+            let quant = self.parser.quantifiers.get(inst.quant).unwrap();
+            let term_map = &self.parser.terms;
+            let pretty_text_map = |tidxs: &Vec<TermIdx>| tidxs
+                .iter()
+                .map(|tidx| term_map.get(*tidx).unwrap())
+                .map(|term| term.pretty_text(term_map))
+                .collect::<Vec<String>>();
+            let bound_terms = pretty_text_map(&inst.bound_terms);
+            let yields_terms = pretty_text_map(&inst.yields_terms);
+            let inst_info = InstInfo {
+                inst: inst.clone(),
+                formula: quant.pretty_text(term_map), 
+                bound_terms, 
+                yields_terms, 
+            };
+            Some(inst_info)
         } else {
             None
         }
     }
 
     fn compute_instantiation_graph(&mut self, parser: &Z3Parser) {
+        let mut unnamed_quants = HashSet::new();
+        for quant in &parser.quantifiers {
+            if let crate::items::QuantKind::UnnamedQuant{id, ..} = &quant.kind {
+                unnamed_quants.insert(id);
+            }
+        }
+        let colours = make_hsv_colours(unnamed_quants.len());
+        let mut colour_map: HashMap<&usize, HSVColour> = HashMap::new();
+        for (idx, quant) in unnamed_quants.iter().enumerate() {
+            colour_map.insert(quant, colours[idx]);
+        }
         // first add all nodes
         for dep in &parser.dependencies {
             if let Some(to) = dep.to {
                 let qidx = dep.quant;
-                let cost = parser.quantifiers.get(qidx).unwrap().cost; 
+                let quant = parser.quantifiers.get(qidx).unwrap();
+                let cost = quant.cost; 
+                let colour = if let crate::items::QuantKind::UnnamedQuant{id, ..} = &quant.kind {
+                    *colour_map.get(id).unwrap()
+                } else {
+                    HSVColour::default()
+                };
                 self.add_node(NodeData{
                     line_nr: to, 
                     is_theory_inst: dep.quant_discovered, 
                     cost,
                     inst_idx: dep.to_iidx,
+                    fill_colour: colour, 
                 });
             }
         }
@@ -153,5 +204,59 @@ impl Default for FilterSettings {
             exclude_theory_inst: true,
             max_instantiations: 250,
         }
+    }
+}
+
+/// Private module for generating colors
+mod colors {
+    use super::*;
+
+    #[derive(Clone, Copy)]
+    pub struct HSVColour {
+        pub hue: f64,
+        pub sat: f64,
+        pub val: f64,
+    }
+
+    impl fmt::Display for HSVColour {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{} {} {}", self.hue, self.sat, self.val)
+        }
+    }
+
+    impl Default for HSVColour {
+        /// The default HSV colour is white (0, 0, 1)
+        fn default() -> Self {
+            Self {
+                hue: 0.0, 
+                sat: 0.0, 
+                val: 1.0,
+            }
+        }
+    }
+
+    /// Generate `n` distinct colors in HSV format; each color represents instantiations from the same quantifier.
+    pub fn make_hsv_colours(n: usize) -> Vec<HSVColour> {
+        // want black font to be clearly visible, hence these values for saturation and value
+        const DEFAULT_SAT: f64 = 0.4;
+        const DEFAULT_VAL: f64 = 0.95;
+        generate_hues(n)
+            .iter()
+            .map(|&hue| HSVColour {hue, sat: DEFAULT_SAT, val: DEFAULT_VAL}) 
+            .collect()
+    }
+
+    /// Generate `n` distinct colors (hue values) from golden ratio
+    /// Explained here: https://martin.ankerl.com/2009/12/09/how-to-create-random-colors-programmatically/
+    fn generate_hues(n: usize) -> Vec<f64> {
+        const GOLDEN_RATIO_RECIPROCAL: f64 = 0.618033988749895;
+        let mut hue = 0.0;
+        let mut hues = vec![hue];
+        for _ in 1..n {
+            hue += GOLDEN_RATIO_RECIPROCAL;
+            hue %= 1.0;
+            hues.push(hue);
+        }
+        hues 
     }
 }
