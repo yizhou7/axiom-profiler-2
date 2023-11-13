@@ -58,7 +58,11 @@ impl Component for SVGResult {
                 true
             },
             Msg::SelectedNodeIndex(index) => {
-                log::debug!("{index}");
+                if let Some(inst) = self.inst_graph.get_instantiation_info(index) {
+                    log::debug!("Got some instantiation with {}", inst.line_no.unwrap());
+                } else {
+                    log::debug!("Didn't get an instantiation");
+                }
                 false
             }
         }

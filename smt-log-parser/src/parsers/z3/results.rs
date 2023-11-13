@@ -3,6 +3,7 @@ use petgraph::Graph;
 use petgraph::graph::NodeIndex;
 use std::fmt;
 
+use crate::items::{InstIdx, Instantiation};
 use crate::parsers::LogParser;
 
 use super::z3parser::Z3Parser;
@@ -12,6 +13,7 @@ pub struct NodeData {
     line_nr: usize,
     is_theory_inst: bool,
     cost: f32,
+    inst_idx: Option<InstIdx>,
 }
 
 impl fmt::Debug for NodeData {
@@ -63,6 +65,16 @@ impl InstGraph {
         &self.inst_graph
     }
 
+    pub fn get_instantiation_info(&self, node_index: usize) -> Option<Instantiation> {
+        let NodeData {inst_idx, ..} = self.inst_graph.node_weight(NodeIndex::new(node_index)).unwrap();
+        if let Some(iidx) = inst_idx {
+            let inst = self.parser.instantiations.get(*iidx).unwrap();
+            Some(inst.clone())
+        } else {
+            None
+        }
+    }
+
     fn compute_instantiation_graph(&mut self, parser: &Z3Parser) {
         // first add all nodes
         for dep in &parser.dependencies {
@@ -72,7 +84,8 @@ impl InstGraph {
                 self.add_node(NodeData{
                     line_nr: to, 
                     is_theory_inst: dep.quant_discovered, 
-                    cost
+                    cost,
+                    inst_idx: dep.to_iidx,
                 });
             }
         }
