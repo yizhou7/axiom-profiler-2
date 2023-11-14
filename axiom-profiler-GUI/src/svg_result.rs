@@ -1,9 +1,14 @@
+use std::iter::zip;
+
 use yew::prelude::*;
-use smt_log_parser::parsers::z3::results::{FilterSettings, InstGraph, InstInfo};
+use smt_log_parser::{parsers::z3::results::{FilterSettings, InstGraph, InstInfo}, items::{QuantIdx, Quantifier}};
 use crate::graph_filter::GraphFilter;
 use crate::graph::Graph;
 use petgraph::dot::{Dot, Config};
 use viz_js::VizInstance;
+use self::colors::{HSVColour, make_hsv_colours};
+use fxhash::FxHashMap;
+use typed_index_collections::TiVec;
 
 pub enum Msg {
     RecomputeSvg(FilterSettings),
@@ -15,6 +20,7 @@ pub struct SVGResult {
     pub svg_text: AttrValue,
     pub inst_graph: InstGraph,
     pub selected_inst: Option<InstInfo>,
+    colour_map: QuantIdxToColourMap,
 }
 
 #[derive(Properties, PartialEq)]
@@ -27,10 +33,14 @@ impl Component for SVGResult {
     type Properties = SVGProps;
 
     fn create(ctx: &Context<Self>) -> Self {
+        let inst_graph = InstGraph::from(ctx.props().trace_file_text.as_ref());
+        let quantifiers = inst_graph.get_quantifiers();
+        let colour_map = QuantIdxToColourMap::from(quantifiers);
         Self {
             svg_text: AttrValue::default(),
-            inst_graph: InstGraph::from(ctx.props().trace_file_text.as_ref()), 
+            inst_graph, 
             selected_inst: None,
+            colour_map,
         }
     }
 
@@ -42,7 +52,10 @@ impl Component for SVGResult {
                     filtered_graph,
                     &[Config::EdgeNoLabel, Config::NodeNoLabel],
                     &|_, _| String::new(),
-                    &|_, (_, node_data)| format!("{node_data}"),
+                    &|_, (_, node_data)| format!("label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
+                        node_data.line_nr,
+                        self.colour_map.get(&node_data.quant_idx) 
+                    ),
                 )); 
                 log::debug!("Finished building dot output");
                 let link = ctx.link().clone();
@@ -108,5 +121,76 @@ impl Component for SVGResult {
                 </div>
             </>
         }
+    }
+}
+
+type ColourIdx = usize;
+
+#[derive(Default)]
+struct QuantIdxToColourMap {
+    colour_map: FxHashMap<QuantIdx, ColourIdx>,
+    colours: TiVec<ColourIdx, HSVColour>,
+}
+
+impl QuantIdxToColourMap {
+    pub fn from(quants: &TiVec<QuantIdx, Quantifier>) -> Self {
+        let mut colour_map = FxHashMap::default();
+        let colours = make_hsv_colours(quants.len()); 
+        for (qidx, colour_idx) in zip(quants.keys(), colours.keys()) {
+            colour_map.insert(qidx, colour_idx);
+        }
+        Self {
+            colour_map,
+            colours
+        }
+    }
+
+    pub fn get(&self, qidx: &QuantIdx) -> HSVColour {
+        if let Some(colour_idx) = self.colour_map.get(qidx) {
+            self.colours.raw[*colour_idx]
+        } else {
+            HSVColour::default()
+        }
+    } 
+}
+
+/// Private module for generating colors
+mod colors {
+    use super::*;
+    use std::fmt;
+
+    #[derive(Clone, Copy)]
+    pub struct HSVColour {
+        pub hue: f64,
+        pub sat: f64,
+        pub val: f64,
+    }
+
+    impl fmt::Display for HSVColour {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{} {} {}", self.hue, self.sat, self.val)
+        }
+    }
+
+    impl Default for HSVColour {
+        /// The default HSV colour is white (0, 0, 1)
+        fn default() -> Self {
+            Self {
+                hue: 0.0, 
+                sat: 0.0, 
+                val: 1.0,
+            }
+        }
+    }
+
+    /// Generate `n` distinct colors in HSV format
+    pub fn make_hsv_colours(n: usize) -> TiVec<ColourIdx, HSVColour> {
+        // want black font to be clearly visible, hence these values for saturation and value
+        const DEFAULT_SAT: f64 = 0.4;
+        const DEFAULT_VAL: f64 = 0.95;
+        let hues: Vec<f64> = (0..n).map(|i| i as f64 / (n as f64)).collect();
+        hues.iter()
+            .map(|&hue| HSVColour {hue, sat: DEFAULT_SAT, val: DEFAULT_VAL}) 
+            .collect()
     }
 }

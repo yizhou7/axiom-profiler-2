@@ -2,23 +2,22 @@ use fxhash::FxHashMap;
 // use gloo_console::log;
 use petgraph::Graph;
 use petgraph::graph::NodeIndex;
-use std::collections::{HashSet, HashMap};
+use typed_index_collections::TiVec;
 use std::fmt;
 
-use crate::items::{InstIdx, Instantiation, TermIdx};
+use crate::items::{InstIdx, Instantiation, TermIdx, QuantIdx, Quantifier};
 use crate::parsers::LogParser;
 
-use self::colors::{HSVColour, make_hsv_colours};
 
 use super::z3parser::Z3Parser;
 
 #[derive(Clone, Copy)]
 pub struct NodeData {
-    line_nr: usize,
+    pub line_nr: usize,
     is_theory_inst: bool,
     cost: f32,
     inst_idx: Option<InstIdx>,
-    fill_colour: HSVColour,
+    pub quant_idx: QuantIdx,
 }
 
 impl fmt::Debug for NodeData {
@@ -27,13 +26,13 @@ impl fmt::Debug for NodeData {
     }
 }
 
-impl fmt::Display for NodeData {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
-        self.line_nr,
-        self.fill_colour)
-    }
-}
+// impl fmt::Display for NodeData {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         write!(f, "label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
+//         self.line_nr,
+//         self.fill_colour)
+//     }
+// }
 
 pub struct InstInfo {
     pub inst: Instantiation,
@@ -116,38 +115,42 @@ impl InstGraph {
         }
     }
 
+    pub fn get_quantifiers(&self) -> &TiVec<QuantIdx, Quantifier> {
+        &self.parser.quantifiers
+    }
+
     fn compute_instantiation_graph(&mut self, parser: &Z3Parser) {
-        use crate::items::QuantKind::*;
+        // use crate::items::QuantKind::*;
         // compute a colour map for the QuantKind::UnnamedQuant
-        let mut unnamed_quants = HashSet::new();
-        for quant in &parser.quantifiers {
-            if let UnnamedQuant{id, ..} = &quant.kind {
-                unnamed_quants.insert(id);
-            }
-        }
-        let colours = make_hsv_colours(unnamed_quants.len());
-        let mut colour_map: HashMap<&usize, HSVColour> = HashMap::new();
-        for (idx, quant) in unnamed_quants.iter().enumerate() {
-            colour_map.insert(quant, colours[idx]);
-        }
+        // let mut unnamed_quants = HashSet::new();
+        // for quant in &parser.quantifiers {
+        //     if let UnnamedQuant{id, ..} = &quant.kind {
+        //         unnamed_quants.insert(id);
+        //     }
+        // }
+        // let colours = make_hsv_colours(unnamed_quants.len());
+        // let mut colour_map: HashMap<&usize, HSVColour> = HashMap::new();
+        // for (idx, quant) in unnamed_quants.iter().enumerate() {
+        //     colour_map.insert(quant, colours[idx]);
+        // }
         // first add all nodes
         for dep in &parser.dependencies {
             if let Some(to) = dep.to {
-                let qidx = dep.quant;
-                let quant = parser.quantifiers.get(qidx).unwrap();
+                let quant_idx = dep.quant;
+                let quant = parser.quantifiers.get(quant_idx).unwrap();
                 let cost = quant.cost; 
-                let colour = if let UnnamedQuant{id, ..} = &quant.kind {
-                    *colour_map.get(id).unwrap()
-                } else {
-                    HSVColour::default()
-                };
+                // let colour = if let UnnamedQuant{id, ..} = &quant.kind {
+                //     *colour_map.get(id).unwrap()
+                // } else {
+                //     HSVColour::default()
+                // };
                 // log!("Quantifier at line nr ", to, " has kind ", quant.kind.to_string());
                 self.add_node(NodeData{
                     line_nr: to, 
                     is_theory_inst: dep.quant_discovered, 
                     cost,
                     inst_idx: dep.to_iidx,
-                    fill_colour: colour, 
+                    quant_idx, 
                 });
             }
         }
@@ -215,45 +218,5 @@ impl Default for FilterSettings {
             exclude_theory_inst: true,
             max_instantiations: 250,
         }
-    }
-}
-
-/// Private module for generating colors
-mod colors {
-    use super::*;
-
-    #[derive(Clone, Copy)]
-    pub struct HSVColour {
-        pub hue: f64,
-        pub sat: f64,
-        pub val: f64,
-    }
-
-    impl fmt::Display for HSVColour {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "{} {} {}", self.hue, self.sat, self.val)
-        }
-    }
-
-    impl Default for HSVColour {
-        /// The default HSV colour is white (0, 0, 1)
-        fn default() -> Self {
-            Self {
-                hue: 0.0, 
-                sat: 0.0, 
-                val: 1.0,
-            }
-        }
-    }
-
-    /// Generate `n` distinct colors in HSV format
-    pub fn make_hsv_colours(n: usize) -> Vec<HSVColour> {
-        // want black font to be clearly visible, hence these values for saturation and value
-        const DEFAULT_SAT: f64 = 0.4;
-        const DEFAULT_VAL: f64 = 0.95;
-        let hues: Vec<f64> = (0..=(n-1)).map(|i| i as f64 / (n as f64)).collect();
-        hues.iter()
-            .map(|&hue| HSVColour {hue, sat: DEFAULT_SAT, val: DEFAULT_VAL}) 
-            .collect()
     }
 }

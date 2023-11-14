@@ -7,7 +7,7 @@ use typed_index_collections::TiVec;
 #[macro_export]
 macro_rules! idx {
     ($struct:ident, $prefix:tt) => {
-        #[derive(Clone, Copy, Default, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord)]
+        #[derive(Clone, Copy, Default, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord, Hash)]
         pub struct $struct(usize);
         impl From<usize> for $struct {
             fn from(value: usize) -> Self {
