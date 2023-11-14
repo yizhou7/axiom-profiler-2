@@ -423,6 +423,7 @@ pub enum DepType {
 pub struct Dependency {
     pub from: usize,
     pub to: Option<usize>,
+    pub to_iidx: Option<InstIdx>,
     pub blamed: Option<TermIdx>,
     pub dep_type: DepType,
     pub quant: QuantIdx,

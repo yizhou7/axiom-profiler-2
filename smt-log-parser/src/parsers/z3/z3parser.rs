@@ -542,6 +542,7 @@ impl Z3LogParser for Z3Parser {
         let deps = self.temp_dependencies.get_mut(&inst.match_line_no).unwrap();
         deps.iter_mut().for_each(|dep| {
             dep.to = inst.line_no;
+            dep.to_iidx = Some(iidx);
             dep.quant = inst.quant;
         });
         self.dependencies.append(deps);
@@ -584,6 +585,7 @@ impl Z3Parser {
         let dep = Dependency {
             from: match_line,
             to: None,
+            to_iidx: None,
             blamed: None,
             dep_type: DepType::None,
             quant,
@@ -611,6 +613,7 @@ impl Z3Parser {
             let dep = Dependency {
                 from: instantiation.line_no.unwrap(),
                 to: None,
+                to_iidx: None,
                 blamed: Some(from_term),
                 dep_type,
                 quant: instantiation.quant,
