@@ -1,13 +1,12 @@
 use fxhash::FxHashMap;
 // use gloo_console::log;
-use petgraph::Graph;
 use petgraph::graph::NodeIndex;
-use typed_index_collections::TiVec;
+use petgraph::Graph;
 use std::fmt;
+use typed_index_collections::TiVec;
 
-use crate::items::{InstIdx, Instantiation, TermIdx, QuantIdx, Quantifier};
+use crate::items::{InstIdx, Instantiation, QuantIdx, Quantifier, TermIdx};
 use crate::parsers::LogParser;
-
 
 use super::z3parser::Z3Parser;
 
@@ -43,8 +42,8 @@ pub struct InstInfo {
 
 #[derive(Default)]
 pub struct InstGraph {
-    orig_inst_graph: Graph::<NodeData, ()>, // weights are the line numbers and have type usize
-    inst_graph: Graph::<NodeData, ()>, // same as orig_inst_graph but possibly filtered 
+    orig_inst_graph: Graph<NodeData, ()>, // weights are the line numbers and have type usize
+    inst_graph: Graph<NodeData, ()>,      // same as orig_inst_graph but possibly filtered
     node_of_line_nr: FxHashMap<usize, NodeIndex>, // line number => node-index
     parser: Z3Parser, // contains all information needed to construct this instantiation graph
 }
@@ -58,18 +57,28 @@ impl InstGraph {
         inst_graph
     }
 
-    pub fn filter(&mut self, settings: FilterSettings) -> &Graph::<NodeData, ()> {
-        let FilterSettings{max_line_nr, exclude_theory_inst, max_instantiations} = settings;
+    pub fn filter(&mut self, settings: FilterSettings) -> &Graph<NodeData, ()> {
+        let FilterSettings {
+            max_line_nr,
+            exclude_theory_inst,
+            max_instantiations,
+        } = settings;
         // First filter all nodes beyond max_line_nr.
         // If exclude_theory_inst is true, also filter all theory-solving instantiations.
         self.inst_graph = self.orig_inst_graph.filter_map(
-            |_, &node| if node.line_nr <= max_line_nr && (!exclude_theory_inst || !node.is_theory_inst) {Some(node)} else {None}, 
-            |_, &e| Some(e), // edges are retained unconditionally 
+            |_, &node| {
+                if node.line_nr <= max_line_nr && (!exclude_theory_inst || !node.is_theory_inst) {
+                    Some(node)
+                } else {
+                    None
+                }
+            },
+            |_, &e| Some(e), // edges are retained unconditionally
         );
         // Then only keep the max_instantiations most costly instantiations by sorting in
-        // descending order of the cost. 
-        // In case two instantiations have the same cost, the instantiation with the lower 
-        // line number comes first in the order (is greater), or mathematically: 
+        // descending order of the cost.
+        // In case two instantiations have the same cost, the instantiation with the lower
+        // line number comes first in the order (is greater), or mathematically:
         // This is a total order since the line numbers are always guaranteed to be distinct
         // integers.
         // inst_b > inst_a iff (cost_b > cost_a or (cost_b = cost_a and line_nr_b < line_nr_a))
@@ -78,36 +87,44 @@ impl InstGraph {
             let node_a_data = self.inst_graph.node_weight(*node_a).unwrap();
             let node_b_data = self.inst_graph.node_weight(*node_b).unwrap();
             if node_a_data.cost < node_b_data.cost {
-                return std::cmp::Ordering::Greater
-            } else if node_a_data.cost == node_b_data.cost && node_b_data.line_nr < node_a_data.line_nr {
-                return std::cmp::Ordering::Greater
+                return std::cmp::Ordering::Greater;
+            } else if node_a_data.cost == node_b_data.cost
+                && node_b_data.line_nr < node_a_data.line_nr
+            {
+                return std::cmp::Ordering::Greater;
             } else {
-                return std::cmp::Ordering::Less
+                return std::cmp::Ordering::Less;
             }
         });
         most_costly_insts.truncate(max_instantiations);
-        self.inst_graph.retain_nodes(|_, node| most_costly_insts.contains(&node));
+        self.inst_graph
+            .retain_nodes(|_, node| most_costly_insts.contains(&node));
         &self.inst_graph
     }
 
     pub fn get_instantiation_info(&self, node_index: usize) -> Option<InstInfo> {
-        let NodeData {inst_idx, ..} = self.inst_graph.node_weight(NodeIndex::new(node_index)).unwrap();
+        let NodeData { inst_idx, .. } = self
+            .inst_graph
+            .node_weight(NodeIndex::new(node_index))
+            .unwrap();
         if let Some(iidx) = inst_idx {
             let inst = self.parser.instantiations.get(*iidx).unwrap();
             let quant = self.parser.quantifiers.get(inst.quant).unwrap();
             let term_map = &self.parser.terms;
-            let pretty_text_map = |tidxs: &Vec<TermIdx>| tidxs
-                .iter()
-                .map(|tidx| term_map.get(*tidx).unwrap())
-                .map(|term| term.pretty_text(term_map))
-                .collect::<Vec<String>>();
+            let pretty_text_map = |tidxs: &Vec<TermIdx>| {
+                tidxs
+                    .iter()
+                    .map(|tidx| term_map.get(*tidx).unwrap())
+                    .map(|term| term.pretty_text(term_map))
+                    .collect::<Vec<String>>()
+            };
             let bound_terms = pretty_text_map(&inst.bound_terms);
             let yields_terms = pretty_text_map(&inst.yields_terms);
             let inst_info = InstInfo {
                 inst: inst.clone(),
-                formula: quant.pretty_text(term_map), 
-                bound_terms, 
-                yields_terms, 
+                formula: quant.pretty_text(term_map),
+                bound_terms,
+                yields_terms,
             };
             Some(inst_info)
         } else {
@@ -138,23 +155,23 @@ impl InstGraph {
             if let Some(to) = dep.to {
                 let quant_idx = dep.quant;
                 let quant = parser.quantifiers.get(quant_idx).unwrap();
-                let cost = quant.cost; 
+                let cost = quant.cost;
                 // let colour = if let UnnamedQuant{id, ..} = &quant.kind {
                 //     *colour_map.get(id).unwrap()
                 // } else {
                 //     HSVColour::default()
                 // };
                 // log!("Quantifier at line nr ", to, " has kind ", quant.kind.to_string());
-                self.add_node(NodeData{
-                    line_nr: to, 
-                    is_theory_inst: dep.quant_discovered, 
+                self.add_node(NodeData {
+                    line_nr: to,
+                    is_theory_inst: dep.quant_discovered,
                     cost,
                     inst_idx: dep.to_iidx,
-                    quant_idx, 
+                    quant_idx,
                 });
             }
         }
-        // then add all edges between nodes 
+        // then add all edges between nodes
         for dep in &parser.dependencies {
             let from = dep.from;
             if let Some(to) = dep.to {
@@ -167,8 +184,10 @@ impl InstGraph {
 
     fn fresh_line_nr(&self, line_nr: usize) -> bool {
         // self.orig_inst_graph.node_weights().all(|&line| line != line_nr)
-        self.orig_inst_graph.node_weights().all(|node| node.line_nr != line_nr)
-    } 
+        self.orig_inst_graph
+            .node_weights()
+            .all(|node| node.line_nr != line_nr)
+    }
 
     fn add_node(&mut self, node_data: NodeData) {
         let line_nr = node_data.line_nr;
@@ -179,8 +198,12 @@ impl InstGraph {
     }
 
     fn add_edge(&mut self, from: usize, to: usize) {
-        if let (Some(&from_node_idx), Some(&to_node_idx)) = (self.node_of_line_nr.get(&from), self.node_of_line_nr.get(&to)) {
-            self.orig_inst_graph.add_edge(from_node_idx, to_node_idx, ());
+        if let (Some(&from_node_idx), Some(&to_node_idx)) = (
+            self.node_of_line_nr.get(&from),
+            self.node_of_line_nr.get(&to),
+        ) {
+            self.orig_inst_graph
+                .add_edge(from_node_idx, to_node_idx, ());
         }
     }
 
