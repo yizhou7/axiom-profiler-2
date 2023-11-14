@@ -1,4 +1,5 @@
 use fxhash::FxHashMap;
+// use gloo_console::log;
 use petgraph::Graph;
 use petgraph::graph::NodeIndex;
 use std::collections::{HashSet, HashMap};
@@ -60,12 +61,19 @@ impl InstGraph {
 
     pub fn filter(&mut self, settings: FilterSettings) -> &Graph::<NodeData, ()> {
         let FilterSettings{max_line_nr, exclude_theory_inst, max_instantiations} = settings;
-        // first filter all nodes beyond max_line_nr
+        // First filter all nodes beyond max_line_nr.
+        // If exclude_theory_inst is true, also filter all theory-solving instantiations.
         self.inst_graph = self.orig_inst_graph.filter_map(
-            |_, &node| if node.line_nr <= max_line_nr && (!exclude_theory_inst || !node.is_theory_inst) { Some(node) } else { None }, 
-            |_, _| Some(()), 
+            |_, &node| if node.line_nr <= max_line_nr && (!exclude_theory_inst || !node.is_theory_inst) {Some(node)} else {None}, 
+            |_, &e| Some(e), // edges are retained unconditionally 
         );
-        // then only keep the max_instantiations most costly instantiations
+        // Then only keep the max_instantiations most costly instantiations by sorting in
+        // descending order of the cost. 
+        // In case two instantiations have the same cost, the instantiation with the lower 
+        // line number comes first in the order (is greater), or mathematically: 
+        // This is a total order since the line numbers are always guaranteed to be distinct
+        // integers.
+        // inst_b > inst_a iff (cost_b > cost_a or (cost_b = cost_a and line_nr_b < line_nr_a))
         let mut most_costly_insts: Vec<NodeIndex> = self.inst_graph.node_indices().collect();
         most_costly_insts.sort_by(|node_a, node_b| {
             let node_a_data = self.inst_graph.node_weight(*node_a).unwrap();
@@ -109,9 +117,11 @@ impl InstGraph {
     }
 
     fn compute_instantiation_graph(&mut self, parser: &Z3Parser) {
+        use crate::items::QuantKind::*;
+        // compute a colour map for the QuantKind::UnnamedQuant
         let mut unnamed_quants = HashSet::new();
         for quant in &parser.quantifiers {
-            if let crate::items::QuantKind::UnnamedQuant{id, ..} = &quant.kind {
+            if let UnnamedQuant{id, ..} = &quant.kind {
                 unnamed_quants.insert(id);
             }
         }
@@ -126,11 +136,12 @@ impl InstGraph {
                 let qidx = dep.quant;
                 let quant = parser.quantifiers.get(qidx).unwrap();
                 let cost = quant.cost; 
-                let colour = if let crate::items::QuantKind::UnnamedQuant{id, ..} = &quant.kind {
+                let colour = if let UnnamedQuant{id, ..} = &quant.kind {
                     *colour_map.get(id).unwrap()
                 } else {
                     HSVColour::default()
                 };
+                // log!("Quantifier at line nr ", to, " has kind ", quant.kind.to_string());
                 self.add_node(NodeData{
                     line_nr: to, 
                     is_theory_inst: dep.quant_discovered, 
@@ -235,28 +246,14 @@ mod colors {
         }
     }
 
-    /// Generate `n` distinct colors in HSV format; each color represents instantiations from the same quantifier.
+    /// Generate `n` distinct colors in HSV format
     pub fn make_hsv_colours(n: usize) -> Vec<HSVColour> {
         // want black font to be clearly visible, hence these values for saturation and value
         const DEFAULT_SAT: f64 = 0.4;
         const DEFAULT_VAL: f64 = 0.95;
-        generate_hues(n)
-            .iter()
+        let hues: Vec<f64> = (0..=(n-1)).map(|i| i as f64 / (n as f64)).collect();
+        hues.iter()
             .map(|&hue| HSVColour {hue, sat: DEFAULT_SAT, val: DEFAULT_VAL}) 
             .collect()
-    }
-
-    /// Generate `n` distinct colors (hue values) from golden ratio
-    /// Explained here: https://martin.ankerl.com/2009/12/09/how-to-create-random-colors-programmatically/
-    fn generate_hues(n: usize) -> Vec<f64> {
-        const GOLDEN_RATIO_RECIPROCAL: f64 = 0.618033988749895;
-        let mut hue = 0.0;
-        let mut hues = vec![hue];
-        for _ in 1..n {
-            hue += GOLDEN_RATIO_RECIPROCAL;
-            hue %= 1.0;
-            hues.push(hue);
-        }
-        hues 
     }
 }
