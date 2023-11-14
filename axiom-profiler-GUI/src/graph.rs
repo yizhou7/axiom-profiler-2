@@ -1,7 +1,7 @@
-use yew::prelude::*;
 use wasm_bindgen::prelude::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::{Event, HtmlElement};
+use yew::prelude::*;
 use yew::{function_component, html, use_effect_with, use_node_ref, Html};
 
 #[derive(Properties, PartialEq, Default)]
@@ -17,7 +17,7 @@ pub fn graph(props: &GraphProps) -> Html {
     let div_ref = use_node_ref();
 
     {
-        // Whenever SVG text changes, need to attach event listeners to new nodes 
+        // Whenever SVG text changes, need to attach event listeners to new nodes
         let div_ref = div_ref.clone();
         let svg_text = props.svg_text.clone();
         let callback = props.update_selected_node.clone();
@@ -32,8 +32,11 @@ pub fn graph(props: &GraphProps) -> Html {
             let descendant_nodes = div.get_elements_by_class_name("node");
             let closures: Vec<Closure<dyn Fn(Event)>> = (0..descendant_nodes.length())
                 .map(|i| {
-                    let node = descendant_nodes.item(i).unwrap(); 
-                    let title_element = node.query_selector("title").expect("Failed to select title element").unwrap();
+                    let node = descendant_nodes.item(i).unwrap();
+                    let title_element = node
+                        .query_selector("title")
+                        .expect("Failed to select title element")
+                        .unwrap();
                     let title_content = title_element.text_content().unwrap();
                     let node_index = title_content.parse::<usize>().unwrap();
                     let callback = callback.clone();
@@ -42,13 +45,14 @@ pub fn graph(props: &GraphProps) -> Html {
                     });
                     closure
                 })
-                .collect(); 
+                .collect();
 
             // attach event listeners to the nodes
             for i in 0..descendant_nodes.length() {
                 if let Some(node) = descendant_nodes.item(i) {
                     let closure = closures.as_slice()[i as usize].as_ref();
-                    node.add_event_listener_with_callback("click", closure.unchecked_ref()).unwrap();
+                    node.add_event_listener_with_callback("click", closure.unchecked_ref())
+                        .unwrap();
                 }
             }
 
@@ -57,7 +61,8 @@ pub fn graph(props: &GraphProps) -> Html {
                 for i in 0..closures.len() {
                     if let Some(node) = descendant_nodes.item(i as u32) {
                         let closure = closures.as_slice()[i as usize].as_ref();
-                        node.remove_event_listener_with_callback("click", closure.unchecked_ref()).unwrap();
+                        node.remove_event_listener_with_callback("click", closure.unchecked_ref())
+                            .unwrap();
                     }
                 }
             }

@@ -1,14 +1,17 @@
 use std::iter::zip;
 
-use yew::prelude::*;
-use smt_log_parser::{parsers::z3::results::{FilterSettings, InstGraph, InstInfo}, items::{QuantIdx, Quantifier}};
-use crate::graph_filter::GraphFilter;
+use self::colors::{make_hsv_colours, HSVColour};
 use crate::graph::Graph;
-use petgraph::dot::{Dot, Config};
-use viz_js::VizInstance;
-use self::colors::{HSVColour, make_hsv_colours};
+use crate::graph_filter::GraphFilter;
 use fxhash::FxHashMap;
+use petgraph::dot::{Config, Dot};
+use smt_log_parser::{
+    items::{QuantIdx, Quantifier},
+    parsers::z3::results::{FilterSettings, InstGraph, InstInfo},
+};
 use typed_index_collections::TiVec;
+use viz_js::VizInstance;
+use yew::prelude::*;
 
 pub enum Msg {
     RecomputeSvg(FilterSettings),
@@ -38,7 +41,7 @@ impl Component for SVGResult {
         let colour_map = QuantIdxToColourMap::from(quantifiers);
         Self {
             svg_text: AttrValue::default(),
-            inst_graph, 
+            inst_graph,
             selected_inst: None,
             colour_map,
         }
@@ -48,15 +51,20 @@ impl Component for SVGResult {
         match msg {
             Msg::RecomputeSvg(settings) => {
                 let filtered_graph = self.inst_graph.filter(settings);
-                let dot_output = format!("{:?}", Dot::with_attr_getters(
-                    filtered_graph,
-                    &[Config::EdgeNoLabel, Config::NodeNoLabel],
-                    &|_, _| String::new(),
-                    &|_, (_, node_data)| format!("label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
-                        node_data.line_nr,
-                        self.colour_map.get(&node_data.quant_idx) 
-                    ),
-                )); 
+                let dot_output = format!(
+                    "{:?}",
+                    Dot::with_attr_getters(
+                        filtered_graph,
+                        &[Config::EdgeNoLabel, Config::NodeNoLabel],
+                        &|_, _| String::new(),
+                        &|_, (_, node_data)| {
+                            format!("label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
+                                node_data.line_nr,
+                                self.colour_map.get(&node_data.quant_idx) 
+                            )
+                        },
+                    )
+                );
                 log::debug!("Finished building dot output");
                 let link = ctx.link().clone();
                 wasm_bindgen_futures::spawn_local(async move {
@@ -68,19 +76,18 @@ impl Component for SVGResult {
                         .expect("Could not render graphviz");
                     let svg_text = svg.outer_html();
                     link.send_message(Msg::UpdateSvgText(AttrValue::from(svg_text)));
-                    },
-                );
+                });
                 // only need to re-render once the new SVG has been set
-                false 
-            },
+                false
+            }
             Msg::UpdateSvgText(svg_text) => {
                 self.svg_text = svg_text;
                 self.selected_inst = None;
                 true
-            },
+            }
             Msg::SelectedNodeIndex(index) => {
                 self.selected_inst = self.inst_graph.get_instantiation_info(index);
-                true 
+                true
             }
         }
     }
@@ -89,16 +96,16 @@ impl Component for SVGResult {
         let on_clicked = ctx.link().callback(Msg::RecomputeSvg);
         let on_node_select = ctx.link().callback(Msg::SelectedNodeIndex);
         html! {
-            <>  
-                <GraphFilter 
-                    title={"Specify (optional) render settings:"} 
-                    update_settings={on_clicked.clone()} 
+            <>
+                <GraphFilter
+                    title={"Specify (optional) render settings:"}
+                    update_settings={on_clicked.clone()}
                     dependency={ctx.props().trace_file_text.clone()}
                 />
-                <Graph 
+                <Graph
                     svg_text={self.svg_text.clone()}
-                    update_selected_node={on_node_select.clone()} 
-                /> 
+                    update_selected_node={on_node_select.clone()}
+                />
                 <div style="width: 50%; float: left;">
                     {if let Some(inst_info) = &self.selected_inst {
                         html! {
@@ -126,7 +133,6 @@ impl Component for SVGResult {
 
 type ColourIdx = usize;
 
-#[derive(Default)]
 struct QuantIdxToColourMap {
     colour_map: FxHashMap<QuantIdx, ColourIdx>,
     colours: TiVec<ColourIdx, HSVColour>,
@@ -135,13 +141,13 @@ struct QuantIdxToColourMap {
 impl QuantIdxToColourMap {
     pub fn from(quants: &TiVec<QuantIdx, Quantifier>) -> Self {
         let mut colour_map = FxHashMap::default();
-        let colours = make_hsv_colours(quants.len()); 
+        let colours = make_hsv_colours(quants.len());
         for (qidx, colour_idx) in zip(quants.keys(), colours.keys()) {
             colour_map.insert(qidx, colour_idx);
         }
         Self {
             colour_map,
-            colours
+            colours,
         }
     }
 
@@ -151,7 +157,7 @@ impl QuantIdxToColourMap {
         } else {
             HSVColour::default()
         }
-    } 
+    }
 }
 
 /// Private module for generating colors
@@ -176,8 +182,8 @@ mod colors {
         /// The default HSV colour is white (0, 0, 1)
         fn default() -> Self {
             Self {
-                hue: 0.0, 
-                sat: 0.0, 
+                hue: 0.0,
+                sat: 0.0,
                 val: 1.0,
             }
         }
@@ -190,7 +196,11 @@ mod colors {
         const DEFAULT_VAL: f64 = 0.95;
         let hues: Vec<f64> = (0..n).map(|i| i as f64 / (n as f64)).collect();
         hues.iter()
-            .map(|&hue| HSVColour {hue, sat: DEFAULT_SAT, val: DEFAULT_VAL}) 
+            .map(|&hue| HSVColour {
+                hue,
+                sat: DEFAULT_SAT,
+                val: DEFAULT_VAL,
+            })
             .collect()
     }
 }

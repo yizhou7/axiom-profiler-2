@@ -1,6 +1,6 @@
 use gloo_file::{callbacks::FileReader, FileList};
-use smt_log_parser::parsers::{LogParser, AsyncBufferRead, AsyncCursorRead, AsyncParser};
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
+use smt_log_parser::parsers::{AsyncBufferRead, AsyncCursorRead, AsyncParser, LogParser};
 use wasm_bindgen::JsCast;
 use wasm_streams::ReadableStream;
 use web_sys::{Event, HtmlInputElement};
@@ -9,10 +9,10 @@ use yew_router::prelude::*;
 
 use crate::svg_result::SVGResult;
 
-mod svg_result;
 mod graph;
 mod graph_filter;
 mod input_state;
+mod svg_result;
 mod toggle_switch;
 // mod select_dropdown;
 pub enum Msg {
@@ -74,12 +74,13 @@ impl Component for FileDataComponent {
                             }
                             Err((_err, _stream)) => {
                                 let link = ctx.link().clone();
-                                let reader = gloo_file::callbacks::read_as_bytes(file, move |res| {
-                                    link.send_message(Msg::LoadedBytes(
-                                        file_name,
-                                        res.expect("failed to read file"),
-                                    ))
-                                });
+                                let reader =
+                                    gloo_file::callbacks::read_as_bytes(file, move |res| {
+                                        link.send_message(Msg::LoadedBytes(
+                                            file_name,
+                                            res.expect("failed to read file"),
+                                        ))
+                                    });
                                 self.readers.push(reader);
                             }
                         };

@@ -1,9 +1,9 @@
+use web_sys::HtmlInputElement;
 use yew::prelude::*;
 use yew_hooks::UseToggleHandle;
-use web_sys::HtmlInputElement;
 
 #[derive(Properties, PartialEq)]
-pub struct ToggleSwitchProps where {
+pub struct ToggleSwitchProps {
     pub label: AttrValue,
     pub dependency: AttrValue,
     pub input_value: UseToggleHandle<bool>,

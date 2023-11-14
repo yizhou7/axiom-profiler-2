@@ -1,6 +1,6 @@
+use wasm_bindgen::{JsCast, UnwrapThrowExt};
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
-use wasm_bindgen::{UnwrapThrowExt, JsCast};
 
 pub enum InputAction {
     SetValueTo(usize),
@@ -13,9 +13,7 @@ pub struct InputValue {
 
 impl Default for InputValue {
     fn default() -> Self {
-        Self {
-            value: usize::MAX,
-        }
+        Self { value: usize::MAX }
     }
 }
 
@@ -24,15 +22,13 @@ impl Reducible for InputValue {
 
     fn reduce(self: std::rc::Rc<Self>, action: Self::Action) -> std::rc::Rc<Self> {
         match action {
-            InputAction::SetValueTo(value) => Self {
-                value,
-            }.into(),
+            InputAction::SetValueTo(value) => Self { value }.into(),
         }
     }
 }
 
-#[derive(Properties, PartialEq)] 
-pub struct UsizeInputProps where {
+#[derive(Properties, PartialEq)]
+pub struct UsizeInputProps {
     pub label: AttrValue,
     pub dependency: AttrValue,
     pub input_value: UseReducerHandle<InputValue>,
@@ -44,7 +40,7 @@ pub struct UsizeInputProps where {
 /// Resets the value whenever the dependency changes
 #[function_component(UsizeInput)]
 pub fn integer_input(props: &UsizeInputProps) -> Html {
-    let input_value = props.input_value.clone(); 
+    let input_value = props.input_value.clone();
     let input_ref = use_node_ref();
 
     let set_value = {
@@ -60,7 +56,7 @@ pub fn integer_input(props: &UsizeInputProps) -> Html {
                 Ok(value) => {
                     log::debug!("Setting the value to {}", value);
                     input_value.dispatch(InputAction::SetValueTo(value));
-                },
+                }
                 Err(_) => {
                     input_value.dispatch(InputAction::SetValueTo(default_value));
                 }
@@ -75,7 +71,7 @@ pub fn integer_input(props: &UsizeInputProps) -> Html {
                 let event: Event = key_event.clone().into();
                 set_value(event);
             }
-      }
+        }
     });
 
     let set_value_on_blur = Callback::from({
@@ -83,7 +79,7 @@ pub fn integer_input(props: &UsizeInputProps) -> Html {
         move |blur_event: FocusEvent| {
             let event: Event = blur_event.clone().into();
             set_value(event);
-      }
+        }
     });
 
     {
