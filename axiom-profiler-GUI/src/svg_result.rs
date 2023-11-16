@@ -1,26 +1,75 @@
+use std::fmt::Display;
+
 use self::colors::HSVColour;
 use crate::graph::Graph;
 use crate::graph_filter::GraphFilter;
 use petgraph::dot::{Config, Dot};
 use smt_log_parser::{
-    items::{QuantIdx, Quantifier},
-    parsers::z3::results::{FilterSettings, InstGraph, InstInfo},
+    items::QuantIdx,
+    parsers::{z3::{results::{InstGraph, InstInfo, NodeData}, z3parser::Z3Parser}, LogParser},
 };
-use typed_index_collections::TiVec;
 use viz_js::VizInstance;
 use yew::prelude::*;
 
 pub enum Msg {
-    RecomputeSvg(FilterSettings),
     UpdateSvgText(AttrValue),
     SelectedNodeIndex(usize),
+    AddFilter(Filter),
+    RenderGraph,
 }
 
 pub struct SVGResult {
-    pub svg_text: AttrValue,
-    pub inst_graph: InstGraph,
-    pub selected_inst: Option<InstInfo>,
+    parser: Z3Parser,
     colour_map: QuantIdxToColourMap,
+    orig_graph: InstGraph,
+    filter_chain: Vec<Filter>,
+    inst_graph: InstGraph,
+    svg_text: AttrValue,
+    selected_inst: Option<InstInfo>,
+}
+
+#[derive(Clone, Copy)]
+pub enum Filter {
+    MaxLineNr(usize),
+    IgnoreTheorySolving(bool),
+    MaxInsts(usize),
+}
+
+impl Display for Filter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MaxLineNr(line_nr) => {
+                write!(f, "Only show up to line number {}", line_nr)
+            },
+            Self::IgnoreTheorySolving(ignore) => {
+                if *ignore {
+                    write!(f, "Ignore theory solving instantiations")
+                } else {
+                    write!(f, "Show theory solving instantiations")
+                }
+            },
+            Self::MaxInsts(max) => {
+                write!(f, "Show the {} most expensive instantiations", max)
+            }
+        }
+    }
+}
+
+impl Filter {
+    fn apply(self: Filter, graph: &mut InstGraph) {
+        match self {
+            Filter::MaxLineNr(max_line_nr) => {
+                graph.retain_nodes(|node: &NodeData| node.line_nr <= max_line_nr)
+            }, 
+            Filter::IgnoreTheorySolving(ignore) => {
+                // want to use retain_nodes_and_reconnect eventually 
+                graph.retain_nodes(|node: &NodeData| !ignore || !node.is_theory_inst)
+            },
+            Filter::MaxInsts(n) => {
+                graph.keep_n_most_costly(n);
+            }
+        }
+    }
 }
 
 #[derive(Properties, PartialEq)]
@@ -33,21 +82,39 @@ impl Component for SVGResult {
     type Properties = SVGProps;
 
     fn create(ctx: &Context<Self>) -> Self {
-        let inst_graph = InstGraph::from(ctx.props().trace_file_text.as_ref());
-        let quantifiers = inst_graph.get_quantifiers();
-        let colour_map = QuantIdxToColourMap::from(quantifiers);
+        let parser = Z3Parser::from_str(&ctx.props().trace_file_text).process_all();
+        let orig_graph = InstGraph::from(&parser);
+        let mut inst_graph = InstGraph::from(&parser);
+        let total_nr_of_quants = parser.total_nr_of_quants();
+        let colour_map = QuantIdxToColourMap::from(total_nr_of_quants);
+        let filter_chain = vec![Filter::IgnoreTheorySolving(true), Filter::MaxInsts(250)];
+        // apply default filters
+        for &filter in &filter_chain {
+            filter.apply(&mut inst_graph);
+        }
         Self {
-            svg_text: AttrValue::default(),
-            inst_graph,
-            selected_inst: None,
+            parser,
             colour_map,
+            orig_graph,
+            filter_chain,
+            inst_graph,
+            svg_text: AttrValue::default(),
+            selected_inst: None,
         }
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
-            Msg::RecomputeSvg(settings) => {
-                let filtered_graph = self.inst_graph.filter(settings);
+            Msg::AddFilter(filter) => {
+                self.filter_chain.push(filter);
+                // TODO: apply filter that was just added to currently displayed graph 
+                // and compute how many nodes the current graph has such that user can
+                // decide to render it or not
+                filter.apply(&mut self.inst_graph);
+                true
+            },
+            Msg::RenderGraph => {
+                let filtered_graph = &self.inst_graph.inst_graph;
                 let dot_output = format!(
                     "{:?}",
                     Dot::with_attr_getters(
@@ -76,22 +143,34 @@ impl Component for SVGResult {
                 });
                 // only need to re-render once the new SVG has been set
                 false
-            }
+            },
             Msg::UpdateSvgText(svg_text) => {
                 self.svg_text = svg_text;
                 self.selected_inst = None;
                 true
             }
             Msg::SelectedNodeIndex(index) => {
-                self.selected_inst = self.inst_graph.get_instantiation_info(index);
+                self.selected_inst = self.inst_graph.get_instantiation_info(index, &self.parser);
                 true
-            }
+            },
         }
     }
 
+
     fn view(&self, ctx: &Context<Self>) -> Html {
-        let on_clicked = ctx.link().callback(Msg::RecomputeSvg);
+        let on_clicked = ctx.link().callback(Msg::AddFilter);
         let on_node_select = ctx.link().callback(Msg::SelectedNodeIndex);
+        let filter_chain: Vec<yew::virtual_dom::VNode> = self.filter_chain
+            .iter()
+            .enumerate()
+            .map(|(idx, f)| html! {
+                <p>{format!("{}. {f}", idx+1)}</p>
+            })
+            .collect();
+        let render_graph = ctx.link().callback(|_| Msg::RenderGraph);
+        let node_count_preview = html! {
+            <h4>{format!{"The filtered graph contains {} nodes", self.inst_graph.inst_graph.node_count()}}</h4>
+        };
         html! {
             <>
                 <GraphFilter
@@ -99,6 +178,10 @@ impl Component for SVGResult {
                     update_settings={on_clicked.clone()}
                     dependency={ctx.props().trace_file_text.clone()}
                 />
+                <h3>{"Filter chain:"}</h3>
+                {for filter_chain}
+                {node_count_preview}
+                <button onclick={render_graph}>{"Render graph"}</button>
                 <Graph
                     svg_text={self.svg_text.clone()}
                     update_selected_node={on_node_select.clone()}
@@ -129,21 +212,21 @@ impl Component for SVGResult {
 }
 
 struct QuantIdxToColourMap {
-    total_nr_quants: usize,
+    total_nr_of_quants: usize,
 }
 
 impl QuantIdxToColourMap {
-    pub fn from(quants: &TiVec<QuantIdx, Quantifier>) -> Self {
+    pub fn from(total_nr_of_quants: usize) -> Self {
         Self {
-            total_nr_quants: quants.len(),
+            total_nr_of_quants,
         }
     }
 
     pub fn get(&self, qidx: &QuantIdx) -> Option<HSVColour> {
         let idx = usize::from(*qidx);
-        if idx < self.total_nr_quants {
+        if idx < self.total_nr_of_quants {
             Some(HSVColour {
-                hue: idx as f64 / (self.total_nr_quants as f64),
+                hue: idx as f64 / (self.total_nr_of_quants as f64),
                 sat: 0.4,
                 val: 0.95,
             })

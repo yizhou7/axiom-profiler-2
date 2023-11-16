@@ -640,4 +640,8 @@ impl Z3Parser {
             }
         }
     }
+
+    pub fn total_nr_of_quants(&self) -> usize {
+        self.quantifiers.len()
+    }
 }
