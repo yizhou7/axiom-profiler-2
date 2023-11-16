@@ -6,7 +6,7 @@ use crate::graph_filter::GraphFilter;
 use petgraph::dot::{Config, Dot};
 use smt_log_parser::{
     items::QuantIdx,
-    parsers::{z3::{results::{InstGraph, InstInfo, NodeData}, z3parser::Z3Parser}, LogParser},
+    parsers::{z3::{inst_graph::{InstGraph, InstInfo, NodeData}, z3parser::Z3Parser}, LogParser},
 };
 use viz_js::VizInstance;
 use yew::prelude::*;

@@ -180,7 +180,4 @@ impl InstGraph {
                 .add_edge(from_node_idx, to_node_idx, ());
         }
     }
-
-
-
 }

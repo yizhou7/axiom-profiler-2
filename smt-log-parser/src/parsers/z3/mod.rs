@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use super::LogParser;
 
-pub mod results;
+pub mod inst_graph;
 /// Original Z3 log parser. Works with Z3 v.4.12.1, should work with other versions
 /// as long as the log format is the same for the important line cases.
 /// Compare with the log files in the `logs/` folder to see if this is the case.
