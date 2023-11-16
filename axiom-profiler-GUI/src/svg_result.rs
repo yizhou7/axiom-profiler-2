@@ -15,6 +15,7 @@ pub enum Msg {
     UpdateSvgText(AttrValue),
     SelectedNodeIndex(usize),
     AddFilter(Filter),
+    RemoveNthFilter(usize),
     RenderGraph,
 }
 
@@ -26,31 +27,22 @@ pub struct SVGResult {
     inst_graph: InstGraph,
     svg_text: AttrValue,
     selected_inst: Option<InstInfo>,
+    node_count_preview: usize,
 }
 
 #[derive(Clone, Copy)]
 pub enum Filter {
     MaxLineNr(usize),
-    IgnoreTheorySolving(bool),
+    IgnoreTheorySolving,
     MaxInsts(usize),
 }
 
 impl Display for Filter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::MaxLineNr(line_nr) => {
-                write!(f, "Only show up to line number {}", line_nr)
-            },
-            Self::IgnoreTheorySolving(ignore) => {
-                if *ignore {
-                    write!(f, "Ignore theory solving instantiations")
-                } else {
-                    write!(f, "Show theory solving instantiations")
-                }
-            },
-            Self::MaxInsts(max) => {
-                write!(f, "Show the {} most expensive instantiations", max)
-            }
+            Self::MaxLineNr(line_nr) => write!(f, "Only show up to line number {}", line_nr),
+            Self::IgnoreTheorySolving => write!(f, "Ignore theory solving instantiations"),
+            Self::MaxInsts(max) => write!(f, "Show the {} most expensive instantiations", max)
         }
     }
 }
@@ -61,9 +53,9 @@ impl Filter {
             Filter::MaxLineNr(max_line_nr) => {
                 graph.retain_nodes(|node: &NodeData| node.line_nr <= max_line_nr)
             }, 
-            Filter::IgnoreTheorySolving(ignore) => {
+            Filter::IgnoreTheorySolving => {
                 // want to use retain_nodes_and_reconnect eventually 
-                graph.retain_nodes(|node: &NodeData| !ignore || !node.is_theory_inst)
+                graph.retain_nodes(|node: &NodeData| !node.is_theory_inst)
             },
             Filter::MaxInsts(n) => {
                 graph.keep_n_most_costly(n);
@@ -87,11 +79,12 @@ impl Component for SVGResult {
         let mut inst_graph = InstGraph::from(&parser);
         let total_nr_of_quants = parser.total_nr_of_quants();
         let colour_map = QuantIdxToColourMap::from(total_nr_of_quants);
-        let filter_chain = vec![Filter::IgnoreTheorySolving(true), Filter::MaxInsts(250)];
-        // apply default filters
+        let filter_chain = vec![Filter::IgnoreTheorySolving, Filter::MaxInsts(250)];
+        // apply initial filters
         for &filter in &filter_chain {
             filter.apply(&mut inst_graph);
         }
+        let node_count_preview = inst_graph.node_count();
         Self {
             parser,
             colour_map,
@@ -100,6 +93,7 @@ impl Component for SVGResult {
             inst_graph,
             svg_text: AttrValue::default(),
             selected_inst: None,
+            node_count_preview,
         }
     }
 
@@ -111,8 +105,18 @@ impl Component for SVGResult {
                 // and compute how many nodes the current graph has such that user can
                 // decide to render it or not
                 filter.apply(&mut self.inst_graph);
+                self.node_count_preview = self.inst_graph.node_count();
                 true
             },
+            Msg::RemoveNthFilter(n) => {
+                self.filter_chain.remove(n);
+                self.inst_graph = self.orig_graph.clone();
+                for filter in &self.filter_chain {
+                    filter.apply(&mut self.inst_graph);
+                }
+                self.node_count_preview = self.inst_graph.node_count();
+                true
+            }
             Msg::RenderGraph => {
                 let filtered_graph = &self.inst_graph.inst_graph;
                 let dot_output = format!(
@@ -164,12 +168,15 @@ impl Component for SVGResult {
             .iter()
             .enumerate()
             .map(|(idx, f)| html! {
-                <p>{format!("{}. {f}", idx+1)}</p>
+                <div>
+                    <p>{format!("{}. {f}", idx+1)}</p>
+                    <button onclick={ctx.link().callback(move |_| Msg::RemoveNthFilter(idx))}>{"Remove filter"}</button>
+                </div>
             })
             .collect();
         let render_graph = ctx.link().callback(|_| Msg::RenderGraph);
         let node_count_preview = html! {
-            <h4>{format!{"The filtered graph contains {} nodes", self.inst_graph.inst_graph.node_count()}}</h4>
+            <h4>{format!{"The filtered graph contains {} nodes", self.node_count_preview}}</h4>
         };
         html! {
             <>

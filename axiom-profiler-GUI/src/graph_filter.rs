@@ -1,10 +1,8 @@
 use crate::{
     input_state::{InputValue, UsizeInput},
-    toggle_switch::ToggleSwitch, svg_result::Filter,
+    svg_result::Filter,
 };
-use smt_log_parser::parsers::z3::results::FilterSettings;
 use yew::prelude::*;
-use yew_hooks::prelude::*;
 
 #[derive(Properties, PartialEq)]
 pub struct GraphFilterProps {
@@ -16,27 +14,7 @@ pub struct GraphFilterProps {
 #[function_component(GraphFilter)]
 pub fn graph_filter(props: &GraphFilterProps) -> Html {
     let max_line_nr = use_reducer(InputValue::default);
-    let exclude_theory_inst = use_bool_toggle(true);
     let max_instantiations = use_reducer(InputValue::default);
-
-    // let update_settings = {
-    //     let max_line_nr = max_line_nr.clone();
-    //     let exclude_theory_inst = exclude_theory_inst.clone();
-    //     let max_instantiations = max_instantiations.clone();
-    //     let callback = props.update_settings.clone();
-    //     // props.update_settings.reform(move |_| FilterSettings {
-    //     //     max_line_nr: max_line_nr.value,
-    //     //     exclude_theory_inst: *exclude_theory_inst,
-    //     //     max_instantiations: max_instantiations.value,
-    //     // })
-    //     Callback::from(move |_| {
-    //         callback.emit(FilterSettings {
-    //             max_line_nr: max_line_nr.value,
-    //             exclude_theory_inst: *exclude_theory_inst,
-    //             max_instantiations: max_instantiations.value,
-    //         })
-    //     })
-    // };
 
     let add_max_line_nr_filter = {
         let max_line_nr = max_line_nr.clone();
@@ -46,10 +24,9 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
         })
     };
     let add_theory_filter = {
-        let exclude_theory_inst = exclude_theory_inst.clone();
         let callback = props.update_settings.clone();
         Callback::from(move |_| {
-            callback.emit(Filter::IgnoreTheorySolving(*exclude_theory_inst))
+            callback.emit(Filter::IgnoreTheorySolving)
         })
     };
     let add_max_insts_filter = {
@@ -69,11 +46,7 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
                 default_value={usize::MAX}
             />
             <button onclick={add_max_line_nr_filter}>{"Add"}</button>
-            <ToggleSwitch
-                label={"Ignore theory-solving instantiations: "}
-                dependency={props.dependency.clone()}
-                input_value={exclude_theory_inst}
-            />
+            <p>{"Ignore theory-solving instantiations"}</p>
             <button onclick={add_theory_filter}>{"Add"}</button>
             <UsizeInput
                 label={"Render the n most expensive instantiations where n = "}

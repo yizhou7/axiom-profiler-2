@@ -1,7 +1,7 @@
 use fxhash::FxHashMap;
 use petgraph::Direction::{Incoming, Outgoing};
 // use gloo_console::log;
-use petgraph::graph::{NodeIndex, Frozen};
+use petgraph::graph::NodeIndex;
 use petgraph::Graph;
 use std::fmt;
 
@@ -31,7 +31,7 @@ pub struct InstInfo {
     pub yields_terms: Vec<String>,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct InstGraph {
     pub inst_graph: Graph<NodeData, ()>,      // same as orig_inst_graph but possibly filtered
     node_of_line_nr: FxHashMap<usize, NodeIndex>, // line number => node-index
@@ -94,6 +94,10 @@ impl InstGraph {
         self.inst_graph
             .retain_nodes(|_, node| most_costly_insts.contains(&node));
         &self.inst_graph
+    }
+
+    pub fn node_count(&self) -> usize {
+        self.inst_graph.node_count()
     }
 
     pub fn get_instantiation_info(&self, node_index: usize, parser: &Z3Parser) -> Option<InstInfo> {
@@ -179,21 +183,4 @@ impl InstGraph {
 
 
 
-}
-
-#[derive(PartialEq, Clone, Copy)]
-pub struct FilterSettings {
-    pub max_line_nr: usize,
-    pub exclude_theory_inst: bool,
-    pub max_instantiations: usize,
-}
-
-impl Default for FilterSettings {
-    fn default() -> Self {
-        Self {
-            max_line_nr: usize::MAX,
-            exclude_theory_inst: true,
-            max_instantiations: 250,
-        }
-    }
 }
