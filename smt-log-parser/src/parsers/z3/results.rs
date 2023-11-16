@@ -1,4 +1,5 @@
 use fxhash::FxHashMap;
+use petgraph::Direction::{Incoming, Outgoing};
 // use gloo_console::log;
 use petgraph::graph::NodeIndex;
 use petgraph::Graph;
@@ -75,6 +76,11 @@ impl InstGraph {
             },
             |_, &e| Some(e), // edges are retained unconditionally
         );
+
+        // filter theory instantiations by reconnecting 
+        // let theory_filter = |node: &NodeData| !exclude_theory_inst || !node.is_theory_inst;
+        // self.retain_nodes_and_reconnect(theory_filter);       
+
         // Then only keep the max_instantiations most costly instantiations by sorting in
         // descending order of the cost.
         // In case two instantiations have the same cost, the instantiation with the lower
@@ -87,13 +93,13 @@ impl InstGraph {
             let node_a_data = self.inst_graph.node_weight(*node_a).unwrap();
             let node_b_data = self.inst_graph.node_weight(*node_b).unwrap();
             if node_a_data.cost < node_b_data.cost {
-                return std::cmp::Ordering::Greater;
+                 std::cmp::Ordering::Greater
             } else if node_a_data.cost == node_b_data.cost
                 && node_b_data.line_nr < node_a_data.line_nr
             {
-                return std::cmp::Ordering::Greater;
+                 std::cmp::Ordering::Greater
             } else {
-                return std::cmp::Ordering::Less;
+                 std::cmp::Ordering::Less
             }
         });
         most_costly_insts.truncate(max_instantiations);
@@ -204,6 +210,23 @@ impl InstGraph {
         ) {
             self.orig_inst_graph
                 .add_edge(from_node_idx, to_node_idx, ());
+        }
+    }
+
+    fn retain_nodes_and_reconnect(&mut self, retain_if: impl Fn(&NodeData) -> bool) {
+        let nodes_to_remove: Vec<NodeIndex> = self.inst_graph
+            .node_indices()
+            .filter(|&node_idx| !retain_if(self.inst_graph.node_weight(node_idx).unwrap()))
+            .collect();
+        for node in nodes_to_remove {
+            let preds: Vec<NodeIndex> = self.inst_graph.neighbors_directed(node, Incoming).collect();
+            let succs: Vec<NodeIndex> = self.inst_graph.neighbors_directed(node, Outgoing).collect();
+            self.inst_graph.remove_node(node);
+            for &pred in &preds {
+                for &succ in &succs {
+                    self.inst_graph.add_edge(pred, succ, ());
+                }
+            }
         }
     }
 
