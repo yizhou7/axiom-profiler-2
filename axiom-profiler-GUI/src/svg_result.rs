@@ -1,9 +1,6 @@
-use std::iter::zip;
-
-use self::colors::{make_hsv_colours, HSVColour};
+use self::colors::HSVColour;
 use crate::graph::Graph;
 use crate::graph_filter::GraphFilter;
-use fxhash::FxHashMap;
 use petgraph::dot::{Config, Dot};
 use smt_log_parser::{
     items::{QuantIdx, Quantifier},
@@ -60,7 +57,7 @@ impl Component for SVGResult {
                         &|_, (_, node_data)| {
                             format!("label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
                                 node_data.line_nr,
-                                self.colour_map.get(&node_data.quant_idx) 
+                                self.colour_map.get(&node_data.quant_idx).unwrap() 
                             )
                         },
                     )
@@ -131,38 +128,33 @@ impl Component for SVGResult {
     }
 }
 
-type ColourIdx = usize;
-
 struct QuantIdxToColourMap {
-    colour_map: FxHashMap<QuantIdx, ColourIdx>,
-    colours: TiVec<ColourIdx, HSVColour>,
+    total_nr_quants: usize,
 }
 
 impl QuantIdxToColourMap {
     pub fn from(quants: &TiVec<QuantIdx, Quantifier>) -> Self {
-        let mut colour_map = FxHashMap::default();
-        let colours = make_hsv_colours(quants.len());
-        for (qidx, colour_idx) in zip(quants.keys(), colours.keys()) {
-            colour_map.insert(qidx, colour_idx);
-        }
         Self {
-            colour_map,
-            colours,
+            total_nr_quants: quants.len(),
         }
     }
 
-    pub fn get(&self, qidx: &QuantIdx) -> HSVColour {
-        if let Some(colour_idx) = self.colour_map.get(qidx) {
-            self.colours.raw[*colour_idx]
+    pub fn get(&self, qidx: &QuantIdx) -> Option<HSVColour> {
+        let idx = usize::from(*qidx);
+        if idx < self.total_nr_quants {
+            Some(HSVColour {
+                hue: idx as f64 / (self.total_nr_quants as f64),
+                sat: 0.4,
+                val: 0.95,
+            })
         } else {
-            HSVColour::default()
+            None
         }
     }
 }
 
 /// Private module for generating colors
 mod colors {
-    use super::*;
     use std::fmt;
 
     #[derive(Clone, Copy)]
@@ -176,31 +168,5 @@ mod colors {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "{} {} {}", self.hue, self.sat, self.val)
         }
-    }
-
-    impl Default for HSVColour {
-        /// The default HSV colour is white (0, 0, 1)
-        fn default() -> Self {
-            Self {
-                hue: 0.0,
-                sat: 0.0,
-                val: 1.0,
-            }
-        }
-    }
-
-    /// Generate `n` distinct colors in HSV format
-    pub fn make_hsv_colours(n: usize) -> TiVec<ColourIdx, HSVColour> {
-        // want black font to be clearly visible, hence these values for saturation and value
-        const DEFAULT_SAT: f64 = 0.4;
-        const DEFAULT_VAL: f64 = 0.95;
-        let hues: Vec<f64> = (0..n).map(|i| i as f64 / (n as f64)).collect();
-        hues.iter()
-            .map(|&hue| HSVColour {
-                hue,
-                sat: DEFAULT_SAT,
-                val: DEFAULT_VAL,
-            })
-            .collect()
     }
 }

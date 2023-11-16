@@ -26,14 +26,6 @@ impl fmt::Debug for NodeData {
     }
 }
 
-// impl fmt::Display for NodeData {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         write!(f, "label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
-//         self.line_nr,
-//         self.fill_colour)
-//     }
-// }
-
 pub struct InstInfo {
     pub inst: Instantiation,
     pub formula: String,
@@ -77,9 +69,9 @@ impl InstGraph {
             |_, &e| Some(e), // edges are retained unconditionally
         );
 
-        // filter theory instantiations by reconnecting 
+        // filter theory instantiations by reconnecting
         // let theory_filter = |node: &NodeData| !exclude_theory_inst || !node.is_theory_inst;
-        // self.retain_nodes_and_reconnect(theory_filter);       
+        // self.retain_nodes_and_reconnect(theory_filter);
 
         // Then only keep the max_instantiations most costly instantiations by sorting in
         // descending order of the cost.
@@ -93,13 +85,13 @@ impl InstGraph {
             let node_a_data = self.inst_graph.node_weight(*node_a).unwrap();
             let node_b_data = self.inst_graph.node_weight(*node_b).unwrap();
             if node_a_data.cost < node_b_data.cost {
-                 std::cmp::Ordering::Greater
+                std::cmp::Ordering::Greater
             } else if node_a_data.cost == node_b_data.cost
                 && node_b_data.line_nr < node_a_data.line_nr
             {
-                 std::cmp::Ordering::Greater
+                std::cmp::Ordering::Greater
             } else {
-                 std::cmp::Ordering::Less
+                std::cmp::Ordering::Less
             }
         });
         most_costly_insts.truncate(max_instantiations);
@@ -214,13 +206,16 @@ impl InstGraph {
     }
 
     fn retain_nodes_and_reconnect(&mut self, retain_if: impl Fn(&NodeData) -> bool) {
-        let nodes_to_remove: Vec<NodeIndex> = self.inst_graph
+        let nodes_to_remove: Vec<NodeIndex> = self
+            .inst_graph
             .node_indices()
             .filter(|&node_idx| !retain_if(self.inst_graph.node_weight(node_idx).unwrap()))
             .collect();
         for node in nodes_to_remove {
-            let preds: Vec<NodeIndex> = self.inst_graph.neighbors_directed(node, Incoming).collect();
-            let succs: Vec<NodeIndex> = self.inst_graph.neighbors_directed(node, Outgoing).collect();
+            let preds: Vec<NodeIndex> =
+                self.inst_graph.neighbors_directed(node, Incoming).collect();
+            let succs: Vec<NodeIndex> =
+                self.inst_graph.neighbors_directed(node, Outgoing).collect();
             self.inst_graph.remove_node(node);
             for &pred in &preds {
                 for &succ in &succs {
