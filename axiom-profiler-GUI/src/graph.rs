@@ -32,6 +32,7 @@ pub fn graph(props: &GraphProps) -> Html {
             let descendant_nodes = div.get_elements_by_class_name("node");
             let closures: Vec<Closure<dyn Fn(Event)>> = (0..descendant_nodes.length())
                 .map(|i| {
+                    // extract node_index from node to construct callback that emits it
                     let node = descendant_nodes.item(i).unwrap();
                     let title_element = node
                         .query_selector("title")
@@ -43,18 +44,12 @@ pub fn graph(props: &GraphProps) -> Html {
                     let closure: Closure<dyn Fn(Event)> = Closure::new(move |_: Event| {
                         callback.emit(node_index);
                     });
+                    // attach event listener to node
+                    node.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref())
+                        .unwrap();
                     closure
                 })
                 .collect();
-
-            // attach event listeners to the nodes
-            for i in 0..descendant_nodes.length() {
-                if let Some(node) = descendant_nodes.item(i) {
-                    let closure = closures.as_slice()[i as usize].as_ref();
-                    node.add_event_listener_with_callback("click", closure.unchecked_ref())
-                        .unwrap();
-                }
-            }
 
             move || {
                 // Remove event listeners when the component is unmounted
