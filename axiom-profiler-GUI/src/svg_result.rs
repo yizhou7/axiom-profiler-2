@@ -16,6 +16,7 @@ pub enum Msg {
     SelectedNodeIndex(usize),
     AddFilter(Filter),
     RemoveNthFilter(usize),
+    RemoveAllFilters,
     RenderGraph,
 }
 
@@ -116,6 +117,12 @@ impl Component for SVGResult {
                 }
                 self.node_count_preview = self.inst_graph.node_count();
                 true
+            },
+            Msg::RemoveAllFilters => {
+                self.filter_chain = Vec::new();
+                self.inst_graph = self.orig_graph.clone();
+                self.node_count_preview = self.inst_graph.node_count();
+                true
             }
             Msg::RenderGraph => {
                 let filtered_graph = &self.inst_graph.inst_graph;
@@ -164,6 +171,7 @@ impl Component for SVGResult {
     fn view(&self, ctx: &Context<Self>) -> Html {
         let on_clicked = ctx.link().callback(Msg::AddFilter);
         let on_node_select = ctx.link().callback(Msg::SelectedNodeIndex);
+        let remove_all_filters = ctx.link().callback(|_| Msg::RemoveAllFilters);
         let filter_chain: Vec<yew::virtual_dom::VNode> = self.filter_chain
             .iter()
             .enumerate()
@@ -188,6 +196,7 @@ impl Component for SVGResult {
                 <h3>{"Filter chain:"}</h3>
                 {for filter_chain}
                 {node_count_preview}
+                <button onclick={remove_all_filters}>{"Remove all filters"}</button>
                 <button onclick={render_graph}>{"Render graph"}</button>
                 <Graph
                     svg_text={self.svg_text.clone()}
