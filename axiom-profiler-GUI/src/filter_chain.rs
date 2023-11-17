@@ -1,23 +1,7 @@
 use yew::prelude::*;
-use std::fmt::Display;
-use crate::graph_filter::GraphFilter;
+use crate::graph_filters::{GraphFilter, Filter};
 
-#[derive(Clone, Copy)]
-pub enum Filter {
-    MaxLineNr(usize),
-    IgnoreTheorySolving,
-    MaxInsts(usize),
-}
 
-impl Display for Filter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::MaxLineNr(line_nr) => write!(f, "Only show up to line number {}", line_nr),
-            Self::IgnoreTheorySolving => write!(f, "Ignore theory solving instantiations"),
-            Self::MaxInsts(max) => write!(f, "Show the {} most expensive instantiations", max)
-        }
-    }
-}
 
 pub enum Msg {
     AddFilter(Filter),

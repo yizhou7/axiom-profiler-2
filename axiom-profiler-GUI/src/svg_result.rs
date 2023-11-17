@@ -1,10 +1,9 @@
 use self::colors::HSVColour;
-use crate::filter_chain::Filter;
-use crate::{graph::Graph, filter_chain::FilterChain};
+use crate::{graph::Graph, filter_chain::FilterChain, graph_filters::Filter};
 use petgraph::dot::{Config, Dot};
 use smt_log_parser::{
     items::QuantIdx,
-    parsers::{z3::{inst_graph::{InstGraph, InstInfo, NodeData}, z3parser::Z3Parser}, LogParser},
+    parsers::{z3::{inst_graph::{InstGraph, InstInfo}, z3parser::Z3Parser}, LogParser},
 };
 use viz_js::VizInstance;
 use yew::prelude::*;
@@ -24,22 +23,6 @@ pub struct SVGResult {
     inst_graph: InstGraph,
     svg_text: AttrValue,
     selected_inst: Option<InstInfo>,
-}
-
-impl Filter {
-    fn apply(self: Filter, graph: &mut InstGraph) {
-        match self {
-            Filter::MaxLineNr(max_line_nr) => {
-                graph.retain_nodes(|node: &NodeData| node.line_nr <= max_line_nr)
-            }, 
-            Filter::IgnoreTheorySolving => {
-                graph.retain_nodes_and_reconnect(|node: &NodeData| !node.is_theory_inst)
-            },
-            Filter::MaxInsts(n) => {
-                graph.keep_n_most_costly(n);
-            }
-        }
-    }
 }
 
 #[derive(Properties, PartialEq)]

@@ -11,7 +11,7 @@ use crate::svg_result::SVGResult;
 
 mod graph;
 mod filter_chain;
-mod graph_filter;
+mod graph_filters;
 mod input_state;
 mod svg_result;
 mod toggle_switch;
