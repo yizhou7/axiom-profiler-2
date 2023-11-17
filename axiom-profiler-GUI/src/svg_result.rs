@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use self::colors::HSVColour;
 use crate::{graph::Graph, filter_chain::FilterChain, graph_filters::Filter};
 use petgraph::dot::{Config, Dot};
@@ -71,7 +72,7 @@ impl Component for SVGResult {
                         &|_, (_, node_data)| {
                             format!("label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
                                 node_data.line_nr,
-                                self.colour_map.get(&node_data.quant_idx).unwrap() 
+                                self.colour_map.get(&node_data.quant_idx)
                             )
                         },
                     )
@@ -148,25 +149,52 @@ impl Component for SVGResult {
 
 struct QuantIdxToColourMap {
     total_nr_of_quants: usize,
+    coprime: NonZeroUsize,
+    shift: usize,
 }
 
 impl QuantIdxToColourMap {
     pub fn from(total_nr_of_quants: usize) -> Self {
         Self {
             total_nr_of_quants,
+            coprime: Self::find_coprime(total_nr_of_quants),
+            // Currently `idx == 0` will always have the same hue of 0, if we do
+            // not want this behavior pick a random number here instead.
+            shift: 0,
         }
     }
 
-    pub fn get(&self, qidx: &QuantIdx) -> Option<HSVColour> {
+    pub fn get(&self, qidx: &QuantIdx) -> HSVColour {
         let idx = usize::from(*qidx);
-        if idx < self.total_nr_of_quants {
-            Some(HSVColour {
-                hue: idx as f64 / (self.total_nr_of_quants as f64),
-                sat: 0.4,
-                val: 0.95,
-            })
+        debug_assert!(idx < self.total_nr_of_quants);
+        let idx_perm = (idx * self.coprime.get() + self.shift) % self.total_nr_of_quants;
+        HSVColour {
+            hue: idx_perm as f64 / self.total_nr_of_quants as f64,
+            sat: 0.4,
+            val: 0.95,
+        }
+    }
+
+    fn find_coprime(n: usize) -> NonZeroUsize {
+        // Workaround since `unwrap` isn't allowed in const functions.
+        const ONE: NonZeroUsize = match NonZeroUsize::new(1) {
+            Some(nz) => nz,
+            None => [][0],
+        };
+        let nz = NonZeroUsize::new(n);
+        if let Some(nz) = nz {
+            primal::Primes::all()
+                // Start from 13 since the smaller ones don't permute so nicely.
+                .skip(5)
+                // SAFETY: returned primes will never be zero.
+                .map(|p| unsafe { NonZeroUsize::new_unchecked(p) })
+                // Find the first prime that is coprime to `nz`.
+                .find(|&prime| nz.get() % prime.get() != 0)
+                // Will always succeed since any prime larger than `nz / 2` is
+                // coprime. Terminates since `nz != 0`.
+                .unwrap()
         } else {
-            None
+            ONE
         }
     }
 }
