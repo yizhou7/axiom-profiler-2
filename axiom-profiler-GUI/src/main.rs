@@ -10,6 +10,7 @@ use yew_router::prelude::*;
 use crate::svg_result::SVGResult;
 
 mod graph;
+mod filter_chain;
 mod graph_filter;
 mod input_state;
 mod svg_result;

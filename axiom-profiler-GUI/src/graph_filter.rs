@@ -1,13 +1,11 @@
 use crate::{
-    input_state::{InputValue, UsizeInput},
-    svg_result::Filter,
+    input_state::{InputValue, UsizeInput}, filter_chain::Filter,
 };
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq)]
 pub struct GraphFilterProps {
-    pub title: AttrValue,
-    pub update_settings: Callback<Filter>,
+    pub add_filter: Callback<Filter>,
     pub dependency: AttrValue,
 }
 
@@ -18,20 +16,20 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
 
     let add_max_line_nr_filter = {
         let max_line_nr = max_line_nr.clone();
-        let callback = props.update_settings.clone();
+        let callback = props.add_filter.clone();
         Callback::from(move |_| {
             callback.emit(Filter::MaxLineNr(max_line_nr.value))
         })
     };
     let add_theory_filter = {
-        let callback = props.update_settings.clone();
+        let callback = props.add_filter.clone();
         Callback::from(move |_| {
             callback.emit(Filter::IgnoreTheorySolving)
         })
     };
     let add_max_insts_filter = {
         let max_instantiations = max_instantiations.clone();
-        let callback = props.update_settings.clone();
+        let callback = props.add_filter.clone();
         Callback::from(move |_| {
             callback.emit(Filter::MaxInsts(max_instantiations.value))
         })
