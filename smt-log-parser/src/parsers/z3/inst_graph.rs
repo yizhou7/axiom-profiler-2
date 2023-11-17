@@ -1,6 +1,6 @@
 use fxhash::FxHashMap;
-use petgraph::Direction::{Incoming, Outgoing};
-// use gloo_console::log;
+use petgraph::{Direction::{Incoming, Outgoing}, graph::Frozen};
+use gloo_console::log;
 use petgraph::graph::NodeIndex;
 use petgraph::Graph;
 use std::fmt;
@@ -52,6 +52,11 @@ impl InstGraph {
         let nodes_to_remove: Vec<NodeIndex> = self
             .inst_graph
             .node_indices()
+            // the rev() is necessary to ensure that the indices in nodes_to_remove
+            // remain valid even after removing nodes. If we first remove lower
+            // index nodes, the indices of the nodes to be removed will change
+            // and hence removing nodes from the nodes_to_remove won't be correct
+            .rev()
             .filter(|&node_idx| !retain(self.inst_graph.node_weight(node_idx).unwrap()))
             .collect();
         for node in nodes_to_remove {

@@ -55,8 +55,7 @@ impl Filter {
                 graph.retain_nodes(|node: &NodeData| node.line_nr <= max_line_nr)
             }, 
             Filter::IgnoreTheorySolving => {
-                // want to use retain_nodes_and_reconnect eventually 
-                graph.retain_nodes(|node: &NodeData| !node.is_theory_inst)
+                graph.retain_nodes_and_reconnect(|node: &NodeData| !node.is_theory_inst)
             },
             Filter::MaxInsts(n) => {
                 graph.keep_n_most_costly(n);
