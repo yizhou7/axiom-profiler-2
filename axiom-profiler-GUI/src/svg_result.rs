@@ -13,7 +13,7 @@ pub enum Msg {
     SelectedNodeIndex(usize),
     RenderGraph,
     ApplyFilter(Filter),
-    ResetGraph(()),
+    ResetGraph,
 }
 
 pub struct SVGResult {
@@ -56,7 +56,7 @@ impl Component for SVGResult {
                 filter.apply(&mut self.inst_graph);
                 true
             },
-            Msg::ResetGraph(()) => {
+            Msg::ResetGraph => {
                 self.inst_graph = self.orig_graph.clone();
                 true
             },
@@ -111,7 +111,7 @@ impl Component for SVGResult {
             <h4>{format!{"The filtered graph contains {} nodes", self.inst_graph.node_count()}}</h4>
         };
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
-        let reset_graph = ctx.link().callback(Msg::ResetGraph);
+        let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
         html! {
             <>
                 <FilterChain apply_filter={apply_filter.clone()} reset_graph={reset_graph.clone()} dependency={ctx.props().trace_file_text.clone()}/>
