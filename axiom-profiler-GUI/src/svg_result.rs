@@ -69,6 +69,7 @@ impl Component for SVGResult {
             Msg::RenderGraph => {
                 let filtered_graph = &self.inst_graph.inst_graph;
                 if self.explicit_render || self.inst_graph.node_count() <= 250 {
+                    // need to reset the explicit user permission to render after each render
                     self.explicit_render = false;
                     let dot_output = format!(
                         "{:?}",
@@ -99,6 +100,8 @@ impl Component for SVGResult {
                     // only need to re-render once the new SVG has been set
                     false
                 } else {
+                    // in case there is no explicit render-permission and the graph contains more than 250 nodes
+                    // need to display warning and get explicit user-permission
                     true
                 }
             },
