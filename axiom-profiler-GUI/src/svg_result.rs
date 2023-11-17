@@ -55,7 +55,8 @@ impl Component for SVGResult {
         match msg {
             Msg::ApplyFilter(filter) => {
                 filter.apply(&mut self.inst_graph);
-                true
+                ctx.link().send_message(Msg::RenderGraph);
+                false
             },
             Msg::ResetGraph => {
                 self.inst_graph = self.orig_graph.clone();
