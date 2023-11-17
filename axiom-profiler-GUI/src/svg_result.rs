@@ -138,7 +138,7 @@ impl Component for SVGResult {
                             <h4>
                                 {
                                     "Warning: The current graph contains lots of nodes, this might take a while to render.\n
-                                    Render anways?"
+                                    Render anyways?"
                                 }
                             </h4>
                             <button onclick={explicit_render}>{"Yes"}</button>

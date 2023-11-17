@@ -38,9 +38,6 @@ impl Component for FilterChain {
         match msg {
             Msg::AddFilter(filter) => {
                 self.filter_chain.push(filter);
-                // TODO: apply filter that was just added to currently displayed graph 
-                // and compute how many nodes the current graph has such that user can
-                // decide to render it or not
                 ctx.props().apply_filter.emit(filter);
                 true
             },
