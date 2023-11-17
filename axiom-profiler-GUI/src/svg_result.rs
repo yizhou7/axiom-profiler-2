@@ -13,6 +13,7 @@ pub enum Msg {
     UpdateSvgText(AttrValue),
     SelectedNodeIndex(usize),
     RenderGraph,
+    ExplicitRender,
     ApplyFilter(Filter),
     ResetGraph,
 }
@@ -24,6 +25,7 @@ pub struct SVGResult {
     inst_graph: InstGraph,
     svg_text: AttrValue,
     selected_inst: Option<InstInfo>,
+    explicit_render: bool,
 }
 
 #[derive(Properties, PartialEq)]
@@ -48,6 +50,7 @@ impl Component for SVGResult {
             inst_graph,
             svg_text: AttrValue::default(),
             selected_inst: None,
+            explicit_render: false,
         }
     }
 
@@ -60,39 +63,50 @@ impl Component for SVGResult {
             },
             Msg::ResetGraph => {
                 self.inst_graph = self.orig_graph.clone();
-                true
+                ctx.link().send_message(Msg::RenderGraph);
+                false 
             },
             Msg::RenderGraph => {
                 let filtered_graph = &self.inst_graph.inst_graph;
-                let dot_output = format!(
-                    "{:?}",
-                    Dot::with_attr_getters(
-                        filtered_graph,
-                        &[Config::EdgeNoLabel, Config::NodeNoLabel],
-                        &|_, _| String::new(),
-                        &|_, (_, node_data)| {
-                            format!("label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
-                                node_data.line_nr,
-                                self.colour_map.get(&node_data.quant_idx)
-                            )
-                        },
-                    )
-                );
-                log::debug!("Finished building dot output");
-                let link = ctx.link().clone();
-                wasm_bindgen_futures::spawn_local(async move {
-                    let graphviz = VizInstance::new().await;
-                    let options = viz_js::Options::default();
-                    // options.engine = "circo".to_string();
-                    let svg = graphviz
-                        .render_svg_element(dot_output, options)
-                        .expect("Could not render graphviz");
-                    let svg_text = svg.outer_html();
-                    link.send_message(Msg::UpdateSvgText(AttrValue::from(svg_text)));
-                });
-                // only need to re-render once the new SVG has been set
-                false
+                if self.explicit_render || self.inst_graph.node_count() <= 250 {
+                    self.explicit_render = false;
+                    let dot_output = format!(
+                        "{:?}",
+                        Dot::with_attr_getters(
+                            filtered_graph,
+                            &[Config::EdgeNoLabel, Config::NodeNoLabel],
+                            &|_, _| String::new(),
+                            &|_, (_, node_data)| {
+                                format!("label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
+                                    node_data.line_nr,
+                                    self.colour_map.get(&node_data.quant_idx)
+                                )
+                            },
+                        )
+                    );
+                    log::debug!("Finished building dot output");
+                    let link = ctx.link().clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        let graphviz = VizInstance::new().await;
+                        let options = viz_js::Options::default();
+                        // options.engine = "circo".to_string();
+                        let svg = graphviz
+                            .render_svg_element(dot_output, options)
+                            .expect("Could not render graphviz");
+                        let svg_text = svg.outer_html();
+                        link.send_message(Msg::UpdateSvgText(AttrValue::from(svg_text)));
+                    });
+                    // only need to re-render once the new SVG has been set
+                    false
+                } else {
+                    true
+                }
             },
+            Msg::ExplicitRender => {
+                self.explicit_render = true;
+                ctx.link().send_message(Msg::RenderGraph);
+                false
+            }
             Msg::UpdateSvgText(svg_text) => {
                 self.svg_text = svg_text;
                 self.selected_inst = None;
@@ -108,7 +122,7 @@ impl Component for SVGResult {
 
     fn view(&self, ctx: &Context<Self>) -> Html {
         let on_node_select = ctx.link().callback(Msg::SelectedNodeIndex);
-        let render_graph = ctx.link().callback(|_| Msg::RenderGraph);
+        let explicit_render = ctx.link().callback(|_| Msg::ExplicitRender);
         let node_count_preview = html! {
             <h4>{format!{"The filtered graph contains {} nodes", self.inst_graph.node_count()}}</h4>
         };
@@ -118,7 +132,21 @@ impl Component for SVGResult {
             <>
                 <FilterChain apply_filter={apply_filter.clone()} reset_graph={reset_graph.clone()} dependency={ctx.props().trace_file_text.clone()}/>
                 {node_count_preview}
-                <button onclick={render_graph}>{"Render graph"}</button>
+                {if self.inst_graph.node_count() > 250 {
+                    html! {
+                        <>
+                            <h4>
+                                {
+                                    "Warning: The current graph contains lots of nodes, this might take a while to render.\n
+                                    Render anways?"
+                                }
+                            </h4>
+                            <button onclick={explicit_render}>{"Yes"}</button>
+                        </>
+                    }
+                } else {
+                    html!{}
+                }}
                 <Graph
                     svg_text={self.svg_text.clone()}
                     update_selected_node={on_node_select.clone()}

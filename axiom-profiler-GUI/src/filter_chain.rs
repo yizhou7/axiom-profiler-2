@@ -5,7 +5,7 @@ use crate::graph_filters::{GraphFilter, Filter};
 
 pub enum Msg {
     AddFilter(Filter),
-    RemoveNthFilter(usize),
+    // RemoveNthFilter(usize),
     RemoveAllFilters,
 }
 
@@ -44,14 +44,14 @@ impl Component for FilterChain {
                 ctx.props().apply_filter.emit(filter);
                 true
             },
-            Msg::RemoveNthFilter(n) => {
-                self.filter_chain.remove(n);
-                ctx.props().reset_graph.emit(());
-                for &filter in &self.filter_chain {
-                    ctx.props().apply_filter.emit(filter);
-                }
-                true
-            },
+            // Msg::RemoveNthFilter(n) => {
+            //     self.filter_chain.remove(n);
+            //     ctx.props().reset_graph.emit(());
+            //     for &filter in &self.filter_chain {
+            //         ctx.props().apply_filter.emit(filter);
+            //     }
+            //     true
+            // },
             Msg::RemoveAllFilters => {
                 self.filter_chain = Vec::new();
                 ctx.props().reset_graph.emit(());
@@ -67,7 +67,7 @@ impl Component for FilterChain {
             .map(|(idx, f)| html! {
                 <div>
                     <p>{format!("{}. {f}", idx+1)}</p>
-                    <button onclick={ctx.link().callback(move |_| Msg::RemoveNthFilter(idx))}>{"Remove filter"}</button>
+                    // <button onclick={ctx.link().callback(move |_| Msg::RemoveNthFilter(idx))}>{"Remove filter"}</button>
                 </div>
             })
             .collect();
