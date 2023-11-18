@@ -1,9 +1,9 @@
 use fxhash::FxHashMap;
-use petgraph::{Direction::{Incoming, Outgoing}, graph::Frozen};
+use petgraph::{Direction::{Incoming, Outgoing}, visit::Dfs};
 use gloo_console::log;
 use petgraph::graph::NodeIndex;
 use petgraph::Graph;
-use std::{fmt, collections::BTreeSet};
+use std::fmt;
 
 use crate::items::{InstIdx, Instantiation, QuantIdx, TermIdx};
 
@@ -16,6 +16,7 @@ pub struct NodeData {
     cost: f32,
     inst_idx: Option<InstIdx>,
     pub quant_idx: QuantIdx,
+    remove: bool,
 }
 
 impl fmt::Debug for NodeData {
@@ -46,7 +47,7 @@ impl InstGraph {
     }
 
     pub fn retain_nodes(&mut self, retain: impl Fn(&NodeData) -> bool) {
-        self.inst_graph.retain_nodes(|frozen, node_idx| retain(frozen.node_weight(node_idx).unwrap()))
+        self.inst_graph.retain_nodes(|graph, node_idx| retain(graph.node_weight(node_idx).unwrap()))
     }
 
     pub fn retain_nodes_and_reconnect(&mut self, retain: impl Fn(&NodeData) -> bool) {
@@ -102,20 +103,14 @@ impl InstGraph {
         &self.inst_graph
     }
 
-    pub fn remove_subtree_with_root(&mut self, node: NodeIndex) {
-        let mut subtree: BTreeSet<NodeIndex> = BTreeSet::new();
-        let mut to_traverse: Vec<NodeIndex> = Vec::new();
-        subtree.insert(node);
-        to_traverse.push(node);
-        while let Some(node) = to_traverse.pop() {
-            for succ in self.inst_graph.neighbors_directed(node, Outgoing) {
-                subtree.insert(succ);
-                to_traverse.push(succ);
-            }
+    pub fn remove_subtree_with_root(&mut self, root: NodeIndex) {
+        let mut dfs = Dfs::new(&self.inst_graph, root);
+        // iterate through all descendants of root and mark them to be removed
+        while let Some(nx) = dfs.next(&self.inst_graph) {
+            self.inst_graph[nx].remove = true;
         }
-        for &node in subtree.iter().rev() {
-            self.inst_graph.remove_node(node);
-        }
+        // remove the marked nodes
+        self.inst_graph.retain_nodes(|graph, node| !graph.node_weight(node).unwrap().remove)
     }
 
     pub fn node_count(&self) -> usize {
@@ -165,6 +160,7 @@ impl InstGraph {
                     cost,
                     inst_idx: dep.to_iidx,
                     quant_idx,
+                    remove: false,
                 });
             }
         }
