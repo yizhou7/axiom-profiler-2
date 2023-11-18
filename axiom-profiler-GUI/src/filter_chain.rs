@@ -52,7 +52,7 @@ impl Component for FilterChain {
             Msg::RemoveAllFilters => {
                 self.filter_chain = Vec::new();
                 ctx.props().reset_graph.emit(());
-                true
+                false
             },
         }
     }

@@ -1,8 +1,7 @@
 use fxhash::FxHashMap;
-use petgraph::{Direction::{Incoming, Outgoing}, visit::Dfs};
+use petgraph::{Direction::{Incoming, Outgoing}, visit::Dfs, stable_graph::StableGraph};
 use gloo_console::log;
 use petgraph::graph::NodeIndex;
-use petgraph::Graph;
 use std::fmt;
 
 use crate::items::{InstIdx, Instantiation, QuantIdx, TermIdx};
@@ -35,8 +34,8 @@ pub struct InstInfo {
 
 #[derive(Default, Clone)]
 pub struct InstGraph {
-    pub inst_graph: Graph<NodeData, ()>,      // same as orig_inst_graph but possibly filtered
-    orig_graph: Graph<NodeData, ()>,
+    pub inst_graph: StableGraph<NodeData, ()>,      // same as orig_inst_graph but possibly filtered
+    orig_graph: StableGraph<NodeData, ()>,
     node_of_line_nr: FxHashMap<usize, NodeIndex>, // line number => node-index
 }
 
@@ -76,7 +75,7 @@ impl InstGraph {
         }
     }   
 
-    pub fn keep_n_most_costly(&mut self, n: usize) -> &Graph<NodeData, ()> {
+    pub fn keep_n_most_costly(&mut self, n: usize) {
         // Only keep the max_instantiations most costly instantiations by sorting in
         // descending order of the cost.
         // In case two instantiations have the same cost, the instantiation with the lower
@@ -101,7 +100,6 @@ impl InstGraph {
         most_costly_insts.truncate(n);
         self.inst_graph
             .retain_nodes(|_, node| most_costly_insts.contains(&node));
-        &self.inst_graph
     }
 
     pub fn remove_subtree_with_root(&mut self, root: NodeIndex) {
@@ -153,7 +151,7 @@ impl InstGraph {
         }
     }
 
-    pub fn compute_instantiation_graph(&mut self, parser: &Z3Parser) {
+    fn compute_instantiation_graph(&mut self, parser: &Z3Parser) {
         for dep in &parser.dependencies {
             if let Some(to) = dep.to {
                 let quant_idx = dep.quant;
@@ -191,6 +189,7 @@ impl InstGraph {
         let line_nr = node_data.line_nr;
         if self.fresh_line_nr(line_nr) {
             let node = self.inst_graph.add_node(node_data);
+            self.orig_graph.add_node(node_data);
             self.node_of_line_nr.insert(line_nr, node);
         }
     }
@@ -201,6 +200,8 @@ impl InstGraph {
             self.node_of_line_nr.get(&to),
         ) {
             self.inst_graph
+                .add_edge(from_node_idx, to_node_idx, ());
+            self.orig_graph
                 .add_edge(from_node_idx, to_node_idx, ());
         }
     }
