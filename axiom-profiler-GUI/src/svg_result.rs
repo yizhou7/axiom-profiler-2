@@ -23,7 +23,6 @@ pub enum Msg {
 pub struct SVGResult {
     parser: Z3Parser,
     colour_map: QuantIdxToColourMap,
-    orig_graph: InstGraph,
     inst_graph: InstGraph,
     svg_text: AttrValue,
     selected_inst: Option<InstInfo>,
@@ -41,14 +40,12 @@ impl Component for SVGResult {
 
     fn create(ctx: &Context<Self>) -> Self {
         let parser = Z3Parser::from_str(&ctx.props().trace_file_text).process_all();
-        let orig_graph = InstGraph::from(&parser);
         let inst_graph = InstGraph::from(&parser);
         let total_nr_of_quants = parser.total_nr_of_quants();
         let colour_map = QuantIdxToColourMap::from(total_nr_of_quants);
         Self {
             parser,
             colour_map,
-            orig_graph,
             inst_graph,
             svg_text: AttrValue::default(),
             selected_inst: None,
@@ -64,7 +61,7 @@ impl Component for SVGResult {
                 false
             },
             Msg::ResetGraph => {
-                self.inst_graph = self.orig_graph.clone();
+                self.inst_graph.reset();
                 ctx.link().send_message(Msg::RenderGraph);
                 false 
             },

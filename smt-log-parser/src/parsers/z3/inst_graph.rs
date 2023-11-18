@@ -36,6 +36,7 @@ pub struct InstInfo {
 #[derive(Default, Clone)]
 pub struct InstGraph {
     pub inst_graph: Graph<NodeData, ()>,      // same as orig_inst_graph but possibly filtered
+    orig_graph: Graph<NodeData, ()>,
     node_of_line_nr: FxHashMap<usize, NodeIndex>, // line number => node-index
 }
 
@@ -111,6 +112,10 @@ impl InstGraph {
         }
         // remove the marked nodes
         self.inst_graph.retain_nodes(|graph, node| !graph.node_weight(node).unwrap().remove)
+    }
+
+    pub fn reset(&mut self) {
+        self.inst_graph = self.orig_graph.clone();
     }
 
     pub fn node_count(&self) -> usize {
