@@ -1,5 +1,5 @@
 use fxhash::FxHashMap;
-use petgraph::{Direction::{Incoming, Outgoing}, visit::Dfs, stable_graph::StableGraph};
+use petgraph::{Direction::{Incoming, Outgoing}, visit::{Dfs, EdgeRef}, stable_graph::{StableGraph, EdgeIndex}};
 use gloo_console::log;
 use petgraph::graph::NodeIndex;
 use std::fmt;
@@ -114,6 +114,18 @@ impl InstGraph {
 
     pub fn reset(&mut self) {
         self.inst_graph = self.orig_graph.clone();
+    }
+
+    pub fn show_children_of(&mut self, node: NodeIndex) {
+        let children: Vec<NodeIndex> = self.orig_graph.neighbors_directed(node, Outgoing).collect();
+        let edges_to_children: Vec<EdgeIndex> = self.orig_graph.edges_directed(node, Outgoing).map(|e| e.id()).collect();
+        let new_inst_graph = self
+            .orig_graph
+            .filter_map(
+                |node, _| if self.inst_graph.contains_node(node) || children.contains(&node) { Some(self.orig_graph[node]) } else { None },
+                |edge, _| if self.inst_graph.edge_indices().any(|e| e == edge) || edges_to_children.contains(&edge) { Some(()) } else { None }
+        );
+        self.inst_graph = new_inst_graph;
     }
 
     pub fn node_count(&self) -> usize {

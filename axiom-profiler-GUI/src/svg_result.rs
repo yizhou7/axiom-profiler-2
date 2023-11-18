@@ -18,6 +18,7 @@ pub enum Msg {
     ApplyFilter(Filter),
     ResetGraph,
     HideSelectedNode,
+    ShowSelectedNodeChildren,
 }
 
 pub struct SVGResult {
@@ -123,6 +124,11 @@ impl Component for SVGResult {
                 self.inst_graph.remove_subtree_with_root(self.selected_inst.as_ref().unwrap().node_index.clone());
                 ctx.link().send_message(Msg::RenderGraph);
                 false
+            },
+            Msg::ShowSelectedNodeChildren => {
+                self.inst_graph.show_children_of(self.selected_inst.as_ref().unwrap().node_index.clone());
+                ctx.link().send_message(Msg::RenderGraph);
+                false
             }
         }
     }
@@ -137,6 +143,7 @@ impl Component for SVGResult {
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
         let hide_node = ctx.link().callback(|_| Msg::HideSelectedNode);
+        let show_children = ctx.link().callback(|_| Msg::ShowSelectedNodeChildren);
         html! {
             <>
                 <FilterChain apply_filter={apply_filter.clone()} reset_graph={reset_graph.clone()} dependency={ctx.props().trace_file_text.clone()}/>
@@ -175,6 +182,7 @@ impl Component for SVGResult {
                                 // <li><h4>{"Involved equalities: "}</h4></li>
                             </ul>
                             <button onclick={hide_node}>{"Hide selected node and its descendants"}</button>
+                            <button onclick={show_children}>{"Show children of selected node"}</button>
                             </>
                         }
                     } else {
