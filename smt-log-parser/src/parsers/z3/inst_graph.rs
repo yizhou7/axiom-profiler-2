@@ -3,7 +3,7 @@ use petgraph::{Direction::{Incoming, Outgoing}, graph::Frozen};
 use gloo_console::log;
 use petgraph::graph::NodeIndex;
 use petgraph::Graph;
-use std::fmt;
+use std::{fmt, collections::BTreeSet};
 
 use crate::items::{InstIdx, Instantiation, QuantIdx, TermIdx};
 
@@ -99,6 +99,22 @@ impl InstGraph {
         self.inst_graph
             .retain_nodes(|_, node| most_costly_insts.contains(&node));
         &self.inst_graph
+    }
+
+    pub fn remove_subtree_with_root(&mut self, node: NodeIndex) {
+        let mut subtree: BTreeSet<NodeIndex> = BTreeSet::new();
+        let mut to_traverse: Vec<NodeIndex> = Vec::new();
+        subtree.insert(node);
+        to_traverse.push(node);
+        while let Some(node) = to_traverse.pop() {
+            for succ in self.inst_graph.neighbors_directed(node, Outgoing) {
+                subtree.insert(succ);
+                to_traverse.push(succ);
+            }
+        }
+        for &node in subtree.iter().rev() {
+            self.inst_graph.remove_node(node);
+        }
     }
 
     pub fn node_count(&self) -> usize {
