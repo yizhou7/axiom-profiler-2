@@ -58,7 +58,7 @@ impl InstGraph {
             // remain valid even after removing nodes. If we first remove lower
             // index nodes, the indices of the nodes to be removed will change
             // and hence removing nodes from the nodes_to_remove won't be correct
-            .rev()
+            // .rev()
             .filter(|&node_idx| !retain(self.inst_graph.node_weight(node_idx).unwrap()))
             .collect();
         for node in nodes_to_remove {
