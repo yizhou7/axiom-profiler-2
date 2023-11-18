@@ -8,6 +8,7 @@ use smt_log_parser::{
 };
 use viz_js::VizInstance;
 use yew::prelude::*;
+use petgraph::graph::NodeIndex;
 
 pub enum Msg {
     UpdateSvgText(AttrValue),
@@ -16,6 +17,7 @@ pub enum Msg {
     ExplicitRender,
     ApplyFilter(Filter),
     ResetGraph,
+    HideSelectedNode,
 }
 
 pub struct SVGResult {
@@ -120,6 +122,11 @@ impl Component for SVGResult {
                 self.selected_inst = self.inst_graph.get_instantiation_info(index, &self.parser);
                 true
             },
+            Msg::HideSelectedNode => {
+                self.inst_graph.remove_subtree_with_root(self.selected_inst.as_ref().unwrap().node_index.clone());
+                ctx.link().send_message(Msg::RenderGraph);
+                false
+            }
         }
     }
 
@@ -132,6 +139,7 @@ impl Component for SVGResult {
         };
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
+        let hide_node = ctx.link().callback(|_| Msg::HideSelectedNode);
         html! {
             <>
                 <FilterChain apply_filter={apply_filter.clone()} reset_graph={reset_graph.clone()} dependency={ctx.props().trace_file_text.clone()}/>
@@ -169,6 +177,7 @@ impl Component for SVGResult {
                                 // <li><h4>{"Variable binding information: "}</h4></li>
                                 // <li><h4>{"Involved equalities: "}</h4></li>
                             </ul>
+                            <button onclick={hide_node}>{"Hide selected node and its descendants"}</button>
                             </>
                         }
                     } else {

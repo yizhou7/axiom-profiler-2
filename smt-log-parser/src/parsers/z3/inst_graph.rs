@@ -29,6 +29,7 @@ pub struct InstInfo {
     pub formula: String,
     pub bound_terms: Vec<String>,
     pub yields_terms: Vec<String>,
+    pub node_index: NodeIndex,
 }
 
 #[derive(Default, Clone)]
@@ -144,6 +145,7 @@ impl InstGraph {
                 formula: quant.pretty_text(term_map),
                 bound_terms,
                 yields_terms,
+                node_index: NodeIndex::new(node_index),
             };
             Some(inst_info)
         } else {
