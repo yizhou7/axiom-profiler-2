@@ -4,7 +4,7 @@ use petgraph::{Direction::{Incoming, Outgoing}, visit::{Dfs, EdgeRef}, stable_gr
 use petgraph::graph::NodeIndex;
 use std::fmt;
 
-use crate::items::{InstIdx, Instantiation, QuantIdx, TermIdx};
+use crate::items::{InstIdx, QuantIdx, TermIdx};
 
 use super::z3parser::Z3Parser;
 
@@ -24,8 +24,10 @@ impl fmt::Debug for NodeData {
     }
 }
 
+#[derive(PartialEq, Clone)]
 pub struct InstInfo {
-    pub inst: Instantiation,
+    pub line_no: usize,
+    pub cost: f32,
     pub formula: String,
     pub bound_terms: Vec<String>,
     pub yields_terms: Vec<String>,
@@ -175,7 +177,8 @@ impl InstGraph {
             let bound_terms = pretty_text_map(&inst.bound_terms);
             let yields_terms = pretty_text_map(&inst.yields_terms);
             let inst_info = InstInfo {
-                inst: inst.clone(),
+                line_no: inst.line_no.unwrap(),
+                cost: inst.cost,
                 formula: quant.pretty_text(term_map),
                 bound_terms,
                 yields_terms,

@@ -1,25 +1,22 @@
 use std::num::NonZeroUsize;
 use self::colors::HSVColour;
-use crate::{graph::Graph, filter_chain::FilterChain, graph_filters::Filter};
-use petgraph::{dot::{Config, Dot}, Direction::{Outgoing, Incoming, self}};
+use crate::{graph::Graph, filter_chain::FilterChain, graph_filters::Filter, selected_node::{SelectedNode, Action}};
+use petgraph::dot::{Config, Dot};
 use smt_log_parser::{
     items::QuantIdx,
     parsers::{z3::{inst_graph::{InstGraph, InstInfo}, z3parser::Z3Parser}, LogParser},
 };
 use viz_js::VizInstance;
 use yew::prelude::*;
-use petgraph::graph::NodeIndex;
 
 pub enum Msg {
     UpdateSvgText(AttrValue),
-    SelectedNodeIndex(usize),
+    UpdateSelectedNode(usize),
     RenderGraph,
     ExplicitRender,
     ApplyFilter(Filter),
     ResetGraph,
-    HideSelectedNode,
-    ShowNeighbours(Direction),
-    ShowSourceTree,
+    SelectedNodeAction(Action),
 }
 
 pub struct SVGResult {
@@ -116,49 +113,43 @@ impl Component for SVGResult {
                 self.svg_text = svg_text;
                 self.selected_inst = None;
                 true
-            }
-            Msg::SelectedNodeIndex(index) => {
+            },
+            Msg::UpdateSelectedNode(index) => {
                 self.selected_inst = self.inst_graph.get_instantiation_info(index, &self.parser);
                 true
-            },
-            Msg::HideSelectedNode => {
-                self.inst_graph.remove_subtree_with_root(self.selected_inst.as_ref().unwrap().node_index.clone());
-                ctx.link().send_message(Msg::RenderGraph);
-                false
-            },
-            Msg::ShowNeighbours(direction) => {
-                self.inst_graph.show_neighbours(self.selected_inst.as_ref().unwrap().node_index.clone(), direction);
-                ctx.link().send_message(Msg::RenderGraph);
-                false
-            },
-            Msg::ShowSourceTree => {
-                self.inst_graph.only_show_ancestors(self.selected_inst.as_ref().unwrap().node_index.clone());
-                ctx.link().send_message(Msg::RenderGraph);
-                false
+            }
+            Msg::SelectedNodeAction(action) => {
+                match action {
+                    Action::Hide => {
+                        self.inst_graph.remove_subtree_with_root(self.selected_inst.as_ref().unwrap().node_index.clone());
+                        ctx.link().send_message(Msg::RenderGraph);
+                        false
+                    },
+                    Action::ShowNeighbours(direction) => {
+                        self.inst_graph.show_neighbours(self.selected_inst.as_ref().unwrap().node_index.clone(), direction);
+                        ctx.link().send_message(Msg::RenderGraph);
+                        false
+                    },
+                    Action::ShowSourceTree => {
+                        self.inst_graph.only_show_ancestors(self.selected_inst.as_ref().unwrap().node_index.clone());
+                        ctx.link().send_message(Msg::RenderGraph);
+                        false
+                    }
+                }
             }
         }
     }
 
 
     fn view(&self, ctx: &Context<Self>) -> Html {
-        let on_node_select = ctx.link().callback(Msg::SelectedNodeIndex);
+        let on_node_select = ctx.link().callback(Msg::UpdateSelectedNode);
         let explicit_render = ctx.link().callback(|_| Msg::ExplicitRender);
         let node_count_preview = html! {
             <h4>{format!{"The filtered graph contains {} nodes", self.inst_graph.node_count()}}</h4>
         };
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
-        let hide_node = ctx.link().callback(|_| Msg::HideSelectedNode);
-        let show_neighbours = ctx.link().callback(Msg::ShowNeighbours);
-        let show_children = {
-            let show = show_neighbours.clone();
-            Callback::from(move |_| show.emit(Outgoing))
-        };
-        let show_parents = {
-            let show = show_neighbours.clone();
-            Callback::from(move |_| show.emit(Incoming))
-        };
-        let show_source_tree = ctx.link().callback(|_| Msg::ShowSourceTree);
+        let selected_node_action = ctx.link().callback(Msg::SelectedNodeAction);
         html! {
             <>
                 <FilterChain apply_filter={apply_filter.clone()} reset_graph={reset_graph.clone()} dependency={ctx.props().trace_file_text.clone()}/>
@@ -166,12 +157,7 @@ impl Component for SVGResult {
                 {if self.inst_graph.node_count() > 250 {
                     html! {
                         <>
-                            <h4>
-                                {
-                                    "Warning: The current graph contains a large number of nodes, rendering might be slow.\n
-                                    Render anyways?"
-                                }
-                            </h4>
+                            <h4>{"Warning: The current graph contains a large number of nodes, rendering might be slow. Render anyways?"}</h4>
                             <button onclick={explicit_render}>{"Yes"}</button>
                         </>
                     }
@@ -182,30 +168,7 @@ impl Component for SVGResult {
                     svg_text={self.svg_text.clone()}
                     update_selected_node={on_node_select.clone()}
                 />
-                <div style="width: 50%; float: left;">
-                    {if let Some(inst_info) = &self.selected_inst {
-                        html! {
-                            <>
-                            <h2>{"Information about selected node:"}</h2>
-                            <ul>
-                                <li><h4>{"Instantiation happens at line number: "}</h4><p>{inst_info.inst.line_no}</p></li>
-                                <li><h4>{"Cost: "}</h4><p>{inst_info.inst.cost}</p></li>
-                                <li><h4>{"Instantiated formula: "}</h4><p>{inst_info.formula.clone()}</p></li>
-                                // <li><h4>{"Bound terms: "}</h4>{for &inst_info.bound_terms}</li>
-                                // <li><h4>{"Yield terms: "}</h4>{for &inst_info.yields_terms}</li>
-                                // <li><h4>{"Variable binding information: "}</h4></li>
-                                // <li><h4>{"Involved equalities: "}</h4></li>
-                            </ul>
-                            <button onclick={hide_node}>{"Hide selected node and its descendants"}</button>
-                            <button onclick={show_children}>{"Show children of selected node"}</button>
-                            <button onclick={show_parents}>{"Show parents of selected node"}</button>
-                            <button onclick={show_source_tree}>{"Only show ancestors of selected node"}</button>
-                            </>
-                        }
-                    } else {
-                        html!{}
-                    }}
-                </div>
+                <SelectedNode selected_inst={self.selected_inst.clone()} action={selected_node_action} />
             </>
         }
     }
