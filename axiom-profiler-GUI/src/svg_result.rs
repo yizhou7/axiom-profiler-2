@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 use self::colors::HSVColour;
 use crate::{graph::Graph, filter_chain::FilterChain, graph_filters::Filter};
-use petgraph::dot::{Config, Dot};
+use petgraph::{dot::{Config, Dot}, Direction::{Outgoing, Incoming, self}};
 use smt_log_parser::{
     items::QuantIdx,
     parsers::{z3::{inst_graph::{InstGraph, InstInfo}, z3parser::Z3Parser}, LogParser},
@@ -18,7 +18,8 @@ pub enum Msg {
     ApplyFilter(Filter),
     ResetGraph,
     HideSelectedNode,
-    ShowSelectedNodeChildren,
+    ShowNeighbours(Direction),
+    ShowSourceTree,
 }
 
 pub struct SVGResult {
@@ -125,8 +126,13 @@ impl Component for SVGResult {
                 ctx.link().send_message(Msg::RenderGraph);
                 false
             },
-            Msg::ShowSelectedNodeChildren => {
-                self.inst_graph.show_children_of(self.selected_inst.as_ref().unwrap().node_index.clone());
+            Msg::ShowNeighbours(direction) => {
+                self.inst_graph.show_neighbours(self.selected_inst.as_ref().unwrap().node_index.clone(), direction);
+                ctx.link().send_message(Msg::RenderGraph);
+                false
+            },
+            Msg::ShowSourceTree => {
+                self.inst_graph.only_show_ancestors(self.selected_inst.as_ref().unwrap().node_index.clone());
                 ctx.link().send_message(Msg::RenderGraph);
                 false
             }
@@ -143,7 +149,16 @@ impl Component for SVGResult {
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
         let hide_node = ctx.link().callback(|_| Msg::HideSelectedNode);
-        let show_children = ctx.link().callback(|_| Msg::ShowSelectedNodeChildren);
+        let show_neighbours = ctx.link().callback(Msg::ShowNeighbours);
+        let show_children = {
+            let show = show_neighbours.clone();
+            Callback::from(move |_| show.emit(Outgoing))
+        };
+        let show_parents = {
+            let show = show_neighbours.clone();
+            Callback::from(move |_| show.emit(Incoming))
+        };
+        let show_source_tree = ctx.link().callback(|_| Msg::ShowSourceTree);
         html! {
             <>
                 <FilterChain apply_filter={apply_filter.clone()} reset_graph={reset_graph.clone()} dependency={ctx.props().trace_file_text.clone()}/>
@@ -183,6 +198,8 @@ impl Component for SVGResult {
                             </ul>
                             <button onclick={hide_node}>{"Hide selected node and its descendants"}</button>
                             <button onclick={show_children}>{"Show children of selected node"}</button>
+                            <button onclick={show_parents}>{"Show parents of selected node"}</button>
+                            <button onclick={show_source_tree}>{"Only show ancestors of selected node"}</button>
                             </>
                         }
                     } else {

@@ -1,6 +1,6 @@
 use fxhash::FxHashMap;
 use petgraph::{Direction::{Incoming, Outgoing}, visit::{Dfs, EdgeRef}, stable_graph::{StableGraph, EdgeIndex}};
-use gloo_console::log;
+// use gloo_console::log;
 use petgraph::graph::NodeIndex;
 use std::fmt;
 
@@ -112,18 +112,42 @@ impl InstGraph {
         self.inst_graph.retain_nodes(|graph, node| !graph.node_weight(node).unwrap().remove)
     }
 
+    pub fn only_show_ancestors(&mut self, node: NodeIndex) {
+        // create new graph which is identical to original one except that all nodes have 
+        // remove = true instead of remove = false
+        let mut ancestors = self
+            .orig_graph
+            .map(
+                |_, &node| {
+                    let mut hidden_node = node; 
+                    hidden_node.remove = true;
+                    hidden_node
+                },
+                |_, _| (), 
+        );
+        // visit all ancestors of node (argument) and set their remove-field to false since we want to retain them 
+        let orig_with_reversed_edges = petgraph::visit::Reversed(&self.orig_graph);
+        let mut dfs = Dfs::new(orig_with_reversed_edges, node);
+        while let Some(nx) = dfs.next(orig_with_reversed_edges) {
+            ancestors[nx].remove = false;
+        }
+        // retain all ancestors of node, i.e., where remove-field was previously set to true
+        ancestors.retain_nodes(|graph, node| !graph.node_weight(node).unwrap().remove);
+        self.inst_graph = ancestors
+    }
+
     pub fn reset(&mut self) {
         self.inst_graph = self.orig_graph.clone();
     }
 
-    pub fn show_children_of(&mut self, node: NodeIndex) {
-        let children: Vec<NodeIndex> = self.orig_graph.neighbors_directed(node, Outgoing).collect();
-        let edges_to_children: Vec<EdgeIndex> = self.orig_graph.edges_directed(node, Outgoing).map(|e| e.id()).collect();
+    pub fn show_neighbours(&mut self, node: NodeIndex, direction: petgraph::Direction) {
+        let neighbours: Vec<NodeIndex> = self.orig_graph.neighbors_directed(node, direction).collect();
+        let edges_to_neighbours: Vec<EdgeIndex> = self.orig_graph.edges_directed(node, direction).map(|e| e.id()).collect();
         let new_inst_graph = self
             .orig_graph
             .filter_map(
-                |node, _| if self.inst_graph.contains_node(node) || children.contains(&node) { Some(self.orig_graph[node]) } else { None },
-                |edge, _| if self.inst_graph.edge_indices().any(|e| e == edge) || edges_to_children.contains(&edge) { Some(()) } else { None }
+                |node, _| if self.inst_graph.contains_node(node) || neighbours.contains(&node) { Some(self.orig_graph[node]) } else { None },
+                |edge, _| if self.inst_graph.edge_indices().any(|e| e == edge) || edges_to_neighbours.contains(&edge) { Some(()) } else { None }
         );
         self.inst_graph = new_inst_graph;
     }
