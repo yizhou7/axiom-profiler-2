@@ -1,8 +1,6 @@
 use yew::prelude::*;
 use crate::graph_filters::{GraphFilter, Filter};
 
-
-
 pub enum Msg {
     AddFilter(Filter),
     RemoveNthFilter(usize),
@@ -85,7 +83,7 @@ impl Component for FilterChain {
                     add_filter={add_filter.clone()}
                     dependency={ctx.props().dependency.clone()}
                 />
-                <h3>{"Filter chain:"}</h3>
+                <h2>{"Filter chain:"}</h2>
                 {for filter_chain}
                 <button onclick={reset_filters}>{"Reset to default"}</button>
             </div>

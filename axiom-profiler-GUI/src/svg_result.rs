@@ -16,7 +16,6 @@ pub enum Msg {
     ExplicitRender,
     ApplyFilter(Filter),
     ResetGraph,
-    // SelectedNodeAction(Action),
 }
 
 pub struct SVGResult {
@@ -117,25 +116,6 @@ impl Component for SVGResult {
                 self.selected_inst = self.inst_graph.get_instantiation_info(index, &self.parser);
                 true
             }
-            // Msg::SelectedNodeAction(action) => {
-            //     match action {
-            //         Action::Hide => {
-            //             self.inst_graph.remove_subtree_with_root(self.selected_inst.as_ref().unwrap().node_index.clone());
-            //         },
-            //         Action::ShowNeighbours(direction) => {
-            //             self.inst_graph.show_neighbours(self.selected_inst.as_ref().unwrap().node_index.clone(), direction);
-            //         },
-            //         Action::ShowSourceTree => {
-            //             self.inst_graph.only_show_ancestors(self.selected_inst.as_ref().unwrap().node_index.clone());
-            //         }
-            //     }
-            //     if self.inst_graph.node_count() <= 125 {
-            //         ctx.link().send_message(Msg::RenderGraph);
-            //         false
-            //     } else {
-            //         true
-            //     }
-            // }
         }
     }
 
@@ -149,9 +129,9 @@ impl Component for SVGResult {
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
         let render_graph = ctx.link().callback(|_| Msg::RenderGraph);
-        // let selected_node_action = ctx.link().callback(Msg::SelectedNodeAction);
         html! {
             <>
+                <div style="width: 50%; float: left;">
                 <ContextProvider<Option<InstInfo>> context={self.selected_inst.clone()} >
                     <FilterChain 
                         apply_filter={apply_filter.clone()} 
@@ -171,6 +151,7 @@ impl Component for SVGResult {
                 } else {
                     html!{}
                 }}
+                </div>
                 <Graph
                     svg_text={self.svg_text.clone()}
                     update_selected_node={on_node_select.clone()}

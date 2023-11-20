@@ -20,14 +20,14 @@ impl Display for Filter {
             Self::MaxLineNr(line_nr) => write!(f, "Only show up to line number {}", line_nr),
             Self::IgnoreTheorySolving => write!(f, "Ignore theory solving instantiations"),
             Self::MaxInsts(max) => write!(f, "Show the {} most expensive instantiations", max),
-            Self::Hide(nidx) => write!(f, "Hiding node {} and its descendants", nidx.index()),
+            Self::Hide(nidx) => write!(f, "Hide node {} and its descendants", nidx.index()),
             Self::ShowNeighbours(nidx, direction) => {
                 match direction {
-                    Direction::Incoming => write!(f, "Showing the parents of node {}", nidx.index()),
-                    Direction::Outgoing => write!(f, "Showing the children of node {}", nidx.index()),
+                    Direction::Incoming => write!(f, "Show the parents of node {}", nidx.index()),
+                    Direction::Outgoing => write!(f, "Show the children of node {}", nidx.index()),
                 }
             },
-            Self::ShowSourceTree(nidx) => write!(f, "Only showing the ancestors of node {}", nidx.index()),
+            Self::ShowSourceTree(nidx) => write!(f, "Only show the ancestors of node {}", nidx.index()),
         }
     }
 }

@@ -37,8 +37,14 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
             callback.emit(Filter::ShowSourceTree(selected_inst.node_index))
         })
     };
+    let selected_node_text = format!("You selected node {}. Here are available actions: ", selected_inst.node_index.index()); 
     html! {
-    <div style="width: 50%; float: left;">
+    <div>
+        <h4>{selected_node_text}</h4>
+        <button onclick={hide_node}>{"Hide"}</button>
+        <button onclick={show_children}>{"Show children"}</button>
+        <button onclick={show_parents}>{"Show parents"}</button>
+        <button onclick={show_source_tree}>{"Only show ancestors"}</button>
         <h2>{"Information about selected node:"}</h2>
         <ul>
             <li><h4>{"Instantiation happens at line number: "}</h4><p>{selected_inst.line_no}</p></li>
@@ -49,10 +55,6 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
             // <li><h4>{"Variable binding information: "}</h4></li>
             // <li><h4>{"Involved equalities: "}</h4></li>
         </ul>
-        <button onclick={hide_node}>{"Hide selected node and its descendants"}</button>
-        <button onclick={show_children}>{"Show children of selected node"}</button>
-        <button onclick={show_parents}>{"Show parents of selected node"}</button>
-        <button onclick={show_source_tree}>{"Only show ancestors of selected node"}</button>
     </div>
     }
 }
