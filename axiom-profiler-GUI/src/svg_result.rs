@@ -64,7 +64,7 @@ impl Component for SVGResult {
             Msg::RenderGraph => {
                 let filtered_graph = &self.inst_graph.inst_graph;
                 // as long as displayed graph contains at most 250, render time is acceptable
-                if self.explicit_render || self.inst_graph.node_count() <= 250 {
+                if self.explicit_render || self.inst_graph.node_count() <= 125 {
                     // need to reset the explicit user permission to render after each explicit render
                     self.explicit_render = false;
                     let dot_output = format!(
@@ -149,7 +149,7 @@ impl Component for SVGResult {
                         </>
                     }
                 } else {
-                    html!{}
+                    html! {}
                 }}
                 </div>
                 <Graph
