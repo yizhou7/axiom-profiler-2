@@ -88,7 +88,7 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
                     label={"Render the n most expensive instantiations where n = "}
                     dependency={props.dependency.clone()}
                     input_value={max_instantiations}
-                    default_value={250}
+                    default_value={125}
                 />
                 <button onclick={add_max_insts_filter}>{"Add"}</button>
             </div>

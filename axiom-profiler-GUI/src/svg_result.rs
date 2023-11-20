@@ -56,13 +56,11 @@ impl Component for SVGResult {
         match msg {
             Msg::ApplyFilter(filter) => {
                 filter.apply(&mut self.inst_graph);
-                ctx.link().send_message(Msg::RenderGraph);
-                false
+                true
             },
             Msg::ResetGraph => {
                 self.inst_graph.reset();
-                ctx.link().send_message(Msg::RenderGraph);
-                false 
+                true
             },
             Msg::RenderGraph => {
                 let filtered_graph = &self.inst_graph.inst_graph;
@@ -122,19 +120,19 @@ impl Component for SVGResult {
                 match action {
                     Action::Hide => {
                         self.inst_graph.remove_subtree_with_root(self.selected_inst.as_ref().unwrap().node_index.clone());
-                        ctx.link().send_message(Msg::RenderGraph);
-                        false
                     },
                     Action::ShowNeighbours(direction) => {
                         self.inst_graph.show_neighbours(self.selected_inst.as_ref().unwrap().node_index.clone(), direction);
-                        ctx.link().send_message(Msg::RenderGraph);
-                        false
                     },
                     Action::ShowSourceTree => {
                         self.inst_graph.only_show_ancestors(self.selected_inst.as_ref().unwrap().node_index.clone());
-                        ctx.link().send_message(Msg::RenderGraph);
-                        false
                     }
+                }
+                if self.inst_graph.node_count() <= 125 {
+                    ctx.link().send_message(Msg::RenderGraph);
+                    false
+                } else {
+                    true
                 }
             }
         }
@@ -149,12 +147,18 @@ impl Component for SVGResult {
         };
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
+        let render_graph = ctx.link().callback(|_| Msg::RenderGraph);
         let selected_node_action = ctx.link().callback(Msg::SelectedNodeAction);
         html! {
             <>
-                <FilterChain apply_filter={apply_filter.clone()} reset_graph={reset_graph.clone()} dependency={ctx.props().trace_file_text.clone()}/>
+                <FilterChain 
+                    apply_filter={apply_filter.clone()} 
+                    reset_graph={reset_graph.clone()} 
+                    render_graph={render_graph.clone()}
+                    dependency={ctx.props().trace_file_text.clone()}
+                />
                 {node_count_preview}
-                {if self.inst_graph.node_count() > 250 {
+                {if self.inst_graph.node_count() > 125 {
                     html! {
                         <>
                             <h4>{"Warning: The current graph contains a large number of nodes, rendering might be slow. Render anyways?"}</h4>
