@@ -13,9 +13,9 @@ pub enum Msg {
     UpdateSvgText(AttrValue),
     UpdateSelectedNode(usize),
     RenderGraph,
-    ExplicitRender,
     ApplyFilter(Filter),
     ResetGraph,
+    ExplicitRender(bool),
 }
 
 pub struct SVGResult {
@@ -25,6 +25,7 @@ pub struct SVGResult {
     svg_text: AttrValue,
     selected_inst: Option<InstInfo>,
     explicit_render: bool,
+    get_explicit_permission: bool,
 }
 
 #[derive(Properties, PartialEq)]
@@ -48,6 +49,7 @@ impl Component for SVGResult {
             svg_text: AttrValue::default(),
             selected_inst: None,
             explicit_render: false,
+            get_explicit_permission: false,
         }
     }
 
@@ -62,50 +64,56 @@ impl Component for SVGResult {
                 true
             },
             Msg::RenderGraph => {
-                let filtered_graph = &self.inst_graph.inst_graph;
-                // as long as displayed graph contains at most 250, render time is acceptable
-                if self.explicit_render || self.inst_graph.node_count() <= 125 {
-                    // need to reset the explicit user permission to render after each explicit render
-                    self.explicit_render = false;
-                    let dot_output = format!(
-                        "{:?}",
-                        Dot::with_attr_getters(
-                            filtered_graph,
-                            &[Config::EdgeNoLabel, Config::NodeNoLabel],
-                            &|_, _| String::new(),
-                            &|_, (node_idx, node_data)| {
-                                format!("label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
-                                    // node_data.line_nr,
-                                    node_idx.index(),
-                                    self.colour_map.get(&node_data.quant_idx)
-                                )
-                            },
-                        )
-                    );
-                    log::debug!("Finished building dot output");
-                    let link = ctx.link().clone();
-                    wasm_bindgen_futures::spawn_local(async move {
-                        let graphviz = VizInstance::new().await;
-                        let options = viz_js::Options::default();
-                        // options.engine = "circo".to_string();
-                        let svg = graphviz
-                            .render_svg_element(dot_output, options)
-                            .expect("Could not render graphviz");
-                        let svg_text = svg.outer_html();
-                        link.send_message(Msg::UpdateSvgText(AttrValue::from(svg_text)));
-                    });
-                    // only need to re-render once the new SVG has been set
-                    false
+                if self.inst_graph.node_count() <= 125 || self.explicit_render {
+                    self.explicit_render = false; 
+                    let filtered_graph = &self.inst_graph.inst_graph;
+                    // as long as displayed graph contains at most 250, render time is acceptable
+                    // if self.explicit_render || self.inst_graph.node_count() <= 125 {
+                        // need to reset the explicit user permission to render after each explicit render
+                        // self.explicit_render = false;
+                        let dot_output = format!(
+                            "{:?}",
+                            Dot::with_attr_getters(
+                                filtered_graph,
+                                &[Config::EdgeNoLabel, Config::NodeNoLabel],
+                                &|_, _| String::new(),
+                                &|_, (node_idx, node_data)| {
+                                    format!("label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
+                                        // node_data.line_nr,
+                                        node_idx.index(),
+                                        self.colour_map.get(&node_data.quant_idx)
+                                    )
+                                },
+                            )
+                        );
+                        log::debug!("Finished building dot output");
+                        let link = ctx.link().clone();
+                        wasm_bindgen_futures::spawn_local(async move {
+                            let graphviz = VizInstance::new().await;
+                            let options = viz_js::Options::default();
+                            // options.engine = "circo".to_string();
+                            let svg = graphviz
+                                .render_svg_element(dot_output, options)
+                                .expect("Could not render graphviz");
+                            let svg_text = svg.outer_html();
+                            link.send_message(Msg::UpdateSvgText(AttrValue::from(svg_text)));
+                        });
+                        // only need to re-render once the new SVG has been set
+                        false
                 } else {
-                    // in case there is no explicit render-permission and the graph contains more than 250 nodes
-                    // need to display warning and get explicit user-permission
+                    self.get_explicit_permission = true;
                     true
                 }
             },
-            Msg::ExplicitRender => {
-                self.explicit_render = true;
-                ctx.link().send_message(Msg::RenderGraph);
-                false
+            Msg::ExplicitRender(render) => {
+                self.get_explicit_permission = false;
+                if render {
+                    self.explicit_render = true;
+                    ctx.link().send_message(Msg::RenderGraph);
+                } else {
+                    self.explicit_render = false;
+                }
+                true
             }
             Msg::UpdateSvgText(svg_text) => {
                 self.svg_text = svg_text;
@@ -122,13 +130,14 @@ impl Component for SVGResult {
 
     fn view(&self, ctx: &Context<Self>) -> Html {
         let on_node_select = ctx.link().callback(Msg::UpdateSelectedNode);
-        let explicit_render = ctx.link().callback(|_| Msg::ExplicitRender);
+        // let explicit_render = ctx.link().callback(|_| Msg::ExplicitRender);
         let node_count_preview = html! {
             <h4>{format!{"The filtered graph contains {} nodes", self.inst_graph.node_count()}}</h4>
         };
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
         let render_graph = ctx.link().callback(|_| Msg::RenderGraph);
+        let explicit_render = ctx.link().callback(Msg::ExplicitRender);
         html! {
             <>
                 <div style="width: 50%; float: left;">
@@ -137,20 +146,22 @@ impl Component for SVGResult {
                         apply_filter={apply_filter.clone()} 
                         reset_graph={reset_graph.clone()} 
                         render_graph={render_graph.clone()}
+                        get_explicit_permission={self.get_explicit_permission}
+                        explicit_render={explicit_render.clone()}
                         dependency={ctx.props().trace_file_text.clone()}
                     />
                 </ContextProvider<Option<InstInfo>>>
                 {node_count_preview}
-                {if self.inst_graph.node_count() > 125 {
-                    html! {
-                        <>
-                            <h4>{"Warning: The current graph contains a large number of nodes, rendering might be slow. Render anyways?"}</h4>
-                            <button onclick={explicit_render}>{"Yes"}</button>
-                        </>
-                    }
-                } else {
-                    html! {}
-                }}
+                // {if self.inst_graph.node_count() > 125 {
+                //     html! {
+                //         <>
+                //             <h4>{"Warning: The current graph contains a large number of nodes, rendering might be slow. Render anyways?"}</h4>
+                //             <button onclick={explicit_render}>{"Yes"}</button>
+                //         </>
+                //     }
+                // } else {
+                //     html! {}
+                // }}
                 </div>
                 <Graph
                     svg_text={self.svg_text.clone()}
