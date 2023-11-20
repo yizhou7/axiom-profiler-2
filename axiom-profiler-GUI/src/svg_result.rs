@@ -1,6 +1,6 @@
 use std::num::NonZeroUsize;
 use self::colors::HSVColour;
-use crate::{graph::Graph, filter_chain::FilterChain, graph_filters::Filter, selected_node::{SelectedNode, Action}};
+use crate::{graph::Graph, filter_chain::FilterChain, graph_filters::Filter};
 use petgraph::dot::{Config, Dot};
 use smt_log_parser::{
     items::QuantIdx,
@@ -16,7 +16,7 @@ pub enum Msg {
     ExplicitRender,
     ApplyFilter(Filter),
     ResetGraph,
-    SelectedNodeAction(Action),
+    // SelectedNodeAction(Action),
 }
 
 pub struct SVGResult {
@@ -74,9 +74,10 @@ impl Component for SVGResult {
                             filtered_graph,
                             &[Config::EdgeNoLabel, Config::NodeNoLabel],
                             &|_, _| String::new(),
-                            &|_, (_, node_data)| {
+                            &|_, (node_idx, node_data)| {
                                 format!("label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
-                                    node_data.line_nr,
+                                    // node_data.line_nr,
+                                    node_idx.index(),
                                     self.colour_map.get(&node_data.quant_idx)
                                 )
                             },
@@ -116,25 +117,25 @@ impl Component for SVGResult {
                 self.selected_inst = self.inst_graph.get_instantiation_info(index, &self.parser);
                 true
             }
-            Msg::SelectedNodeAction(action) => {
-                match action {
-                    Action::Hide => {
-                        self.inst_graph.remove_subtree_with_root(self.selected_inst.as_ref().unwrap().node_index.clone());
-                    },
-                    Action::ShowNeighbours(direction) => {
-                        self.inst_graph.show_neighbours(self.selected_inst.as_ref().unwrap().node_index.clone(), direction);
-                    },
-                    Action::ShowSourceTree => {
-                        self.inst_graph.only_show_ancestors(self.selected_inst.as_ref().unwrap().node_index.clone());
-                    }
-                }
-                if self.inst_graph.node_count() <= 125 {
-                    ctx.link().send_message(Msg::RenderGraph);
-                    false
-                } else {
-                    true
-                }
-            }
+            // Msg::SelectedNodeAction(action) => {
+            //     match action {
+            //         Action::Hide => {
+            //             self.inst_graph.remove_subtree_with_root(self.selected_inst.as_ref().unwrap().node_index.clone());
+            //         },
+            //         Action::ShowNeighbours(direction) => {
+            //             self.inst_graph.show_neighbours(self.selected_inst.as_ref().unwrap().node_index.clone(), direction);
+            //         },
+            //         Action::ShowSourceTree => {
+            //             self.inst_graph.only_show_ancestors(self.selected_inst.as_ref().unwrap().node_index.clone());
+            //         }
+            //     }
+            //     if self.inst_graph.node_count() <= 125 {
+            //         ctx.link().send_message(Msg::RenderGraph);
+            //         false
+            //     } else {
+            //         true
+            //     }
+            // }
         }
     }
 
@@ -148,15 +149,17 @@ impl Component for SVGResult {
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
         let render_graph = ctx.link().callback(|_| Msg::RenderGraph);
-        let selected_node_action = ctx.link().callback(Msg::SelectedNodeAction);
+        // let selected_node_action = ctx.link().callback(Msg::SelectedNodeAction);
         html! {
             <>
-                <FilterChain 
-                    apply_filter={apply_filter.clone()} 
-                    reset_graph={reset_graph.clone()} 
-                    render_graph={render_graph.clone()}
-                    dependency={ctx.props().trace_file_text.clone()}
-                />
+                <ContextProvider<Option<InstInfo>> context={self.selected_inst.clone()} >
+                    <FilterChain 
+                        apply_filter={apply_filter.clone()} 
+                        reset_graph={reset_graph.clone()} 
+                        render_graph={render_graph.clone()}
+                        dependency={ctx.props().trace_file_text.clone()}
+                    />
+                </ContextProvider<Option<InstInfo>>>
                 {node_count_preview}
                 {if self.inst_graph.node_count() > 125 {
                     html! {
@@ -172,7 +175,6 @@ impl Component for SVGResult {
                     svg_text={self.svg_text.clone()}
                     update_selected_node={on_node_select.clone()}
                 />
-                <SelectedNode selected_inst={self.selected_inst.clone()} action={selected_node_action} />
             </>
         }
     }

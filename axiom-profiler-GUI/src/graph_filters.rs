@@ -1,6 +1,7 @@
 use std::fmt::Display;
-use crate::input_state::{InputValue, UsizeInput};
-use smt_log_parser::parsers::z3::inst_graph::{InstGraph, NodeData};
+use crate::{input_state::{InputValue, UsizeInput}, selected_node::SelectedNode};
+use petgraph::{stable_graph::NodeIndex, Direction};
+use smt_log_parser::parsers::z3::inst_graph::{InstGraph, NodeData, InstInfo};
 use yew::prelude::*;
 
 #[derive(Clone, Copy)]
@@ -8,6 +9,9 @@ pub enum Filter {
     MaxLineNr(usize),
     IgnoreTheorySolving,
     MaxInsts(usize),
+    Hide(NodeIndex),
+    ShowNeighbours(NodeIndex, Direction),
+    ShowSourceTree(NodeIndex)
 }
 
 impl Display for Filter {
@@ -15,7 +19,15 @@ impl Display for Filter {
         match self {
             Self::MaxLineNr(line_nr) => write!(f, "Only show up to line number {}", line_nr),
             Self::IgnoreTheorySolving => write!(f, "Ignore theory solving instantiations"),
-            Self::MaxInsts(max) => write!(f, "Show the {} most expensive instantiations", max)
+            Self::MaxInsts(max) => write!(f, "Show the {} most expensive instantiations", max),
+            Self::Hide(nidx) => write!(f, "Hiding node {} and its descendants", nidx.index()),
+            Self::ShowNeighbours(nidx, direction) => {
+                match direction {
+                    Direction::Incoming => write!(f, "Showing the parents of node {}", nidx.index()),
+                    Direction::Outgoing => write!(f, "Showing the children of node {}", nidx.index()),
+                }
+            },
+            Self::ShowSourceTree(nidx) => write!(f, "Only showing the ancestors of node {}", nidx.index()),
         }
     }
 }
@@ -30,8 +42,17 @@ impl Filter {
                 graph.retain_nodes_and_reconnect(|node: &NodeData| !node.is_theory_inst)
             },
             Filter::MaxInsts(n) => {
-                graph.keep_n_most_costly(n);
-            }
+                graph.keep_n_most_costly(n)
+            },
+            Filter::Hide(nidx) => {
+                graph.remove_subtree_with_root(nidx)
+            },
+            Filter::ShowNeighbours(nidx, direction) => {
+                graph.show_neighbours(nidx, direction)
+            },
+            Filter::ShowSourceTree(nidx) => {
+                graph.only_show_ancestors(nidx)
+            },
         }
     }
 }
@@ -46,6 +67,7 @@ pub struct GraphFilterProps {
 pub fn graph_filter(props: &GraphFilterProps) -> Html {
     let max_line_nr = use_reducer(InputValue::default);
     let max_instantiations = use_reducer(InputValue::default);
+    let selected_inst = use_context::<Option<InstInfo>>().expect("no ctx found");
 
     let add_max_line_nr_filter = {
         let max_line_nr = max_line_nr.clone();
@@ -92,6 +114,13 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
                 />
                 <button onclick={add_max_insts_filter}>{"Add"}</button>
             </div>
+            {if selected_inst.is_some() {
+                html! {
+                    <SelectedNode selected_node={selected_inst.unwrap()} action={props.add_filter.clone()} />
+                }
+            } else {
+                html! {}
+            }}
             // <SelectDropDown
             //     label={"Select a layout engine:"}
             //     options={layout_engines}
