@@ -110,10 +110,11 @@ impl Component for SVGResult {
                 if render {
                     self.explicit_render = true;
                     ctx.link().send_message(Msg::RenderGraph);
+                    true
                 } else {
                     self.explicit_render = false;
+                    false
                 }
-                true
             }
             Msg::UpdateSvgText(svg_text) => {
                 self.svg_text = svg_text;
