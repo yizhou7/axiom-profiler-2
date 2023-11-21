@@ -1,4 +1,4 @@
-use petgraph::Direction::{Outgoing, Incoming};
+use petgraph::Direction::{Incoming, Outgoing};
 use smt_log_parser::parsers::z3::inst_graph::InstInfo;
 use yew::prelude::*;
 
@@ -13,7 +13,7 @@ pub struct SelectedNodeProps {
 #[function_component(SelectedNode)]
 pub fn selected_node(props: &SelectedNodeProps) -> Html {
     let selected_inst = props.selected_node.clone();
-    let hide_node = { 
+    let hide_node = {
         let callback = props.action.clone();
         Callback::from(move |_| {
             callback.emit(Filter::Hide(selected_inst.node_index));
@@ -33,11 +33,12 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
     };
     let show_source_tree = {
         let callback = props.action.clone();
-        Callback::from(move |_| {
-            callback.emit(Filter::ShowSourceTree(selected_inst.node_index))
-        })
+        Callback::from(move |_| callback.emit(Filter::ShowSourceTree(selected_inst.node_index)))
     };
-    let selected_node_text = format!("You selected node {}. Here are available actions: ", selected_inst.node_index.index()); 
+    let selected_node_text = format!(
+        "You selected node {}. Here are available actions: ",
+        selected_inst.node_index.index()
+    );
     html! {
     <div>
         <h4>{selected_node_text}</h4>

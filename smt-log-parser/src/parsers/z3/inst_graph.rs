@@ -1,5 +1,9 @@
 use fxhash::FxHashMap;
-use petgraph::{Direction::{Incoming, Outgoing}, visit::{Dfs, EdgeRef}, stable_graph::{StableGraph, EdgeIndex}};
+use petgraph::{
+    stable_graph::{EdgeIndex, StableGraph},
+    visit::{Dfs, EdgeRef},
+    Direction::{Incoming, Outgoing},
+};
 // use gloo_console::log;
 use petgraph::graph::NodeIndex;
 use std::fmt;
@@ -36,7 +40,7 @@ pub struct InstInfo {
 
 #[derive(Default, Clone)]
 pub struct InstGraph {
-    pub inst_graph: StableGraph<NodeData, ()>,      // same as orig_inst_graph but possibly filtered
+    pub inst_graph: StableGraph<NodeData, ()>, // same as orig_inst_graph but possibly filtered
     orig_graph: StableGraph<NodeData, ()>,
     node_of_line_nr: FxHashMap<usize, NodeIndex>, // line number => node-index
 }
@@ -49,18 +53,14 @@ impl InstGraph {
     }
 
     pub fn retain_nodes(&mut self, retain: impl Fn(&NodeData) -> bool) {
-        self.inst_graph.retain_nodes(|graph, node_idx| retain(graph.node_weight(node_idx).unwrap()))
+        self.inst_graph
+            .retain_nodes(|graph, node_idx| retain(graph.node_weight(node_idx).unwrap()))
     }
 
     pub fn retain_nodes_and_reconnect(&mut self, retain: impl Fn(&NodeData) -> bool) {
         let nodes_to_remove: Vec<NodeIndex> = self
             .inst_graph
             .node_indices()
-            // the rev() is necessary to ensure that the indices in nodes_to_remove
-            // remain valid even after removing nodes. If we first remove lower
-            // index nodes, the indices of the nodes to be removed will change
-            // and hence removing nodes from the nodes_to_remove won't be correct
-            // .rev()
             .filter(|&node_idx| !retain(self.inst_graph.node_weight(node_idx).unwrap()))
             .collect();
         for node in nodes_to_remove {
@@ -75,7 +75,7 @@ impl InstGraph {
                 }
             }
         }
-    }   
+    }
 
     pub fn keep_n_most_costly(&mut self, n: usize) {
         // Only keep the max_instantiations most costly instantiations by sorting in
@@ -111,23 +111,22 @@ impl InstGraph {
             self.inst_graph[nx].remove = true;
         }
         // remove the marked nodes
-        self.inst_graph.retain_nodes(|graph, node| !graph.node_weight(node).unwrap().remove)
+        self.inst_graph
+            .retain_nodes(|graph, node| !graph.node_weight(node).unwrap().remove)
     }
 
     pub fn only_show_ancestors(&mut self, node: NodeIndex) {
-        // create new graph which is identical to original one except that all nodes have 
+        // create new graph which is identical to original one except that all nodes have
         // remove = true instead of remove = false
-        let mut ancestors = self
-            .orig_graph
-            .map(
-                |_, &node| {
-                    let mut hidden_node = node; 
-                    hidden_node.remove = true;
-                    hidden_node
-                },
-                |_, _| (), 
+        let mut ancestors = self.orig_graph.map(
+            |_, &node| {
+                let mut hidden_node = node;
+                hidden_node.remove = true;
+                hidden_node
+            },
+            |_, _| (),
         );
-        // visit all ancestors of node (argument) and set their remove-field to false since we want to retain them 
+        // visit all ancestors of node (argument) and set their remove-field to false since we want to retain them
         let orig_with_reversed_edges = petgraph::visit::Reversed(&self.orig_graph);
         let mut dfs = Dfs::new(orig_with_reversed_edges, node);
         while let Some(nx) = dfs.next(orig_with_reversed_edges) {
@@ -143,13 +142,32 @@ impl InstGraph {
     }
 
     pub fn show_neighbours(&mut self, node: NodeIndex, direction: petgraph::Direction) {
-        let neighbours: Vec<NodeIndex> = self.orig_graph.neighbors_directed(node, direction).collect();
-        let edges_to_neighbours: Vec<EdgeIndex> = self.orig_graph.edges_directed(node, direction).map(|e| e.id()).collect();
-        let new_inst_graph = self
+        let neighbours: Vec<NodeIndex> = self
             .orig_graph
-            .filter_map(
-                |node, _| if self.inst_graph.contains_node(node) || neighbours.contains(&node) { Some(self.orig_graph[node]) } else { None },
-                |edge, _| if self.inst_graph.edge_indices().any(|e| e == edge) || edges_to_neighbours.contains(&edge) { Some(()) } else { None }
+            .neighbors_directed(node, direction)
+            .collect();
+        let edges_to_neighbours: Vec<EdgeIndex> = self
+            .orig_graph
+            .edges_directed(node, direction)
+            .map(|e| e.id())
+            .collect();
+        let new_inst_graph = self.orig_graph.filter_map(
+            |node, _| {
+                if self.inst_graph.contains_node(node) || neighbours.contains(&node) {
+                    Some(self.orig_graph[node])
+                } else {
+                    None
+                }
+            },
+            |edge, _| {
+                if self.inst_graph.edge_indices().any(|e| e == edge)
+                    || edges_to_neighbours.contains(&edge)
+                {
+                    Some(())
+                } else {
+                    None
+                }
+            },
         );
         self.inst_graph = new_inst_graph;
     }
@@ -238,10 +256,8 @@ impl InstGraph {
             self.node_of_line_nr.get(&from),
             self.node_of_line_nr.get(&to),
         ) {
-            self.inst_graph
-                .add_edge(from_node_idx, to_node_idx, ());
-            self.orig_graph
-                .add_edge(from_node_idx, to_node_idx, ());
+            self.inst_graph.add_edge(from_node_idx, to_node_idx, ());
+            self.orig_graph.add_edge(from_node_idx, to_node_idx, ());
         }
     }
 }

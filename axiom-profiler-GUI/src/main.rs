@@ -9,11 +9,11 @@ use yew_router::prelude::*;
 
 use crate::svg_result::SVGResult;
 
-mod graph;
 mod filter_chain;
-mod selected_node;
+mod graph;
 mod graph_filters;
 mod input_state;
+mod selected_node;
 mod svg_result;
 mod toggle_switch;
 mod weak_component_link;

@@ -1,16 +1,29 @@
-use std::{num::NonZeroUsize, ops::Deref};
 use self::colors::HSVColour;
-use crate::{graph::Graph, filter_chain::{FilterChain, Msg as FilterChainMsg, self}, graph_filters::Filter, weak_component_link::WeakComponentLink};
+use crate::{
+    filter_chain::{FilterChain, Msg as FilterChainMsg},
+    graph::Graph,
+    graph_filters::Filter,
+    weak_component_link::WeakComponentLink,
+};
+use num_format::{Locale, ToFormattedString};
 use petgraph::dot::{Config, Dot};
 use smt_log_parser::{
     items::QuantIdx,
-    parsers::{z3::{inst_graph::{InstGraph, InstInfo}, z3parser::Z3Parser}, LogParser},
+    parsers::{
+        z3::{
+            inst_graph::{InstGraph, InstInfo},
+            z3parser::Z3Parser,
+        },
+        LogParser,
+    },
 };
+use std::num::NonZeroUsize;
 use viz_js::VizInstance;
-use yew::prelude::*;
 use web_sys::window;
-use num_format::{Locale, ToFormattedString};
+use yew::prelude::*;
 // use material_yew::WeakComponentLink;
+
+pub const NODE_LIMIT: usize = 125;
 
 pub enum Msg {
     UpdateSvgText(AttrValue),
@@ -76,91 +89,86 @@ impl Component for SVGResult {
                 log::debug!("Applying filter {}", filter);
                 filter.apply(&mut self.inst_graph);
                 false
-            },
+            }
             Msg::ResetGraph => {
                 log::debug!("Resetting graph");
                 self.inst_graph.reset();
                 false
-            },
-            Msg::RenderGraph(UserPermission{permission}) => {
+            }
+            Msg::RenderGraph(UserPermission { permission }) => {
                 // as long as displayed graph contains at most 125 nodes, render time is acceptable
                 log::debug!("The graph has {} nodes", self.inst_graph.node_count());
-                if self.inst_graph.node_count() <= 125 || permission {
+                if self.inst_graph.node_count() <= NODE_LIMIT || permission {
                     log::debug!("Rendering graph");
-                    // by default, we don't want to set the filter chain to the previous filter chain
-                    // hence we need to set it to false in case it was set to true previously 
                     let filtered_graph = &self.inst_graph.inst_graph;
-                        let dot_output = format!(
-                            "{:?}",
-                            Dot::with_attr_getters(
-                                filtered_graph,
-                                &[Config::EdgeNoLabel, Config::NodeNoLabel],
-                                &|_, _| String::new(),
-                                &|_, (node_idx, node_data)| {
-                                    format!("label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
+                    let dot_output = format!(
+                        "{:?}",
+                        Dot::with_attr_getters(
+                            filtered_graph,
+                            &[Config::EdgeNoLabel, Config::NodeNoLabel],
+                            &|_, _| String::new(),
+                            &|_, (node_idx, node_data)| {
+                                format!("label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
                                         // node_data.line_nr,
                                         node_idx.index(),
                                         self.colour_map.get(&node_data.quant_idx)
                                     )
-                                },
-                            )
-                        );
-                        log::debug!("Finished building dot output");
-                        let link = ctx.link().clone();
-                        wasm_bindgen_futures::spawn_local(async move {
-                            let graphviz = VizInstance::new().await;
-                            let options = viz_js::Options::default();
-                            // options.engine = "circo".to_string();
-                            let svg = graphviz
-                                .render_svg_element(dot_output, options)
-                                .expect("Could not render graphviz");
-                            let svg_text = svg.outer_html();
-                            link.send_message(Msg::UpdateSvgText(AttrValue::from(svg_text)));
-                        });
-                        // only need to re-render once the new SVG has been set
-                        // true
-                        false
+                            },
+                        )
+                    );
+                    log::debug!("Finished building dot output");
+                    let link = ctx.link().clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        let graphviz = VizInstance::new().await;
+                        let options = viz_js::Options::default();
+                        // options.engine = "circo".to_string();
+                        let svg = graphviz
+                            .render_svg_element(dot_output, options)
+                            .expect("Could not render graphviz");
+                        let svg_text = svg.outer_html();
+                        link.send_message(Msg::UpdateSvgText(AttrValue::from(svg_text)));
+                    });
+                    // only need to re-render once the new SVG has been set
+                    false
                 } else {
                     ctx.link().send_message(Msg::GetUserPermission);
-                    // true 
                     false
                 }
-            },
+            }
             Msg::GetUserPermission => {
                 log::debug!("Getting user permission");
-                if let Some(window) = window() {
-                    // Show the dialog with custom content
-                    let node_count = self.inst_graph.node_count().to_formatted_string(&Locale::en);
-                    let message = format!("Warning: The graph you are about to render contains {} nodes, rendering might be slow. Do you want to proceed?", node_count);
-                    let result = window.confirm_with_message(&message);
-                    match result {
-                        Ok(true) => {
-                            // if the user wishes to render the current graph, we do so
-                            log::debug!("Got user permission");
-                            // self.user_permission = true;
-                            ctx.link().send_message(Msg::RenderGraph(UserPermission::from(true)));
-                            // true 
-                            false
-                        }
-                        Ok(false) => {
-                            log::debug!("Didn't get user permission");
-                            // this resets the filter chain to the filter chain that we had 
-                            // right before adding the filter that caused too many nodes 
-                            // to be added to the graph
-                            self.filter_chain_link
-                                .borrow()
-                                .clone()
-                                .unwrap()
-                                .send_message(FilterChainMsg::SetToPrevious);
-                            false
-                        }
-                        Err(_) => {
-                            // Handle the case where an error occurred
-                            false
-                        }
+                let window = window().unwrap();
+                // Show the dialog with custom content
+                let node_count = self
+                    .inst_graph
+                    .node_count()
+                    .to_formatted_string(&Locale::en);
+                let message = format!("Warning: The graph you are about to render contains {} nodes, rendering might be slow. Do you want to proceed?", node_count);
+                let result = window.confirm_with_message(&message);
+                match result {
+                    Ok(true) => {
+                        // if the user wishes to render the current graph, we do so
+                        log::debug!("Got user permission");
+                        ctx.link()
+                            .send_message(Msg::RenderGraph(UserPermission::from(true)));
+                        false
                     }
-                } else {
-                    false
+                    Ok(false) => {
+                        log::debug!("Didn't get user permission");
+                        // this resets the filter chain to the filter chain that we had
+                        // right before adding the filter that caused too many nodes
+                        // to be added to the graph
+                        self.filter_chain_link
+                            .borrow()
+                            .clone()
+                            .unwrap()
+                            .send_message(FilterChainMsg::SetToPrevious);
+                        false
+                    }
+                    Err(_) => {
+                        // Handle the case where an error occurred
+                        false
+                    }
                 }
             }
             Msg::UpdateSvgText(svg_text) => {
@@ -168,7 +176,7 @@ impl Component for SVGResult {
                 self.svg_text = svg_text;
                 self.selected_inst = None;
                 true
-            },
+            }
             Msg::UpdateSelectedNode(index) => {
                 log::debug!("Updating selected node");
                 self.selected_inst = self.inst_graph.get_instantiation_info(index, &self.parser);
@@ -176,7 +184,6 @@ impl Component for SVGResult {
             }
         }
     }
-
 
     fn view(&self, ctx: &Context<Self>) -> Html {
         let on_node_select = ctx.link().callback(Msg::UpdateSelectedNode);
@@ -190,9 +197,9 @@ impl Component for SVGResult {
             <>
                 <div style="width: 50%; float: left;">
                 <ContextProvider<Option<InstInfo>> context={self.selected_inst.clone()} >
-                    <FilterChain 
-                        apply_filter={apply_filter.clone()} 
-                        reset_graph={reset_graph.clone()} 
+                    <FilterChain
+                        apply_filter={apply_filter.clone()}
+                        reset_graph={reset_graph.clone()}
                         render_graph={render_graph.clone()}
                         // set_to_previous={self.set_to_previous_filters}
                         weak_link={self.filter_chain_link.clone()}

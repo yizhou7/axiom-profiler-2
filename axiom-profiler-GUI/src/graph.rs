@@ -45,8 +45,11 @@ pub fn graph(props: &GraphProps) -> Html {
                         callback.emit(node_index);
                     });
                     // attach event listener to node
-                    node.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref())
-                        .unwrap();
+                    node.add_event_listener_with_callback(
+                        "click",
+                        closure.as_ref().unchecked_ref(),
+                    )
+                    .unwrap();
                     closure
                 })
                 .collect();
