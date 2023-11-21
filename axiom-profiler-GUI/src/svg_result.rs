@@ -8,6 +8,7 @@ use smt_log_parser::{
 };
 use viz_js::VizInstance;
 use yew::prelude::*;
+use web_sys::window;
 
 pub enum Msg {
     UpdateSvgText(AttrValue),
@@ -15,7 +16,7 @@ pub enum Msg {
     RenderGraph,
     ApplyFilter(Filter),
     ResetGraph,
-    ExplicitRender(bool),
+    GetUserPermission,
 }
 
 pub struct SVGResult {
@@ -24,8 +25,8 @@ pub struct SVGResult {
     inst_graph: InstGraph,
     svg_text: AttrValue,
     selected_inst: Option<InstInfo>,
-    explicit_render: bool,
-    get_explicit_permission: bool,
+    user_permission: bool,
+    set_to_previous_filters: bool,
 }
 
 #[derive(Properties, PartialEq)]
@@ -48,29 +49,32 @@ impl Component for SVGResult {
             inst_graph,
             svg_text: AttrValue::default(),
             selected_inst: None,
-            explicit_render: false,
-            get_explicit_permission: false,
+            user_permission: false,
+            set_to_previous_filters: false,
         }
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
             Msg::ApplyFilter(filter) => {
+                log::debug!("Applying filter {}", filter);
                 filter.apply(&mut self.inst_graph);
-                true
+                false
             },
             Msg::ResetGraph => {
+                log::debug!("Resetting graph");
                 self.inst_graph.reset();
-                true
+                false
             },
             Msg::RenderGraph => {
-                if self.inst_graph.node_count() <= 125 || self.explicit_render {
-                    self.explicit_render = false; 
+                // as long as displayed graph contains at most 125 nodes, render time is acceptable
+                log::debug!("The graph has {} nodes", self.inst_graph.node_count());
+                if self.inst_graph.node_count() <= 125 || self.user_permission {
+                    log::debug!("Rendering graph");
+                    // need to reset the explicit user permission to render after each explicit render
+                    self.user_permission = false; 
+                    self.set_to_previous_filters = false;
                     let filtered_graph = &self.inst_graph.inst_graph;
-                    // as long as displayed graph contains at most 250, render time is acceptable
-                    // if self.explicit_render || self.inst_graph.node_count() <= 125 {
-                        // need to reset the explicit user permission to render after each explicit render
-                        // self.explicit_render = false;
                         let dot_output = format!(
                             "{:?}",
                             Dot::with_attr_getters(
@@ -99,29 +103,48 @@ impl Component for SVGResult {
                             link.send_message(Msg::UpdateSvgText(AttrValue::from(svg_text)));
                         });
                         // only need to re-render once the new SVG has been set
-                        false
+                        true
                 } else {
-                    self.get_explicit_permission = true;
-                    true
+                    ctx.link().send_message(Msg::GetUserPermission);
+                    true 
                 }
             },
-            Msg::ExplicitRender(render) => {
-                self.get_explicit_permission = false;
-                if render {
-                    self.explicit_render = true;
-                    ctx.link().send_message(Msg::RenderGraph);
-                    true
+            Msg::GetUserPermission => {
+                log::debug!("Getting user permission");
+                if let Some(window) = window() {
+                    // Show the dialog with custom content
+                    let message = format!("Warning: The current graph contains {} nodes, rendering might be slow. Do you want to proceed?", self.inst_graph.node_count());
+                    let result = window.confirm_with_message(&message);
+                    match result {
+                        Ok(true) => {
+                            // if the user wishes to render the current graph, we do so
+                            log::debug!("Got user permission");
+                            self.user_permission = true;
+                            ctx.link().send_message(Msg::RenderGraph);
+                            true 
+                        }
+                        Ok(false) => {
+                            log::debug!("Didn't get user permission");
+                            self.set_to_previous_filters = true;
+                            true
+                        }
+                        Err(_) => {
+                            // Handle the case where an error occurred
+                            false
+                        }
+                    }
                 } else {
-                    self.explicit_render = false;
                     false
                 }
             }
             Msg::UpdateSvgText(svg_text) => {
+                log::debug!("Updating svg text");
                 self.svg_text = svg_text;
                 self.selected_inst = None;
                 true
             },
             Msg::UpdateSelectedNode(index) => {
+                log::debug!("Updating selected node");
                 self.selected_inst = self.inst_graph.get_instantiation_info(index, &self.parser);
                 true
             }
@@ -131,14 +154,12 @@ impl Component for SVGResult {
 
     fn view(&self, ctx: &Context<Self>) -> Html {
         let on_node_select = ctx.link().callback(Msg::UpdateSelectedNode);
-        // let explicit_render = ctx.link().callback(|_| Msg::ExplicitRender);
         let node_count_preview = html! {
             <h4>{format!{"The filtered graph contains {} nodes", self.inst_graph.node_count()}}</h4>
         };
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
         let render_graph = ctx.link().callback(|_| Msg::RenderGraph);
-        let explicit_render = ctx.link().callback(Msg::ExplicitRender);
         html! {
             <>
                 <div style="width: 50%; float: left;">
@@ -147,22 +168,11 @@ impl Component for SVGResult {
                         apply_filter={apply_filter.clone()} 
                         reset_graph={reset_graph.clone()} 
                         render_graph={render_graph.clone()}
-                        get_explicit_permission={self.get_explicit_permission}
-                        explicit_render={explicit_render.clone()}
+                        set_to_previous={self.set_to_previous_filters}
                         dependency={ctx.props().trace_file_text.clone()}
                     />
                 </ContextProvider<Option<InstInfo>>>
                 {node_count_preview}
-                // {if self.inst_graph.node_count() > 125 {
-                //     html! {
-                //         <>
-                //             <h4>{"Warning: The current graph contains a large number of nodes, rendering might be slow. Render anyways?"}</h4>
-                //             <button onclick={explicit_render}>{"Yes"}</button>
-                //         </>
-                //     }
-                // } else {
-                //     html! {}
-                // }}
                 </div>
                 <Graph
                     svg_text={self.svg_text.clone()}

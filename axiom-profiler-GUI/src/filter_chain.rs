@@ -1,13 +1,14 @@
+use gloo::console::log;
 use yew::prelude::*;
 use crate::graph_filters::{GraphFilter, Filter};
 // use gloo_console::log;
-use web_sys::window;
 
 pub enum Msg {
     AddFilter(Filter),
     RemoveNthFilter(usize),
     ResetFilters,
-    GetUserPermission,
+    // GetUserPermission,
+    SetToPrevious,
     // CautiouslyRender,
 }
 
@@ -21,8 +22,7 @@ pub struct FilterChainProps {
     pub apply_filter: Callback<Filter>,
     pub reset_graph: Callback<()>,
     pub render_graph: Callback<()>,
-    pub get_explicit_permission: bool,
-    pub explicit_render: Callback<bool>,
+    pub set_to_previous: bool,
     pub dependency: AttrValue,
 }
 
@@ -36,15 +36,17 @@ impl Component for FilterChain {
             ctx.props().apply_filter.emit(filter);
         }
         ctx.props().render_graph.emit(());
+        let prev_filter_chain = filter_chain.clone();
         Self {
             filter_chain,
-            prev_filter_chain: Vec::new(),
+            prev_filter_chain,
         }
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
             Msg::AddFilter(filter) => {
+                log!("Adding filter ", filter.to_string());
                 self.prev_filter_chain = self.filter_chain.clone();
                 self.filter_chain.push(filter);
                 ctx.props().apply_filter.emit(filter);
@@ -53,6 +55,7 @@ impl Component for FilterChain {
                 true
             },
             Msg::RemoveNthFilter(n) => {
+                log!("Removing filter", n);
                 self.prev_filter_chain = self.filter_chain.clone();
                 self.filter_chain.remove(n);
                 ctx.props().reset_graph.emit(());
@@ -64,6 +67,7 @@ impl Component for FilterChain {
                 true
             },
             Msg::ResetFilters => {
+                log!("resetting filters");
                 self.prev_filter_chain = self.filter_chain.clone();
                 self.filter_chain = vec![Filter::IgnoreTheorySolving, Filter::MaxInsts(125)];
                 ctx.props().reset_graph.emit(());
@@ -74,37 +78,19 @@ impl Component for FilterChain {
                 // ctx.link().send_message(Msg::CautiouslyRender);
                 true 
             },
-            Msg::GetUserPermission => {
-                if let Some(window) = window() {
-                    // Show the dialog with custom content
-                    let result = window.confirm_with_message("Warning: The current graph contains a large number of nodes, rendering might be slow. Do you want to proceed?");
-                    match result {
-                        Ok(true) => {
-                            // if the user wishes to render the current graph, we do so
-                            ctx.props().explicit_render.emit(true);
-                            true
-                        }
-                        Ok(false) => {
-                            // if user does not wish to render the current graph, we set the 
-                            // filter chain to the previous filter chain, apply all those filters
-                            // and render the graph again
-                            ctx.props().explicit_render.emit(false);
-                            self.filter_chain = self.prev_filter_chain.clone();
-                            for &filter in &self.filter_chain {
-                                ctx.props().apply_filter.emit(filter);
-                            }
-                            ctx.props().render_graph.emit(());
-                            false
-                        }
-                        Err(_) => {
-                            // Handle the case where an error occurred
-                            false
-                        }
-                    }
-                } else {
-                    false
-                } 
-            }
+            Msg::SetToPrevious => {
+                log!("Setting to previous filter chain");
+                // if user does not wish to render the current graph, we set the 
+                // filter chain to the previous filter chain, apply all those filters
+                // and render the graph again
+                self.filter_chain = self.prev_filter_chain.clone();
+                ctx.props().reset_graph.emit(());
+                for &filter in &self.filter_chain {
+                    ctx.props().apply_filter.emit(filter);
+                }
+                ctx.props().render_graph.emit(());
+                true 
+            },
         }
     }
 
@@ -120,8 +106,8 @@ impl Component for FilterChain {
             })
             .collect();
         let reset_filters = ctx.link().callback(|_| Msg::ResetFilters);
-        if ctx.props().get_explicit_permission {
-            ctx.link().send_message(Msg::GetUserPermission);
+        if ctx.props().set_to_previous {
+            ctx.link().send_message(Msg::SetToPrevious);
         }
 
         let add_filter = ctx.link().callback(Msg::AddFilter);
@@ -132,8 +118,8 @@ impl Component for FilterChain {
                     dependency={ctx.props().dependency.clone()}
                 />
                 <h2>{"Filter chain:"}</h2>
-                {for filter_chain}
                 <button onclick={reset_filters}>{"Reset to default"}</button>
+                {for filter_chain}
             </div>
         )
     }
