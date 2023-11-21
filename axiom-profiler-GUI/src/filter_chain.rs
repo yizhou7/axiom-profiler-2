@@ -1,7 +1,9 @@
+use std::rc::Rc;
 use gloo::console::log;
 use yew::prelude::*;
-use crate::{graph_filters::{GraphFilter, Filter}, svg_result::UserPermission};
+use crate::{graph_filters::{GraphFilter, Filter}, svg_result::UserPermission, weak_component_link::WeakComponentLink};
 // use gloo_console::log;
+// use material_yew::WeakComponentLink;
 
 pub enum Msg {
     AddFilter(Filter),
@@ -22,8 +24,9 @@ pub struct FilterChainProps {
     pub apply_filter: Callback<Filter>,
     pub reset_graph: Callback<()>,
     pub render_graph: Callback<UserPermission>,
-    pub set_to_previous: bool,
+    // pub set_to_previous: bool,
     pub dependency: AttrValue,
+    pub weak_link: WeakComponentLink<FilterChain>,
 }
 
 impl Component for FilterChain {
@@ -31,6 +34,10 @@ impl Component for FilterChain {
     type Properties = FilterChainProps;
 
     fn create(ctx: &Context<Self>) -> Self {
+        ctx.props()
+            .weak_link
+            .borrow_mut()
+            .replace(ctx.link().clone());
         let filter_chain = vec![Filter::IgnoreTheorySolving, Filter::MaxInsts(125)];
         for &filter in &filter_chain {
             ctx.props().apply_filter.emit(filter);
@@ -51,9 +58,7 @@ impl Component for FilterChain {
                 self.filter_chain.push(filter);
                 ctx.props().apply_filter.emit(filter);
                 ctx.props().render_graph.emit(UserPermission::default());
-                // ctx.link().send_message(Msg::CautiouslyRender);
-                // true
-                false
+                true
             },
             Msg::RemoveNthFilter(n) => {
                 log!("Removing filter", n);
@@ -64,9 +69,7 @@ impl Component for FilterChain {
                     ctx.props().apply_filter.emit(filter);
                 }
                 ctx.props().render_graph.emit(UserPermission::default());
-                // ctx.link().send_message(Msg::CautiouslyRender);
-                // true
-                false
+                true
             },
             Msg::ResetFilters => {
                 log!("resetting filters");
@@ -77,9 +80,7 @@ impl Component for FilterChain {
                     ctx.props().apply_filter.emit(filter);
                 }
                 ctx.props().render_graph.emit(UserPermission::default());
-                // ctx.link().send_message(Msg::CautiouslyRender);
-                // true 
-                false
+                true 
             },
             Msg::SetToPrevious => {
                 log!("Setting to previous filter chain");
@@ -95,7 +96,7 @@ impl Component for FilterChain {
                 // the user has given permission previously
                 // ctx.props().render_graph.emit(UserPermission::from(true));
                 // false
-                false
+                true
             },
         }
     }
@@ -112,9 +113,9 @@ impl Component for FilterChain {
             })
             .collect();
         let reset_filters = ctx.link().callback(|_| Msg::ResetFilters);
-        if ctx.props().set_to_previous {
-            ctx.link().send_message(Msg::SetToPrevious);
-        }
+        // if ctx.props().set_to_previous {
+        //     ctx.link().send_message(Msg::SetToPrevious);
+        // }
 
         let add_filter = ctx.link().callback(Msg::AddFilter);
         html!(

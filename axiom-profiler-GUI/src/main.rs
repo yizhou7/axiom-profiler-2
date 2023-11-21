@@ -16,6 +16,7 @@ mod graph_filters;
 mod input_state;
 mod svg_result;
 mod toggle_switch;
+mod weak_component_link;
 // mod select_dropdown;
 pub enum Msg {
     LoadedBytes(String, Vec<u8>),

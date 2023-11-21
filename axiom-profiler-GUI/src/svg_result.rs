@@ -1,6 +1,6 @@
-use std::num::NonZeroUsize;
+use std::{num::NonZeroUsize, ops::Deref};
 use self::colors::HSVColour;
-use crate::{graph::Graph, filter_chain::FilterChain, graph_filters::Filter};
+use crate::{graph::Graph, filter_chain::{FilterChain, Msg as FilterChainMsg, self}, graph_filters::Filter, weak_component_link::WeakComponentLink};
 use petgraph::dot::{Config, Dot};
 use smt_log_parser::{
     items::QuantIdx,
@@ -10,6 +10,7 @@ use viz_js::VizInstance;
 use yew::prelude::*;
 use web_sys::window;
 use num_format::{Locale, ToFormattedString};
+// use material_yew::WeakComponentLink;
 
 pub enum Msg {
     UpdateSvgText(AttrValue),
@@ -42,7 +43,7 @@ pub struct SVGResult {
     inst_graph: InstGraph,
     svg_text: AttrValue,
     selected_inst: Option<InstInfo>,
-    set_to_previous_filters: bool,
+    filter_chain_link: WeakComponentLink<FilterChain>,
 }
 
 #[derive(Properties, PartialEq)]
@@ -65,7 +66,7 @@ impl Component for SVGResult {
             inst_graph,
             svg_text: AttrValue::default(),
             selected_inst: None,
-            set_to_previous_filters: false,
+            filter_chain_link: WeakComponentLink::default(),
         }
     }
 
@@ -143,8 +144,15 @@ impl Component for SVGResult {
                         }
                         Ok(false) => {
                             log::debug!("Didn't get user permission");
-                            self.set_to_previous_filters = true;
-                            true
+                            // this resets the filter chain to the filter chain that we had 
+                            // right before adding the filter that caused too many nodes 
+                            // to be added to the graph
+                            self.filter_chain_link
+                                .borrow()
+                                .clone()
+                                .unwrap()
+                                .send_message(FilterChainMsg::SetToPrevious);
+                            false
                         }
                         Err(_) => {
                             // Handle the case where an error occurred
@@ -186,7 +194,8 @@ impl Component for SVGResult {
                         apply_filter={apply_filter.clone()} 
                         reset_graph={reset_graph.clone()} 
                         render_graph={render_graph.clone()}
-                        set_to_previous={self.set_to_previous_filters}
+                        // set_to_previous={self.set_to_previous_filters}
+                        weak_link={self.filter_chain_link.clone()}
                         dependency={ctx.props().trace_file_text.clone()}
                     />
                 </ContextProvider<Option<InstInfo>>>
