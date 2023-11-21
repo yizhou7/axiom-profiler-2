@@ -9,14 +9,31 @@ use smt_log_parser::{
 use viz_js::VizInstance;
 use yew::prelude::*;
 use web_sys::window;
+use num_format::{Locale, ToFormattedString};
 
 pub enum Msg {
     UpdateSvgText(AttrValue),
     UpdateSelectedNode(usize),
-    RenderGraph,
+    RenderGraph(UserPermission),
     ApplyFilter(Filter),
     ResetGraph,
     GetUserPermission,
+}
+
+pub struct UserPermission {
+    permission: bool,
+}
+
+impl Default for UserPermission {
+    fn default() -> Self {
+        Self { permission: false }
+    }
+}
+
+impl From<bool> for UserPermission {
+    fn from(value: bool) -> Self {
+        Self { permission: value }
+    }
 }
 
 pub struct SVGResult {
@@ -25,7 +42,6 @@ pub struct SVGResult {
     inst_graph: InstGraph,
     svg_text: AttrValue,
     selected_inst: Option<InstInfo>,
-    user_permission: bool,
     set_to_previous_filters: bool,
 }
 
@@ -49,7 +65,6 @@ impl Component for SVGResult {
             inst_graph,
             svg_text: AttrValue::default(),
             selected_inst: None,
-            user_permission: false,
             set_to_previous_filters: false,
         }
     }
@@ -66,14 +81,13 @@ impl Component for SVGResult {
                 self.inst_graph.reset();
                 false
             },
-            Msg::RenderGraph => {
+            Msg::RenderGraph(UserPermission{permission}) => {
                 // as long as displayed graph contains at most 125 nodes, render time is acceptable
                 log::debug!("The graph has {} nodes", self.inst_graph.node_count());
-                if self.inst_graph.node_count() <= 125 || self.user_permission {
+                if self.inst_graph.node_count() <= 125 || permission {
                     log::debug!("Rendering graph");
-                    // need to reset the explicit user permission to render after each explicit render
-                    self.user_permission = false; 
-                    self.set_to_previous_filters = false;
+                    // by default, we don't want to set the filter chain to the previous filter chain
+                    // hence we need to set it to false in case it was set to true previously 
                     let filtered_graph = &self.inst_graph.inst_graph;
                         let dot_output = format!(
                             "{:?}",
@@ -103,25 +117,29 @@ impl Component for SVGResult {
                             link.send_message(Msg::UpdateSvgText(AttrValue::from(svg_text)));
                         });
                         // only need to re-render once the new SVG has been set
-                        true
+                        // true
+                        false
                 } else {
                     ctx.link().send_message(Msg::GetUserPermission);
-                    true 
+                    // true 
+                    false
                 }
             },
             Msg::GetUserPermission => {
                 log::debug!("Getting user permission");
                 if let Some(window) = window() {
                     // Show the dialog with custom content
-                    let message = format!("Warning: The current graph contains {} nodes, rendering might be slow. Do you want to proceed?", self.inst_graph.node_count());
+                    let node_count = self.inst_graph.node_count().to_formatted_string(&Locale::en);
+                    let message = format!("Warning: The graph you are about to render contains {} nodes, rendering might be slow. Do you want to proceed?", node_count);
                     let result = window.confirm_with_message(&message);
                     match result {
                         Ok(true) => {
                             // if the user wishes to render the current graph, we do so
                             log::debug!("Got user permission");
-                            self.user_permission = true;
-                            ctx.link().send_message(Msg::RenderGraph);
-                            true 
+                            // self.user_permission = true;
+                            ctx.link().send_message(Msg::RenderGraph(UserPermission::from(true)));
+                            // true 
+                            false
                         }
                         Ok(false) => {
                             log::debug!("Didn't get user permission");
@@ -159,7 +177,7 @@ impl Component for SVGResult {
         };
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
-        let render_graph = ctx.link().callback(|_| Msg::RenderGraph);
+        let render_graph = ctx.link().callback(Msg::RenderGraph);
         html! {
             <>
                 <div style="width: 50%; float: left;">
