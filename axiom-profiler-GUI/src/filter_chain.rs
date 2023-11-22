@@ -1,6 +1,6 @@
 use crate::{
     graph_filters::{Filter, GraphFilter},
-    svg_result::UserPermission,
+    svg_result::{UserPermission, NODE_LIMIT},
     weak_component_link::WeakComponentLink,
 };
 use gloo::console::log;
@@ -38,7 +38,7 @@ impl Component for FilterChain {
             .weak_link
             .borrow_mut()
             .replace(ctx.link().clone());
-        let filter_chain = vec![Filter::IgnoreTheorySolving, Filter::MaxInsts(125)];
+        let filter_chain = vec![Filter::IgnoreTheorySolving, Filter::MaxInsts(NODE_LIMIT)];
         for &filter in &filter_chain {
             ctx.props().apply_filter.emit(filter);
         }
@@ -74,7 +74,7 @@ impl Component for FilterChain {
             Msg::ResetFilters => {
                 log!("resetting filters");
                 self.prev_filter_chain = self.filter_chain.clone();
-                self.filter_chain = vec![Filter::IgnoreTheorySolving, Filter::MaxInsts(125)];
+                self.filter_chain = vec![Filter::IgnoreTheorySolving, Filter::MaxInsts(NODE_LIMIT)];
                 ctx.props().reset_graph.emit(());
                 for &filter in &self.filter_chain {
                     ctx.props().apply_filter.emit(filter);
