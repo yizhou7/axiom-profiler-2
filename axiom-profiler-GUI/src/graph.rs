@@ -2,7 +2,7 @@ use wasm_bindgen::prelude::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::{Event, HtmlElement};
 use yew::prelude::*;
-use yew::{function_component, html, use_effect_with, use_node_ref, Html};
+use yew::{function_component, html, use_node_ref, Html};
 
 #[derive(Properties, PartialEq, Default)]
 pub struct GraphProps {
@@ -22,7 +22,7 @@ pub fn graph(props: &GraphProps) -> Html {
         let svg_text = props.svg_text.clone();
         let callback = props.update_selected_node.clone();
 
-        use_effect_with(svg_text, move |_| {
+        use_effect_with_deps(move |_| {
             web_sys::console::log_1(&"Using effect".into());
             let div = div_ref
                 .cast::<HtmlElement>()
@@ -64,7 +64,7 @@ pub fn graph(props: &GraphProps) -> Html {
                     }
                 }
             }
-        });
+        }, svg_text);
     }
     html! {
         <div ref={div_ref} style="width: 50%; float: right;">

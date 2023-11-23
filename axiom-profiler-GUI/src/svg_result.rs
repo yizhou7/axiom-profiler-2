@@ -3,7 +3,6 @@ use crate::{
     filter_chain::{FilterChain, Msg as FilterChainMsg},
     graph::Graph,
     graph_filters::Filter,
-    weak_component_link::WeakComponentLink,
 };
 use num_format::{Locale, ToFormattedString};
 use petgraph::dot::{Config, Dot};
@@ -21,7 +20,7 @@ use std::num::NonZeroUsize;
 use viz_js::VizInstance;
 use web_sys::window;
 use yew::prelude::*;
-// use material_yew::WeakComponentLink;
+use material_yew::WeakComponentLink;
 
 pub const NODE_LIMIT: usize = 125;
 
@@ -121,7 +120,7 @@ impl Component for SVGResult {
                     wasm_bindgen_futures::spawn_local(async move {
                         let graphviz = VizInstance::new().await;
                         let options = viz_js::Options::default();
-                        // options.engine = "circo".to_string();
+                        // options.engine = "twopi".to_string();
                         let svg = graphviz
                             .render_svg_element(dot_output, options)
                             .expect("Could not render graphviz");

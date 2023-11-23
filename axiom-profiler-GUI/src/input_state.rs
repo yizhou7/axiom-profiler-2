@@ -88,7 +88,7 @@ pub fn integer_input(props: &UsizeInputProps) -> Html {
         let input_value = input_value.clone();
         let input_ref = input_ref.clone();
         let default_value = props.default_value.clone();
-        use_effect_with(dep, {
+        use_effect_with_deps({
             let input_value = input_value.clone();
             move |_| {
                 input_value.dispatch(InputAction::SetValueTo(default_value));
@@ -97,7 +97,7 @@ pub fn integer_input(props: &UsizeInputProps) -> Html {
                     .expect("div_ref not attached to div element");
                 input.set_value("");
             }
-        });
+        }, dep);
     }
 
     html! {

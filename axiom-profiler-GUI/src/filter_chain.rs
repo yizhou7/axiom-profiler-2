@@ -1,12 +1,11 @@
 use crate::{
     graph_filters::{Filter, GraphFilter},
     svg_result::{UserPermission, NODE_LIMIT},
-    weak_component_link::WeakComponentLink,
 };
 use gloo::console::log;
 use yew::prelude::*;
 // use gloo_console::log;
-// use material_yew::WeakComponentLink;
+use material_yew::WeakComponentLink;
 
 pub enum Msg {
     AddFilter(Filter),
@@ -29,7 +28,7 @@ pub struct FilterChainProps {
     pub weak_link: WeakComponentLink<FilterChain>,
 }
 
-impl Component for FilterChain {
+impl yew::html::Component for FilterChain {
     type Message = Msg;
     type Properties = FilterChainProps;
 
