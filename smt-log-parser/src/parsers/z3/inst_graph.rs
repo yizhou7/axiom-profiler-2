@@ -4,7 +4,7 @@ use petgraph::{
     visit::{Dfs, EdgeRef},
     Direction::{Incoming, Outgoing},
 };
-// use gloo_console::log;
+use gloo_console::log;
 use petgraph::graph::NodeIndex;
 use std::fmt;
 
@@ -85,7 +85,8 @@ impl InstGraph {
             .node_indices()
             .filter(|&node_idx| !retain(self.inst_graph.node_weight(node_idx).unwrap()))
             .collect();
-        for node in nodes_to_remove {
+        let mut edges_to_add: Vec<(NodeIndex, NodeIndex)> = Vec::new();
+        for &node in &nodes_to_remove {
             let preds: Vec<NodeIndex> =
                 self.inst_graph.neighbors_directed(node, Incoming).collect();
             let succs: Vec<NodeIndex> =
@@ -93,9 +94,14 @@ impl InstGraph {
             self.inst_graph.remove_node(node);
             for &pred in &preds {
                 for &succ in &succs {
-                    self.inst_graph.add_edge(pred, succ, EdgeData { edge_type: EdgeType::Indirect });
+                    if !nodes_to_remove.contains(&pred) && !nodes_to_remove.contains(&succ) {
+                        edges_to_add.push((pred, succ));
+                    }
                 }
             }
+        }
+        for (from, to) in &edges_to_add {
+            self.inst_graph.add_edge(*from, *to, EdgeData { edge_type: EdgeType::Indirect });
         }
     }
 
