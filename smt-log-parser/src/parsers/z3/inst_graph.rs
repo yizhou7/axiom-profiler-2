@@ -146,10 +146,19 @@ impl InstGraph {
             .orig_graph
             .neighbors_directed(node, direction)
             .collect();
-        let edges_to_neighbours: Vec<EdgeIndex> = self
-            .orig_graph
-            .edges_directed(node, direction)
-            .map(|e| e.id())
+        // if we are adding all children of node  to the graph (outgoing neighbours),
+        // we also add all other incoming edges to the children
+        // if we are adding all parents of node to the graph (incoming neighbours), 
+        // we also add all other outgoing edges from the parents
+        // hence we iterate over all neighbours and use direction.opposite() 
+        let edges_to_neighbours: Vec<EdgeIndex> = neighbours
+            .iter()
+            .map(|&neighbour|
+                self
+                .orig_graph
+                .edges_directed(neighbour, direction.opposite())
+                .map(|e| e.id()))
+            .flatten()
             .collect();
         let new_inst_graph = self.orig_graph.filter_map(
             |node, _| {
