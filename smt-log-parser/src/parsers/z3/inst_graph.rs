@@ -17,7 +17,7 @@ pub struct NodeData {
     pub line_nr: usize,
     pub is_theory_inst: bool,
     cost: f32,
-    inst_idx: Option<InstIdx>,
+    pub inst_idx: Option<InstIdx>,
     pub quant_idx: QuantIdx,
     remove: bool,
 }

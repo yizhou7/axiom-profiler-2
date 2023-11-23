@@ -9,7 +9,7 @@ use yew::prelude::*;
 
 #[derive(Clone, Copy)]
 pub enum Filter {
-    MaxLineNr(usize),
+    MaxNodeIdx(usize),
     IgnoreTheorySolving,
     MaxInsts(usize),
     Hide(NodeIndex),
@@ -20,7 +20,7 @@ pub enum Filter {
 impl Display for Filter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::MaxLineNr(line_nr) => write!(f, "Only show up to line number {}", line_nr),
+            Self::MaxNodeIdx(node_idx) => write!(f, "Only show nodes up to index {}", node_idx),
             Self::IgnoreTheorySolving => write!(f, "Ignore theory solving instantiations"),
             Self::MaxInsts(max) => write!(f, "Show the {} most expensive instantiations", max),
             Self::Hide(nidx) => write!(f, "Hide node {} and its descendants", nidx.index()),
@@ -36,8 +36,8 @@ impl Display for Filter {
 impl Filter {
     pub fn apply(self: Filter, graph: &mut InstGraph) {
         match self {
-            Filter::MaxLineNr(max_line_nr) => {
-                graph.retain_nodes(|node: &NodeData| node.line_nr <= max_line_nr)
+            Filter::MaxNodeIdx(max) => {
+                graph.retain_nodes(|node: &NodeData| usize::from(node.inst_idx.unwrap()) <= max)
             }
             Filter::IgnoreTheorySolving => {
                 graph.retain_nodes_and_reconnect(|node: &NodeData| !node.is_theory_inst)
@@ -58,14 +58,14 @@ pub struct GraphFilterProps {
 
 #[function_component(GraphFilter)]
 pub fn graph_filter(props: &GraphFilterProps) -> Html {
-    let max_line_nr = use_reducer(InputValue::default);
+    let max_node_idx = use_reducer(InputValue::default);
     let max_instantiations = use_reducer(InputValue::default);
     let selected_inst = use_context::<Option<InstInfo>>().expect("no ctx found");
 
     let add_max_line_nr_filter = {
-        let max_line_nr = max_line_nr.clone();
+        let max_node_idx = max_node_idx.clone();
         let callback = props.add_filter.clone();
-        Callback::from(move |_| callback.emit(Filter::MaxLineNr(max_line_nr.value)))
+        Callback::from(move |_| callback.emit(Filter::MaxNodeIdx(max_node_idx.value)))
     };
     let add_theory_filter = {
         let callback = props.add_filter.clone();
@@ -81,9 +81,9 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
             <h2>{"Add (optional) filters:"}</h2>
             <div>
                 <UsizeInput
-                    label={"Render graph up to line number "}
+                    label={"Only show nodes up to index "}
                     dependency={props.dependency.clone()}
-                    input_value={max_line_nr}
+                    input_value={max_node_idx}
                     default_value={usize::MAX}
                 />
                 <button onclick={add_max_line_nr_filter}>{"Add"}</button>
