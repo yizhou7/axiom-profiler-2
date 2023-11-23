@@ -10,7 +10,7 @@ use smt_log_parser::{
     items::QuantIdx,
     parsers::{
         z3::{
-            inst_graph::{InstGraph, InstInfo},
+            inst_graph::{InstGraph, InstInfo, EdgeType},
             z3parser::Z3Parser,
         },
         LogParser,
@@ -105,7 +105,13 @@ impl Component for SVGResult {
                         Dot::with_attr_getters(
                             filtered_graph,
                             &[Config::EdgeNoLabel, Config::NodeNoLabel],
-                            &|_, _| String::new(),
+                            &|_, edge_data| 
+                                format!("style={}",
+                                    match edge_data.weight().edge_type {
+                                        EdgeType::Direct => "solid",
+                                        EdgeType::Indirect => "dashed",
+                                    } 
+                                    ),
                             &|_, (node_idx, node_data)| {
                                 format!("label=\"{}\" style=filled, shape=oval, fillcolor=\"{}\", fontcolor=black ",
                                         // node_data.line_nr,

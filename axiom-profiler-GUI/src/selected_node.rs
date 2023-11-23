@@ -35,6 +35,10 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
         let callback = props.action.clone();
         Callback::from(move |_| callback.emit(Filter::ShowSourceTree(selected_inst.node_index)))
     };
+    let ignore_quantifier = {
+        let callback = props.action.clone();
+        Callback::from(move |_| callback.emit(Filter::IgnoreQuantifier(selected_inst.quant_idx)))
+    };
     let selected_node_text = format!(
         "You selected node {}. Here are available actions: ",
         selected_inst.node_index.index()
@@ -46,6 +50,7 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
         <button onclick={show_children}>{"Show children"}</button>
         <button onclick={show_parents}>{"Show parents"}</button>
         <button onclick={show_source_tree}>{"Only show ancestors"}</button>
+        <button onclick={ignore_quantifier}>{"Ignore all nodes of this quantifier"}</button>
         <h2>{"Information about selected node:"}</h2>
         <ul>
             <li><h4>{"Instantiation happens at line number: "}</h4><p>{selected_inst.line_no}</p></li>

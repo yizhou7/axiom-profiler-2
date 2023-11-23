@@ -28,6 +28,27 @@ impl fmt::Debug for NodeData {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum EdgeType {
+    Direct,
+    Indirect,
+}
+
+#[derive(Clone, Copy)]
+pub struct EdgeData {
+    pub edge_type: EdgeType
+}
+
+impl fmt::Debug for EdgeData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.edge_type {
+            EdgeType::Direct => write!(f, "direct edge"),
+            EdgeType::Indirect => write!(f, "indirect edge"),
+
+        }
+    }
+}
+
 #[derive(PartialEq, Clone)]
 pub struct InstInfo {
     pub line_no: usize,
@@ -36,12 +57,13 @@ pub struct InstInfo {
     pub bound_terms: Vec<String>,
     pub yields_terms: Vec<String>,
     pub node_index: NodeIndex,
+    pub quant_idx: QuantIdx,
 }
 
 #[derive(Default, Clone)]
 pub struct InstGraph {
-    pub inst_graph: StableGraph<NodeData, ()>, // same as orig_inst_graph but possibly filtered
-    orig_graph: StableGraph<NodeData, ()>,
+    pub inst_graph: StableGraph<NodeData, EdgeData>, // same as orig_inst_graph but possibly filtered
+    orig_graph: StableGraph<NodeData, EdgeData>,
     node_of_line_nr: FxHashMap<usize, NodeIndex>, // line number => node-index
 }
 
@@ -71,7 +93,7 @@ impl InstGraph {
             self.inst_graph.remove_node(node);
             for &pred in &preds {
                 for &succ in &succs {
-                    self.inst_graph.add_edge(pred, succ, ());
+                    self.inst_graph.add_edge(pred, succ, EdgeData { edge_type: EdgeType::Indirect });
                 }
             }
         }
@@ -124,7 +146,7 @@ impl InstGraph {
                 hidden_node.remove = true;
                 hidden_node
             },
-            |_, _| (),
+            |_, &edge| edge,
         );
         // visit all ancestors of node (argument) and set their remove-field to false since we want to retain them
         let orig_with_reversed_edges = petgraph::visit::Reversed(&self.orig_graph);
@@ -161,18 +183,18 @@ impl InstGraph {
             .flatten()
             .collect();
         let new_inst_graph = self.orig_graph.filter_map(
-            |node, _| {
+            |node, &node_data| {
                 if self.inst_graph.contains_node(node) || neighbours.contains(&node) {
-                    Some(self.orig_graph[node])
+                    Some(node_data)
                 } else {
                     None
                 }
             },
-            |edge, _| {
+            |edge, &edge_data| {
                 if self.inst_graph.edge_indices().any(|e| e == edge)
                     || edges_to_neighbours.contains(&edge)
                 {
-                    Some(())
+                    Some(edge_data)
                 } else {
                     None
                 }
@@ -210,6 +232,7 @@ impl InstGraph {
                 bound_terms,
                 yields_terms,
                 node_index: NodeIndex::new(node_index),
+                quant_idx: inst.quant,
             };
             Some(inst_info)
         } else {
@@ -265,8 +288,8 @@ impl InstGraph {
             self.node_of_line_nr.get(&from),
             self.node_of_line_nr.get(&to),
         ) {
-            self.inst_graph.add_edge(from_node_idx, to_node_idx, ());
-            self.orig_graph.add_edge(from_node_idx, to_node_idx, ());
+            self.inst_graph.add_edge(from_node_idx, to_node_idx, EdgeData { edge_type: EdgeType::Direct });
+            self.orig_graph.add_edge(from_node_idx, to_node_idx, EdgeData { edge_type: EdgeType::Direct });
         }
     }
 }

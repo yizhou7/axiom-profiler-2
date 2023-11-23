@@ -3,7 +3,7 @@ use crate::{
     selected_node::SelectedNode,
 };
 use petgraph::{stable_graph::NodeIndex, Direction};
-use smt_log_parser::parsers::z3::inst_graph::{InstGraph, InstInfo, NodeData};
+use smt_log_parser::{parsers::z3::inst_graph::{InstGraph, InstInfo, NodeData}, items::QuantIdx};
 use std::fmt::Display;
 use yew::prelude::*;
 
@@ -11,6 +11,7 @@ use yew::prelude::*;
 pub enum Filter {
     MaxNodeIdx(usize),
     IgnoreTheorySolving,
+    IgnoreQuantifier(QuantIdx),
     MaxInsts(usize),
     Hide(NodeIndex),
     ShowNeighbours(NodeIndex, Direction),
@@ -22,6 +23,7 @@ impl Display for Filter {
         match self {
             Self::MaxNodeIdx(node_idx) => write!(f, "Only show nodes up to index {}", node_idx),
             Self::IgnoreTheorySolving => write!(f, "Ignore theory solving instantiations"),
+            Self::IgnoreQuantifier(qidx) => write!(f, "Ignore instantiations of quantifier {}", qidx),
             Self::MaxInsts(max) => write!(f, "Show the {} most expensive instantiations", max),
             Self::Hide(nidx) => write!(f, "Hide node {} and its descendants", nidx.index()),
             Self::ShowSourceTree(nidx) => write!(f, "Only show the ancestors of node {}", nidx.index()),
@@ -41,6 +43,9 @@ impl Filter {
             }
             Filter::IgnoreTheorySolving => {
                 graph.retain_nodes_and_reconnect(|node: &NodeData| !node.is_theory_inst)
+            }
+            Filter::IgnoreQuantifier(qidx) => {
+                graph.retain_nodes_and_reconnect(|node: &NodeData| node.quant_idx != qidx)
             }
             Filter::MaxInsts(n) => graph.keep_n_most_costly(n),
             Filter::Hide(nidx) => graph.remove_subtree_with_root(nidx),
