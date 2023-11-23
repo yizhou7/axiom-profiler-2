@@ -12,7 +12,7 @@ use crate::items::{InstIdx, QuantIdx, TermIdx};
 
 use super::z3parser::Z3Parser;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct NodeData {
     pub line_nr: usize,
     pub is_theory_inst: bool,
@@ -28,13 +28,13 @@ impl fmt::Debug for NodeData {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Default)]
 pub enum EdgeType {
-    Direct,
+    #[default] Direct,
     Indirect,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Default)]
 pub struct EdgeData {
     pub edge_type: EdgeType
 }
@@ -182,13 +182,12 @@ impl InstGraph {
         let edges_to_neighbours: Vec<EdgeIndex> = neighbours
             .iter()
             .map(|&neighbour|
-                self
-                .orig_graph
-                .edges_directed(neighbour, direction.opposite())
+                self.orig_graph.edges_directed(neighbour, Outgoing)
+                .chain(self.orig_graph.edges_directed(neighbour, Incoming))
                 .map(|e| e.id()))
             .flatten()
             .collect();
-        let new_inst_graph = self.orig_graph.filter_map(
+        let mut new_inst_graph = self.orig_graph.filter_map(
             |node, &node_data| {
                 if self.inst_graph.contains_node(node) || neighbours.contains(&node) {
                     Some(node_data)
@@ -206,6 +205,15 @@ impl InstGraph {
                 }
             },
         );
+        let indirect_edges = self
+            .inst_graph
+            .edge_indices()
+            .filter(|&e| self.inst_graph.edge_weight(e).unwrap().edge_type == EdgeType::Indirect) 
+            .map(|e| { let endpoints = self.inst_graph.edge_endpoints(e).unwrap();
+                (endpoints.0, endpoints.1, EdgeData { edge_type: EdgeType::Indirect})
+            });
+            // .collect::<Vec<(NodeIndex, NodeIndex, EdgeData)>>();
+        new_inst_graph.extend_with_edges(indirect_edges);
         self.inst_graph = new_inst_graph;
     }
 
@@ -244,6 +252,20 @@ impl InstGraph {
         } else {
             None
         }
+    }
+
+    pub fn node_has_filtered_neighbours(&self, node_idx: NodeIndex) -> bool {
+        let nr_of_neighbours = |graph: &StableGraph<NodeData, EdgeData>| 
+            graph.neighbors_directed(node_idx, Incoming)
+            .chain(graph.neighbors_directed(node_idx, Outgoing))
+            .count();
+        nr_of_neighbours(&self.inst_graph) < nr_of_neighbours(&self.orig_graph)
+        // let nr_children_in_filtered_graph = 
+        //     self.inst_graph.neighbors_directed(node_idx, Outgoing)
+        //     .chain(self.inst_graph.neighbors_directed(node_idx, Incoming))
+        //     .count();
+        // let nr_children_in_orig_graph = self.orig_graph.neighbors(node_idx).count();
+        // nr_children_in_filtered_graph < nr_children_in_orig_graph
     }
 
     fn compute_instantiation_graph(&mut self, parser: &Z3Parser) {
