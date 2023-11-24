@@ -19,7 +19,7 @@ jobs:
 
       - uses: actions/checkout@v2
 
-      - run: cd /${{ github.event.repository.name }}/axiom-profiler-GUI
+      - run: pwd 
       - run: trunk build --release --public-url /${{ github.event.repository.name }}/
 
       - uses: peaceiris/actions-gh-pages@v3
