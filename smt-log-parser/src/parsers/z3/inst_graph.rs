@@ -118,9 +118,9 @@ impl InstGraph {
         // descending order of the cost.
         // In case two instantiations have the same cost, the instantiation with the lower
         // line number comes first in the order (is greater), or mathematically:
+        // inst_b > inst_a iff (cost_b > cost_a or (cost_b = cost_a and line_nr_b < line_nr_a))
         // This is a total order since the line numbers are always guaranteed to be distinct
         // integers.
-        // inst_b > inst_a iff (cost_b > cost_a or (cost_b = cost_a and line_nr_b < line_nr_a))
         let mut most_costly_insts: Vec<NodeIndex> = self.inst_graph.node_indices().collect();
         most_costly_insts.sort_by(|node_a, node_b| {
             let node_a_data = self.inst_graph.node_weight(*node_a).unwrap();
