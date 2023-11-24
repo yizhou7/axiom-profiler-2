@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v2
 
       - run: |
-        cd axiom-profiler-GUI
+        cd /${{ github.event.repository.name }}/axiom-profiler-GUI
         trunk build --release 
         # trunk build --release --public-url /${{ github.event.repository.name }}/
 
