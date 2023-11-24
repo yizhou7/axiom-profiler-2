@@ -19,10 +19,11 @@ jobs:
 
       - uses: actions/checkout@v2
 
-      - run: |
-        cd /${{ github.event.repository.name }}/axiom-profiler-GUI
-        trunk build --release 
-        # trunk build --release --public-url /${{ github.event.repository.name }}/
+      - name: Change to axiom-profiler-GUI directory
+      - run: cd /${{ github.event.repository.name }}/axiom-profiler-GUI
+
+      - name: Build with trunk
+      - run: trunk build --release --public-url /${{ github.event.repository.name }}/
 
       - uses: peaceiris/actions-gh-pages@v3
         if: github.ref == 'refs/heads/main'
