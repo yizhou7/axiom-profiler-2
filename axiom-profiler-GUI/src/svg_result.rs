@@ -116,7 +116,7 @@ impl Component for SVGResult {
                                 format!("label=\"{}\" style=\"{}\", shape=oval, fillcolor=\"{}\", fontcolor=black ",
                                         // node_data.line_nr,
                                         node_idx.index(),
-                                        match self.inst_graph.node_has_filtered_neighbours(node_idx) {
+                                        match self.inst_graph.node_has_filtered_direct_neighbours(node_idx) {
                                             true => "filled,diagonals",
                                             false => "filled",
                                         },

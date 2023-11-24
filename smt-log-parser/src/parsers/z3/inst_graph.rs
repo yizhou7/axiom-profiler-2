@@ -36,7 +36,8 @@ pub enum EdgeType {
 
 #[derive(Clone, Copy, PartialEq, Default)]
 pub struct EdgeData {
-    pub edge_type: EdgeType
+    pub edge_type: EdgeType,
+    hidden_node: Option<NodeIndex>,
 }
 
 impl fmt::Debug for EdgeData {
@@ -65,6 +66,7 @@ pub struct InstGraph {
     pub inst_graph: StableGraph<NodeData, EdgeData>, // same as orig_inst_graph but possibly filtered
     orig_graph: StableGraph<NodeData, EdgeData>,
     node_of_line_nr: FxHashMap<usize, NodeIndex>, // line number => node-index
+    indirect_edges_of_hidden_node: FxHashMap<NodeIndex, Vec<EdgeIndex>>,  // stores for each hidden node which indirect edges were added 
 }
 
 impl InstGraph {
@@ -85,7 +87,7 @@ impl InstGraph {
             .node_indices()
             .filter(|&node_idx| !retain(self.inst_graph.node_weight(node_idx).unwrap()))
             .collect();
-        let mut edges_to_add: Vec<(NodeIndex, NodeIndex)> = Vec::new();
+        let mut edges_to_add: Vec<(NodeIndex, NodeIndex, NodeIndex)> = Vec::new();
         for &node in &nodes_to_remove {
             let preds: Vec<NodeIndex> =
                 self.inst_graph.neighbors_directed(node, Incoming).collect();
@@ -95,13 +97,19 @@ impl InstGraph {
             for &pred in &preds {
                 for &succ in &succs {
                     if !nodes_to_remove.contains(&pred) && !nodes_to_remove.contains(&succ) {
-                        edges_to_add.push((pred, succ));
+                        edges_to_add.push((pred, node, succ));
                     }
                 }
             }
         }
-        for (from, to) in &edges_to_add {
-            self.inst_graph.add_edge(*from, *to, EdgeData { edge_type: EdgeType::Indirect });
+        for (pred, node, succ) in &edges_to_add {
+            let indirect_edge = self.inst_graph.add_edge(*pred, *succ, EdgeData { edge_type: EdgeType::Indirect, hidden_node: Some(*node) });
+            if let Some(indirect_edges) = self.indirect_edges_of_hidden_node.get_mut(node) {
+                indirect_edges.push(indirect_edge);
+            } else {
+                self.indirect_edges_of_hidden_node.insert(*node, vec![indirect_edge]);
+            }
+            log!("Adding edge ", pred.index(), succ.index(), " with index ", indirect_edge.index(), "to the indirect edges for node ", node.index());
         }
     }
 
@@ -174,12 +182,7 @@ impl InstGraph {
             .orig_graph
             .neighbors_directed(node, direction)
             .collect();
-        // if we are adding all children of node  to the graph (outgoing neighbours),
-        // we also add all other incoming edges to the children
-        // if we are adding all parents of node to the graph (incoming neighbours), 
-        // we also add all other outgoing edges from the parents
-        // hence we iterate over all neighbours and use direction.opposite() 
-        let edges_to_neighbours: Vec<EdgeIndex> = neighbours
+        let neighbours_edges: Vec<EdgeIndex> = neighbours
             .iter()
             .map(|&neighbour|
                 self.orig_graph.edges_directed(neighbour, Outgoing)
@@ -197,7 +200,7 @@ impl InstGraph {
             },
             |edge, &edge_data| {
                 if self.inst_graph.edge_indices().any(|e| e == edge)
-                    || edges_to_neighbours.contains(&edge)
+                    || neighbours_edges.contains(&edge)
                 {
                     Some(edge_data)
                 } else {
@@ -205,15 +208,25 @@ impl InstGraph {
                 }
             },
         );
-        let indirect_edges = self
+        let redundant_indirect_edges: Vec<EdgeIndex> = neighbours
+            .iter()
+            .filter_map(|node| self.indirect_edges_of_hidden_node.remove(node))
+            .flatten()
+            .collect();
+        let visible_indirect_edges = self
             .inst_graph
             .edge_indices()
-            .filter(|&e| self.inst_graph.edge_weight(e).unwrap().edge_type == EdgeType::Indirect) 
+            .filter(|&e| self.inst_graph.edge_weight(e).unwrap().edge_type == EdgeType::Indirect && !redundant_indirect_edges.contains(&e)) 
             .map(|e| { let endpoints = self.inst_graph.edge_endpoints(e).unwrap();
-                (endpoints.0, endpoints.1, EdgeData { edge_type: EdgeType::Indirect})
+                (endpoints.0, endpoints.1, self.inst_graph.edge_weight(e).unwrap())
             });
             // .collect::<Vec<(NodeIndex, NodeIndex, EdgeData)>>();
-        new_inst_graph.extend_with_edges(indirect_edges);
+        for (from, to, data) in visible_indirect_edges {
+            let new_idx = new_inst_graph.add_edge(from, to, *data);
+            let hidden_node = data.hidden_node.unwrap();
+            let hidden_edges = self.indirect_edges_of_hidden_node.get_mut(&hidden_node).unwrap();
+            hidden_edges.push(new_idx);
+        }
         self.inst_graph = new_inst_graph;
     }
 
@@ -254,18 +267,13 @@ impl InstGraph {
         }
     }
 
-    pub fn node_has_filtered_neighbours(&self, node_idx: NodeIndex) -> bool {
-        let nr_of_neighbours = |graph: &StableGraph<NodeData, EdgeData>| 
-            graph.neighbors_directed(node_idx, Incoming)
-            .chain(graph.neighbors_directed(node_idx, Outgoing))
+    pub fn node_has_filtered_direct_neighbours(&self, node_idx: NodeIndex) -> bool {
+        let nr_of_direct_neighbours = |graph: &StableGraph<NodeData, EdgeData>| 
+            graph.edges_directed(node_idx, Incoming)
+            .chain(graph.edges_directed(node_idx, Outgoing))
+            .filter(|e| e.weight().edge_type == EdgeType::Direct)
             .count();
-        nr_of_neighbours(&self.inst_graph) < nr_of_neighbours(&self.orig_graph)
-        // let nr_children_in_filtered_graph = 
-        //     self.inst_graph.neighbors_directed(node_idx, Outgoing)
-        //     .chain(self.inst_graph.neighbors_directed(node_idx, Incoming))
-        //     .count();
-        // let nr_children_in_orig_graph = self.orig_graph.neighbors(node_idx).count();
-        // nr_children_in_filtered_graph < nr_children_in_orig_graph
+        nr_of_direct_neighbours(&self.inst_graph) < nr_of_direct_neighbours(&self.orig_graph)
     }
 
     fn compute_instantiation_graph(&mut self, parser: &Z3Parser) {
@@ -296,7 +304,6 @@ impl InstGraph {
     }
 
     fn fresh_line_nr(&self, line_nr: usize) -> bool {
-        // self.orig_inst_graph.node_weights().all(|&line| line != line_nr)
         self.inst_graph
             .node_weights()
             .all(|node| node.line_nr != line_nr)
@@ -316,8 +323,8 @@ impl InstGraph {
             self.node_of_line_nr.get(&from),
             self.node_of_line_nr.get(&to),
         ) {
-            self.inst_graph.add_edge(from_node_idx, to_node_idx, EdgeData { edge_type: EdgeType::Direct });
-            self.orig_graph.add_edge(from_node_idx, to_node_idx, EdgeData { edge_type: EdgeType::Direct });
+            self.inst_graph.add_edge(from_node_idx, to_node_idx, EdgeData { edge_type: EdgeType::Direct, hidden_node: None });
+            self.orig_graph.add_edge(from_node_idx, to_node_idx, EdgeData { edge_type: EdgeType::Direct, hidden_node: None });
         }
     }
 }
