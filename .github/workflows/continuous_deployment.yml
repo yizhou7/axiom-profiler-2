@@ -8,6 +8,9 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
     steps:
       - uses: actions-rs/toolchain@v1
         with:
