@@ -3,7 +3,10 @@ use crate::{
     selected_node::SelectedNode,
 };
 use petgraph::{stable_graph::NodeIndex, Direction};
-use smt_log_parser::{parsers::z3::inst_graph::{InstGraph, InstInfo, NodeData}, items::QuantIdx};
+use smt_log_parser::{
+    items::QuantIdx,
+    parsers::z3::inst_graph::{InstGraph, InstInfo, NodeData},
+};
 use std::fmt::Display;
 use yew::prelude::*;
 
@@ -23,10 +26,14 @@ impl Display for Filter {
         match self {
             Self::MaxNodeIdx(node_idx) => write!(f, "Only show nodes up to index {}", node_idx),
             Self::IgnoreTheorySolving => write!(f, "Ignore theory solving instantiations"),
-            Self::IgnoreQuantifier(qidx) => write!(f, "Ignore instantiations of quantifier {}", qidx),
+            Self::IgnoreQuantifier(qidx) => {
+                write!(f, "Ignore instantiations of quantifier {}", qidx)
+            }
             Self::MaxInsts(max) => write!(f, "Show the {} most expensive instantiations", max),
             Self::Hide(nidx) => write!(f, "Hide node {} and its descendants", nidx.index()),
-            Self::ShowSourceTree(nidx) => write!(f, "Only show the ancestors of node {}", nidx.index()),
+            Self::ShowSourceTree(nidx) => {
+                write!(f, "Only show the ancestors of node {}", nidx.index())
+            }
             Self::ShowNeighbours(nidx, direction) => match direction {
                 Direction::Incoming => write!(f, "Show the parents of node {}", nidx.index()),
                 Direction::Outgoing => write!(f, "Show the children of node {}", nidx.index()),

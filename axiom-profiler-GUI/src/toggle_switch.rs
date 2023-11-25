@@ -21,16 +21,19 @@ pub fn toggle_switch(props: &ToggleSwitchProps) -> Html {
         let dep = props.dependency.clone();
         let input_value = props.input_value.clone();
         let input_ref = input_ref.clone();
-        use_effect_with_deps({
-            let input_value = input_value.clone();
-            move |_| {
-                input_value.set(true);
-                let input = input_ref
-                    .cast::<HtmlInputElement>()
-                    .expect("div_ref not attached to div element");
-                input.set_checked(true);
-            }
-        }, dep);
+        use_effect_with_deps(
+            {
+                let input_value = input_value.clone();
+                move |_| {
+                    input_value.set(true);
+                    let input = input_ref
+                        .cast::<HtmlInputElement>()
+                        .expect("div_ref not attached to div element");
+                    input.set_checked(true);
+                }
+            },
+            dep,
+        );
     }
     html! {
         <div>

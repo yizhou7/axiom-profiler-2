@@ -4,13 +4,14 @@ use crate::{
     graph::Graph,
     graph_filters::Filter,
 };
+use material_yew::WeakComponentLink;
 use num_format::{Locale, ToFormattedString};
 use petgraph::dot::{Config, Dot};
 use smt_log_parser::{
     items::QuantIdx,
     parsers::{
         z3::{
-            inst_graph::{InstGraph, InstInfo, EdgeType},
+            inst_graph::{EdgeType, InstGraph, InstInfo},
             z3parser::Z3Parser,
         },
         LogParser,
@@ -20,7 +21,6 @@ use std::num::NonZeroUsize;
 use viz_js::VizInstance;
 use web_sys::window;
 use yew::prelude::*;
-use material_yew::WeakComponentLink;
 
 pub const NODE_LIMIT: usize = 125;
 
@@ -105,13 +105,13 @@ impl Component for SVGResult {
                         Dot::with_attr_getters(
                             filtered_graph,
                             &[Config::EdgeNoLabel, Config::NodeNoLabel],
-                            &|_, edge_data| 
-                                format!("style={}",
-                                    match edge_data.weight().edge_type {
-                                        EdgeType::Direct => "solid",
-                                        EdgeType::Indirect => "dashed",
-                                    } 
-                                    ),
+                            &|_, edge_data| format!(
+                                "style={}",
+                                match edge_data.weight().edge_type {
+                                    EdgeType::Direct => "solid",
+                                    EdgeType::Indirect => "dashed",
+                                }
+                            ),
                             &|_, (node_idx, node_data)| {
                                 format!("label=\"{}\" style=\"{}\", shape=oval, fillcolor=\"{}\", fontcolor=black ",
                                         // node_data.line_nr,
