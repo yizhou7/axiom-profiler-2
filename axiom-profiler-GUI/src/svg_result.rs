@@ -152,7 +152,11 @@ impl Component for SVGResult {
                     .inst_graph
                     .node_count()
                     .to_formatted_string(&Locale::en);
-                let message = format!("Warning: The graph you are about to render contains {} nodes, rendering might be slow. Do you want to proceed?", node_count);
+                let edge_count = self
+                    .inst_graph
+                    .edge_count()
+                    .to_formatted_string(&Locale::en);
+                let message = format!("Warning: The graph you are about to render contains {} nodes and {} edges, rendering might be slow. Do you want to proceed?", node_count, edge_count);
                 let result = window.confirm_with_message(&message);
                 match result {
                     Ok(true) => {
@@ -196,8 +200,8 @@ impl Component for SVGResult {
 
     fn view(&self, ctx: &Context<Self>) -> Html {
         let on_node_select = ctx.link().callback(Msg::UpdateSelectedNode);
-        let node_count_preview = html! {
-            <h4>{format!{"The filtered graph contains {} nodes", self.inst_graph.node_count()}}</h4>
+        let node_and_edge_count_preview = html! {
+            <h4>{format!{"The filtered graph contains {} nodes and {} edges", self.inst_graph.node_count(), self.inst_graph.edge_count()}}</h4>
         };
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
@@ -215,7 +219,7 @@ impl Component for SVGResult {
                         dependency={ctx.props().trace_file_text.clone()}
                     />
                 </ContextProvider<Option<InstInfo>>>
-                {node_count_preview}
+                {node_and_edge_count_preview}
                 </div>
                 <Graph
                     svg_text={self.svg_text.clone()}

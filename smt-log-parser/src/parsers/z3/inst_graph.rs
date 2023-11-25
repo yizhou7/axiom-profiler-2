@@ -262,6 +262,10 @@ impl InstGraph {
         self.inst_graph.node_count()
     }
 
+    pub fn edge_count(&self) -> usize {
+        self.inst_graph.edge_count()
+    }
+
     pub fn get_instantiation_info(&self, node_index: usize, parser: &Z3Parser) -> Option<InstInfo> {
         let NodeData { inst_idx, .. } = self
             .inst_graph
