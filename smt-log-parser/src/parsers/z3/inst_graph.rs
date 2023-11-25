@@ -220,7 +220,6 @@ impl InstGraph {
             .map(|e| { let endpoints = self.inst_graph.edge_endpoints(e).unwrap();
                 (endpoints.0, endpoints.1, self.inst_graph.edge_weight(e).unwrap())
             });
-            // .collect::<Vec<(NodeIndex, NodeIndex, EdgeData)>>();
         for (from, to, data) in visible_indirect_edges {
             let new_idx = new_inst_graph.add_edge(from, to, *data);
             let hidden_node = data.hidden_node.unwrap();
