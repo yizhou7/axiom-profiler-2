@@ -112,12 +112,13 @@ impl Component for FileDataComponent {
         });
         html! {
             <div>
-                <h2>{"Choose a log file:"}</h2>
-                <div>
+                <div style="height: 15vh;">
+                    <h1>{"Axiom Profiler"}</h1>
+                    <h2>{"Choose a log file:"}</h2>
                     <input type="file" accept=".log" onchange={on_change} multiple=false/>
                 </div>
-                <div>
-                { for self.files.iter().map(|f| Self::view_file(f))}
+                <div style="display: flex; ">
+                    { for self.files.iter().map(|f| Self::view_file(f))}
                 </div>
             </div>
         }
@@ -128,9 +129,7 @@ impl FileDataComponent {
     fn view_file(data: &str) -> Html {
         log::debug!("Viewing file");
         html! {
-            <div>
             <SVGResult trace_file_text={AttrValue::from(data.to_string())}/>
-            </div>
         }
     }
 }
@@ -152,10 +151,10 @@ impl ParserData {
 fn app() -> Html {
     html! {
         <>
-        <div>
-            <h1>{"Axiom Profiler"}</h1>
+        // <div>
+            // <h1>{"Axiom Profiler"}</h1>
             <FileDataComponent/>
-        </div>
+        // </div>
         </>
     }
 }

@@ -101,8 +101,8 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
                 <button onclick={add_max_line_nr_filter}>{"Add"}</button>
             </div>
             <div>
-                <p>{"Ignore theory-solving instantiations"}</p>
-                <button onclick={add_theory_filter}>{"Add"}</button>
+                <label for="theory_button">{"Ignore theory-solving instantiations"}</label>
+                <button onclick={add_theory_filter} id="theory_button">{"Add"}</button>
             </div>
             <div>
                 <UsizeInput

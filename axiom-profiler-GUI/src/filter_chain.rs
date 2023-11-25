@@ -99,8 +99,8 @@ impl yew::html::Component for FilterChain {
             .enumerate()
             .map(|(idx, f)| html! {
                 <div>
-                    <p>{format!("{}. {f}", idx+1)}</p>
-                    <button onclick={ctx.link().callback(move |_| Msg::RemoveNthFilter(idx))}>{"Remove filter"}</button>
+                    <label for={format!("remove_{}", idx)}>{format!("{}. {f}", idx+1)}</label>
+                    <button onclick={ctx.link().callback(move |_| Msg::RemoveNthFilter(idx))} id={format!("remove_{}",idx)}>{"Remove filter"}</button>
                 </div>
             })
             .collect();
@@ -108,15 +108,17 @@ impl yew::html::Component for FilterChain {
 
         let add_filter = ctx.link().callback(Msg::AddFilter);
         html!(
-            <div>
+            <>
                 <GraphFilter
                     add_filter={add_filter.clone()}
                     dependency={ctx.props().dependency.clone()}
                 />
                 <h2>{"Filter chain:"}</h2>
-                <button onclick={reset_filters}>{"Reset to default"}</button>
                 {for filter_chain}
-            </div>
+                <div>
+                    <button onclick={reset_filters}>{"Reset to default"}</button>
+                </div>
+            </>
         )
     }
 }

@@ -208,7 +208,7 @@ impl Component for SVGResult {
         let render_graph = ctx.link().callback(Msg::RenderGraph);
         html! {
             <>
-                <div style="width: 50%; float: left;">
+                <div style="flex: 30%; height: 85vh; overflow-y: auto; ">
                 <ContextProvider<Option<InstInfo>> context={self.selected_inst.clone()} >
                     <FilterChain
                         apply_filter={apply_filter.clone()}

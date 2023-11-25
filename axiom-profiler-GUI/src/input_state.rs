@@ -104,9 +104,9 @@ pub fn integer_input(props: &UsizeInputProps) -> Html {
     }
 
     html! {
-        <div>
+        <>
             <label for="input">{props.label.to_string()}</label>
             <input ref={input_ref} type="number" onkeypress={set_value_on_enter} onblur={set_value_on_blur} id="input" />
-        </div>
+        </>
     }
 }

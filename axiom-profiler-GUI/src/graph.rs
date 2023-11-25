@@ -73,7 +73,7 @@ pub fn graph(props: &GraphProps) -> Html {
         );
     }
     html! {
-        <div ref={div_ref} style="width: 50%; float: right;">
+        <div ref={div_ref} id="graph_div" style="flex: 70%; height: 85vh; overflow: auto; ">
             {svg_result}
         </div>
     }

@@ -36,9 +36,11 @@ pub fn toggle_switch(props: &ToggleSwitchProps) -> Html {
         );
     }
     html! {
-        <div>
+        // <div>
+        <>
             <label for="input">{props.label.to_string()}</label>
             <input ref={input_ref} type="checkbox" checked={*props.input_value} onclick={toggle} id="input" />
-        </div>
+        // </div>
+        </>
     }
 }

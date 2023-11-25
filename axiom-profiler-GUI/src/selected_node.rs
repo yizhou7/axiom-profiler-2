@@ -44,7 +44,8 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
         selected_inst.node_index.index()
     );
     html! {
-    <div>
+    // <div>
+    <>
         <h4>{selected_node_text}</h4>
         <button onclick={hide_node}>{"Hide"}</button>
         <button onclick={show_children}>{"Show children"}</button>
@@ -61,6 +62,7 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
             // <li><h4>{"Variable binding information: "}</h4></li>
             // <li><h4>{"Involved equalities: "}</h4></li>
         </ul>
-    </div>
+    // </div>
+    </>
     }
 }
