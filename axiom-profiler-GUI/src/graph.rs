@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::Closure;
 use wasm_bindgen::JsCast;
-use web_sys::{Event, HtmlElement};
+use web_sys::{Event, HtmlElement, SvgsvgElement};
 use yew::prelude::*;
 use yew::{function_component, html, use_node_ref, Html};
 
@@ -17,7 +17,31 @@ pub fn graph(props: &GraphProps) -> Html {
     // let graph_state = use_reducer(GraphState::default);
     let svg_result = Html::from_html_unchecked(props.svg_text.clone());
     let div_ref = use_node_ref();
-    let zoom_factor = use_reducer(InputValue::default);
+    // let zoom_factor = use_reducer(InputValue::default);
+    let zoom_factor = use_reducer(|| InputValue::from(100));
+    let trigger = use_force_update();
+
+    {
+        let div_ref = div_ref.clone();
+        let zoom_factor = zoom_factor.value as f32 / 100.0;
+        let svg_text = props.svg_text.clone();
+        use_effect_with_deps(
+            move |_| {
+                let div = div_ref
+                    .cast::<HtmlElement>()
+                    .expect("div_ref not attached to div element");
+                // setting the transform-origin to the top left corner of the surrounding div
+                // we know there is only a single SVG element, hence can just take item(0)
+                let svg_element = div.get_elements_by_tag_name("svg").item(0);
+                if let Some(el) = svg_element {
+                    let svg_el = el.dyn_into::<SvgsvgElement>().ok().unwrap();
+                    let _ = svg_el.set_attribute("transform-origin", "top left");
+                    web_sys::console::log_1(&"Updating the transform-attribute of svg".into());
+                    let _ = svg_el.set_attribute("style", format!("transform: scale({});", zoom_factor).as_str());
+                }
+                trigger.force_update();
+            }, (svg_text, zoom_factor))
+    }
 
     {
         // Whenever SVG text changes, need to attach event listeners to new nodes
@@ -77,17 +101,17 @@ pub fn graph(props: &GraphProps) -> Html {
     }
     html! {
         <div style="flex: 70%; height: 85vh; overflow: auto; position: relative;">
-            <div style="position: sticky; top: 0px; left: 0px;">
+            <div style="position: sticky; top: 0px; left: 0px; z-index: 1">
                 // <input type="text" placeholder="100%" />
                 <UsizeInput
-                    label={"Zoom factor: "}
+                    label={"Zoom factor in %: "}
                     dependency={props.svg_text.clone()}
                     input_value={zoom_factor}
                     default_value={100}
-                    placeholder={"1"}
+                    placeholder={"enter int >= 0"}
                 />
             </div>
-            <div ref={div_ref} id="graph_div">
+            <div ref={div_ref}>
                 {svg_result}
             </div>
         </div>

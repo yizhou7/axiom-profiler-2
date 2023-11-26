@@ -17,6 +17,12 @@ impl Default for InputValue {
     }
 }
 
+impl From<usize> for InputValue {
+    fn from(value: usize) -> Self {
+        Self { value }
+    }
+}
+
 impl Reducible for InputValue {
     type Action = InputAction;
 
