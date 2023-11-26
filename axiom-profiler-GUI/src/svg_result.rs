@@ -2,7 +2,7 @@ use self::colors::HSVColour;
 use crate::{
     filter_chain::{FilterChain, Msg as FilterChainMsg},
     graph::Graph,
-    graph_filters::Filter,
+    graph_filters::Filter, graph_struct::GraphStruct,
 };
 use material_yew::WeakComponentLink;
 use num_format::{Locale, ToFormattedString};
@@ -221,9 +221,9 @@ impl Component for SVGResult {
                 </ContextProvider<Option<InstInfo>>>
                 {node_and_edge_count_preview}
                 </div>
-                <Graph
-                    svg_text={self.svg_text.clone()}
-                    update_selected_node={on_node_select.clone()}
+                <GraphStruct
+                    svg_text={&self.svg_text}
+                    update_selected_node={&on_node_select}
                 />
             </>
         }

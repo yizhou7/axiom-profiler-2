@@ -16,6 +16,7 @@ mod input_state;
 mod selected_node;
 mod svg_result;
 mod toggle_switch;
+mod graph_struct;
 // mod select_dropdown;
 pub enum Msg {
     LoadedBytes(String, Vec<u8>),
