@@ -4,6 +4,8 @@ use web_sys::{Event, HtmlElement};
 use yew::prelude::*;
 use yew::{function_component, html, use_node_ref, Html};
 
+use crate::input_state::{UsizeInput, InputValue};
+
 #[derive(Properties, PartialEq, Default)]
 pub struct GraphProps {
     pub svg_text: AttrValue,
@@ -15,6 +17,7 @@ pub fn graph(props: &GraphProps) -> Html {
     // let graph_state = use_reducer(GraphState::default);
     let svg_result = Html::from_html_unchecked(props.svg_text.clone());
     let div_ref = use_node_ref();
+    let zoom_factor = use_reducer(InputValue::default);
 
     {
         // Whenever SVG text changes, need to attach event listeners to new nodes
@@ -73,8 +76,20 @@ pub fn graph(props: &GraphProps) -> Html {
         );
     }
     html! {
-        <div ref={div_ref} id="graph_div" style="flex: 70%; height: 85vh; overflow: auto; ">
-            {svg_result}
+        <div style="flex: 70%; height: 85vh; overflow: auto; position: relative;">
+            <div style="position: sticky; top: 0px; left: 0px;">
+                // <input type="text" placeholder="100%" />
+                <UsizeInput
+                    label={"Zoom factor: "}
+                    dependency={props.svg_text.clone()}
+                    input_value={zoom_factor}
+                    default_value={100}
+                    placeholder={"1"}
+                />
+            </div>
+            <div ref={div_ref} id="graph_div">
+                {svg_result}
+            </div>
         </div>
     }
 }

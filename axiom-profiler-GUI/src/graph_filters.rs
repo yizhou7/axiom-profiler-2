@@ -97,6 +97,7 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
                     dependency={props.dependency.clone()}
                     input_value={max_node_idx}
                     default_value={usize::MAX}
+                    placeholder={""}
                 />
                 <button onclick={add_max_line_nr_filter}>{"Add"}</button>
             </div>
@@ -110,6 +111,7 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
                     dependency={props.dependency.clone()}
                     input_value={max_instantiations}
                     default_value={crate::svg_result::NODE_LIMIT}
+                    placeholder={""}
                 />
                 <button onclick={add_max_insts_filter}>{"Add"}</button>
             </div>

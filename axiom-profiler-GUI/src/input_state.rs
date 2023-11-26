@@ -33,6 +33,7 @@ pub struct UsizeInputProps {
     pub dependency: AttrValue,
     pub input_value: UseReducerHandle<InputValue>,
     pub default_value: usize,
+    pub placeholder: AttrValue,
 }
 
 /// Function component for input fields that accept usize
@@ -102,11 +103,12 @@ pub fn integer_input(props: &UsizeInputProps) -> Html {
             dep,
         );
     }
+    let placeholder = props.placeholder.to_string(); 
 
     html! {
         <>
             <label for="input">{props.label.to_string()}</label>
-            <input ref={input_ref} type="number" onkeypress={set_value_on_enter} onblur={set_value_on_blur} id="input" />
+            <input ref={input_ref} type="number" onkeypress={set_value_on_enter} onblur={set_value_on_blur} id="input" {placeholder}/>
         </>
     }
 }
