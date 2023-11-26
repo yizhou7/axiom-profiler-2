@@ -108,7 +108,7 @@ pub fn graph(props: &GraphProps) -> Html {
                     dependency={props.svg_text.clone()}
                     input_value={zoom_factor}
                     default_value={100}
-                    placeholder={"enter int >= 0"}
+                    placeholder={"100"}
                 />
             </div>
             <div ref={div_ref}>
