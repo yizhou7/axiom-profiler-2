@@ -1,8 +1,7 @@
 use self::colors::HSVColour;
 use crate::{
     filter_chain::{FilterChain, Msg as FilterChainMsg},
-    graph::Graph,
-    graph_filters::Filter, graph_struct::GraphStruct,
+    graph_filters::Filter, graph_container::GraphContainer,
 };
 use material_yew::WeakComponentLink;
 use num_format::{Locale, ToFormattedString};
@@ -56,6 +55,7 @@ pub struct SVGResult {
     svg_text: AttrValue,
     selected_inst: Option<InstInfo>,
     filter_chain_link: WeakComponentLink<FilterChain>,
+    on_node_select: Callback<usize>,
 }
 
 #[derive(Properties, PartialEq)]
@@ -79,6 +79,7 @@ impl Component for SVGResult {
             svg_text: AttrValue::default(),
             selected_inst: None,
             filter_chain_link: WeakComponentLink::default(),
+            on_node_select: ctx.link().callback(Msg::UpdateSelectedNode),
         }
     }
 
@@ -199,7 +200,7 @@ impl Component for SVGResult {
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {
-        let on_node_select = ctx.link().callback(Msg::UpdateSelectedNode);
+        // let on_node_select = ctx.link().callback(Msg::UpdateSelectedNode);
         let node_and_edge_count_preview = html! {
             <h4>{format!{"The filtered graph contains {} nodes and {} edges", self.inst_graph.node_count(), self.inst_graph.edge_count()}}</h4>
         };
@@ -214,16 +215,15 @@ impl Component for SVGResult {
                         apply_filter={apply_filter.clone()}
                         reset_graph={reset_graph.clone()}
                         render_graph={render_graph.clone()}
-                        // set_to_previous={self.set_to_previous_filters}
                         weak_link={self.filter_chain_link.clone()}
                         dependency={ctx.props().trace_file_text.clone()}
                     />
                 </ContextProvider<Option<InstInfo>>>
                 {node_and_edge_count_preview}
                 </div>
-                <GraphStruct
+                <GraphContainer
                     svg_text={&self.svg_text}
-                    update_selected_node={&on_node_select}
+                    update_selected_node={&self.on_node_select}
                 />
             </>
         }
