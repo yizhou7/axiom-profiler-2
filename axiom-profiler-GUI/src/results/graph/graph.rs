@@ -62,9 +62,25 @@ pub fn graph(props: &GraphProps) -> Html {
                             .expect("Failed to select title element")
                             .unwrap();
                         let title_content = title_element.text_content().unwrap();
+                        let ellipse = node
+                            .query_selector("ellipse")
+                            .expect("Failed to select title element")
+                            .unwrap();
                         let node_index = title_content.parse::<usize>().unwrap();
                         let callback = callback.clone();
                         let closure: Closure<dyn Fn(Event)> = Closure::new(move |_: Event| {
+                            // the selected node should become bold whenever it's clicked on the first time 
+                            // after that it should also toggle between bold and normal when the user repeatedly
+                            // clicks on the node
+                            let current_stroke_width = ellipse.get_attribute("stroke-width"); 
+                            match current_stroke_width {
+                                None => {let _ = ellipse.set_attribute("stroke-width", "3");},
+                                Some(ref width) => match width.parse::<usize>() {
+                                    Ok(1) => {let _ = ellipse.set_attribute("stroke-width", "3");},
+                                    Ok(3) => {let _ = ellipse.set_attribute("stroke-width", "1");},
+                                    _ => (),
+                                }
+                            };
                             callback.emit(node_index);
                         });
                         // attach event listener to node
