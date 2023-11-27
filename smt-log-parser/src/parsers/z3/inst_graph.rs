@@ -337,15 +337,9 @@ impl InstGraph {
         }
     }
 
-    fn fresh_line_nr(&self, line_nr: usize) -> bool {
-        self.inst_graph
-            .node_weights()
-            .all(|node| node.line_nr != line_nr)
-    }
-
     fn add_node(&mut self, node_data: NodeData) {
         let line_nr = node_data.line_nr;
-        if self.fresh_line_nr(line_nr) {
+        if !self.node_of_line_nr.contains_key(&line_nr) {
             let node = self.inst_graph.add_node(node_data);
             self.orig_graph.add_node(node_data);
             self.node_of_line_nr.insert(line_nr, node);
