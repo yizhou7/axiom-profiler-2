@@ -57,14 +57,15 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
             }
         })
     };
-    let selected_nodes = props
+    let mut selected_nodes = props
         .selected_nodes
         .iter()
         .map(|inst| format!("{}", inst.node_index.index()))
         .collect::<Vec<String>>()
         .join(", ");
+    selected_nodes.push('.');
     let selected_nodes_text = format!(
-        "You selected node(s) {} \n Here are available actions: ",
+        "You selected node(s) {} Here are available actions: ",
         selected_nodes
     );
     let selected_nodes_info: Vec<VNode> = props
