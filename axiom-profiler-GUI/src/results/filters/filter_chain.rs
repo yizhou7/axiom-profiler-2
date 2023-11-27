@@ -1,7 +1,5 @@
-use crate::{
-    graph_filters::{Filter, GraphFilter},
-    svg_result::{UserPermission, NODE_LIMIT},
-};
+use super::graph_filters::{Filter, GraphFilter};
+use super::super::svg_result::{UserPermission, NODE_LIMIT};
 use gloo::console::log;
 use yew::prelude::*;
 // use gloo_console::log;

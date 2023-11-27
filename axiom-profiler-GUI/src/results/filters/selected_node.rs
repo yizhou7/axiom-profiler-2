@@ -2,7 +2,7 @@ use petgraph::Direction::{Incoming, Outgoing};
 use smt_log_parser::parsers::z3::inst_graph::InstInfo;
 use yew::prelude::*;
 
-use crate::graph_filters::Filter;
+use super::graph_filters::Filter;
 
 #[derive(Properties, PartialEq)]
 pub struct SelectedNodeProps {

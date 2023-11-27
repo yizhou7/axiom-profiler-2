@@ -1,7 +1,7 @@
 use crate::{
-    input_state::{InputValue, UsizeInput},
-    selected_node::SelectedNode,
+    utils::input_state::{InputValue, UsizeInput},
 };
+use super::selected_node::SelectedNode;
 use petgraph::{stable_graph::NodeIndex, Direction};
 use smt_log_parser::{
     items::QuantIdx,
@@ -110,7 +110,7 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
                     label={"Render the n most expensive instantiations where n = "}
                     dependency={props.dependency.clone()}
                     input_value={max_instantiations}
-                    default_value={crate::svg_result::NODE_LIMIT}
+                    default_value={super::super::svg_result::NODE_LIMIT}
                     placeholder={""}
                 />
                 <button onclick={add_max_insts_filter}>{"Add"}</button>

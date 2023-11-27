@@ -6,17 +6,20 @@ use wasm_streams::ReadableStream;
 use web_sys::{Event, HtmlInputElement};
 use yew::prelude::*;
 use yew_router::prelude::*;
+use results::svg_result::SVGResult;
 
-use crate::svg_result::SVGResult;
+// use crate::svg_result::SVGResult;
 
-mod filter_chain;
-mod graph;
-mod graph_filters;
-mod input_state;
-mod selected_node;
-mod svg_result;
-mod toggle_switch;
-mod graph_container;
+// mod filter_chain;
+// mod graph;
+// mod graph_filters;
+// mod input_state;
+// mod selected_node;
+// mod svg_result;
+// mod toggle_switch;
+// mod graph_container;
+mod results;
+mod utils;
 // mod select_dropdown;
 pub enum Msg {
     LoadedBytes(String, Vec<u8>),

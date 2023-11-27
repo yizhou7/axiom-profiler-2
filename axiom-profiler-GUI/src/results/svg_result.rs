@@ -1,8 +1,9 @@
 use self::colors::HSVColour;
-use crate::{
+use super::filters::{
     filter_chain::{FilterChain, Msg as FilterChainMsg},
-    graph_filters::Filter, graph_container::GraphContainer,
+    graph_filters::Filter,
 };
+use super::graph::graph_container::GraphContainer;
 use material_yew::WeakComponentLink;
 use num_format::{Locale, ToFormattedString};
 use petgraph::dot::{Config, Dot};

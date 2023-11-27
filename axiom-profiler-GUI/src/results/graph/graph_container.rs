@@ -3,7 +3,7 @@ use web_sys::Event;
 use web_sys::HtmlInputElement;
 use wasm_bindgen::{JsCast, UnwrapThrowExt};
 
-use crate::graph::Graph;
+use super::graph::Graph;
 
 pub enum Msg {
     SetValueTo(f32),
