@@ -21,12 +21,14 @@ use std::num::NonZeroUsize;
 use viz_js::VizInstance;
 use web_sys::window;
 use yew::prelude::*;
+use fxhash::FxHashMap;
+use petgraph::graph::NodeIndex;
 
 pub const NODE_LIMIT: usize = 125;
 
 pub enum Msg {
     UpdateSvgText(AttrValue),
-    UpdateSelectedNode(usize),
+    UpdateSelectedNodes(usize),
     RenderGraph(UserPermission),
     ApplyFilter(Filter),
     ResetGraph,
@@ -54,7 +56,7 @@ pub struct SVGResult {
     colour_map: QuantIdxToColourMap,
     inst_graph: InstGraph,
     svg_text: AttrValue,
-    selected_inst: Option<InstInfo>,
+    selected_insts: FxHashMap<NodeIndex, InstInfo>,
     filter_chain_link: WeakComponentLink<FilterChain>,
     on_node_select: Callback<usize>,
 }
@@ -78,9 +80,9 @@ impl Component for SVGResult {
             colour_map,
             inst_graph,
             svg_text: AttrValue::default(),
-            selected_inst: None,
+            selected_insts: FxHashMap::default(),
             filter_chain_link: WeakComponentLink::default(),
-            on_node_select: ctx.link().callback(Msg::UpdateSelectedNode),
+            on_node_select: ctx.link().callback(Msg::UpdateSelectedNodes),
         }
     }
 
@@ -189,12 +191,18 @@ impl Component for SVGResult {
             Msg::UpdateSvgText(svg_text) => {
                 log::debug!("Updating svg text");
                 self.svg_text = svg_text;
-                self.selected_inst = None;
+                self.selected_insts.clear();
                 true
             }
-            Msg::UpdateSelectedNode(index) => {
+            Msg::UpdateSelectedNodes(index) => {
                 log::debug!("Updating selected node");
-                self.selected_inst = self.inst_graph.get_instantiation_info(index, &self.parser);
+                let selected_inst = self.inst_graph.get_instantiation_info(index, &self.parser).unwrap();
+                let selected_inst_node_index = selected_inst.node_index;
+                if !self.selected_insts.contains_key(&selected_inst_node_index) {
+                    self.selected_insts.insert(selected_inst_node_index, selected_inst);
+                } else {
+                    self.selected_insts.remove(&selected_inst_node_index);
+                }
                 true
             }
         }
@@ -211,7 +219,7 @@ impl Component for SVGResult {
         html! {
             <>
                 <div style="flex: 30%; height: 85vh; overflow-y: auto; ">
-                <ContextProvider<Option<InstInfo>> context={self.selected_inst.clone()} >
+                <ContextProvider<Vec<InstInfo>> context={self.selected_insts.values().cloned().collect::<Vec<InstInfo>>()} >
                     <FilterChain
                         apply_filter={apply_filter.clone()}
                         reset_graph={reset_graph.clone()}
@@ -219,7 +227,7 @@ impl Component for SVGResult {
                         weak_link={self.filter_chain_link.clone()}
                         dependency={ctx.props().trace_file_text.clone()}
                     />
-                </ContextProvider<Option<InstInfo>>>
+                </ContextProvider<Vec<InstInfo>>>
                 {node_and_edge_count_preview}
                 </div>
                 <GraphContainer

@@ -72,7 +72,7 @@ pub struct GraphFilterProps {
 pub fn graph_filter(props: &GraphFilterProps) -> Html {
     let max_node_idx = use_reducer(InputValue::default);
     let max_instantiations = use_reducer(InputValue::default);
-    let selected_inst = use_context::<Option<InstInfo>>().expect("no ctx found");
+    let selected_inst = use_context::<Vec<InstInfo>>().expect("no ctx found");
 
     let add_max_line_nr_filter = {
         let max_node_idx = max_node_idx.clone();
@@ -115,9 +115,9 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
                 />
                 <button onclick={add_max_insts_filter}>{"Add"}</button>
             </div>
-            {if selected_inst.is_some() {
+            {if selected_inst.len() > 0 {
                 html! {
-                    <SelectedNode selected_node={selected_inst.unwrap()} action={props.add_filter.clone()} />
+                    <SelectedNode selected_nodes={selected_inst} action={props.add_filter.clone()} />
                 }
             } else {
                 html! {}
