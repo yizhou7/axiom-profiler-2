@@ -13,6 +13,11 @@ pub mod z3;
 /// Trait for a generic SMT solver trace parser. Intended to support different
 /// solvers or log formats.
 pub trait LogParser: Default + Debug {
+    /// Can be used to allow for parsing entries across multiple lines.
+    fn is_line_start(&mut self, _first_byte: u8) -> bool {
+        true
+    }
+
     /// Process a single line of the log file. Return `true` if parsing should
     /// continue, or `false` if parsing should stop.
     fn process_line(&mut self, line: &str, line_no: usize) -> bool;
@@ -213,7 +218,16 @@ mod wrapper {
             while predicate(&self.parser, self.reader_state) {
                 buf.clear();
                 // Read line
-                let bytes_read = add_await([reader.read_line(&mut buf)]).unwrap();
+                let mut bytes_read = 0;
+
+                loop {
+                    bytes_read += add_await([reader.read_line(&mut buf)]).unwrap();
+                    let peek = add_await([reader.fill_buf()]).unwrap();
+                    // Stop reading if this is the end or we don't have a multiline.
+                    if peek.is_empty() || self.parser.is_line_start(peek[0]) {
+                        break;
+                    }
+                }
                 // Remove newline from end
                 if buf.ends_with('\n') {
                     buf.pop();
