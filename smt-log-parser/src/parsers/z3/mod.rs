@@ -10,12 +10,18 @@ pub mod z3parser;
 // pub mod dump;
 
 impl<T: Z3LogParser + Default> LogParser for T {
+    fn is_line_start(&mut self, first_byte: u8) -> bool {
+        first_byte == b'['
+    }
+
     fn process_line(&mut self, line: &str, line_no: usize) -> bool {
         // Much faster than `split_whitespace` or `split(' ')` since it works on
         // [u8] instead of [char] and so doesn't need to convert to UTF-8.
         let mut split = line.split_ascii_whitespace();
-        // println!("Processing {line:?} ({line_no})");
-        let parse = match split.next().unwrap() {
+        let Some(first) = split.next() else {
+            return true;
+        };
+        let parse = match first {
             // match the line case
             "[tool-version]" => self.version_info(split),
             "[mk-quant]" | "[mk-lambda]" => self.mk_quant(split),
