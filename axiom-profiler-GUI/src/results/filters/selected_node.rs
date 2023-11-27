@@ -52,16 +52,19 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
         <button onclick={show_parents}>{"Show parents"}</button>
         <button onclick={show_source_tree}>{"Only show ancestors"}</button>
         <button onclick={ignore_quantifier}>{"Ignore all nodes of this quantifier"}</button>
-        <h2>{"Information about selected node:"}</h2>
-        <ul>
-            <li><h4>{"Instantiation happens at line number: "}</h4><p>{selected_inst.line_no}</p></li>
-            <li><h4>{"Cost: "}</h4><p>{selected_inst.cost}</p></li>
-            <li><h4>{"Instantiated formula: "}</h4><p>{selected_inst.formula.clone()}</p></li>
-            // <li><h4>{"Bound terms: "}</h4>{for &inst_info.bound_terms}</li>
-            // <li><h4>{"Yield terms: "}</h4>{for &inst_info.yields_terms}</li>
-            // <li><h4>{"Variable binding information: "}</h4></li>
-            // <li><h4>{"Involved equalities: "}</h4></li>
-        </ul>
+        <h2>{"Information about selected nodes:"}</h2>
+        <details>
+            <summary>{format!("Node {}", selected_inst.node_index.index())}</summary>
+            <ul>
+                <li><h4>{"Instantiation happens at line number: "}</h4><p>{selected_inst.line_no}</p></li>
+                <li><h4>{"Cost: "}</h4><p>{selected_inst.cost}</p></li>
+                <li><h4>{"Instantiated formula: "}</h4><p>{selected_inst.formula.clone()}</p></li>
+                // <li><h4>{"Bound terms: "}</h4>{for &inst_info.bound_terms}</li>
+                // <li><h4>{"Yield terms: "}</h4>{for &inst_info.yields_terms}</li>
+                // <li><h4>{"Variable binding information: "}</h4></li>
+                // <li><h4>{"Involved equalities: "}</h4></li>
+            </ul>
+        </details>
     // </div>
     </>
     }
