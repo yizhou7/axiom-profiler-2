@@ -8,7 +8,7 @@ use petgraph::{
 };
 use std::fmt;
 
-use crate::items::{InstIdx, QuantIdx, TermIdx};
+use crate::items::{InstIdx, QuantIdx, TermIdx, BlamedTermItem};
 
 use super::z3parser::Z3Parser;
 
@@ -52,13 +52,23 @@ impl fmt::Debug for EdgeData {
 
 #[derive(PartialEq, Clone)]
 pub struct InstInfo {
-    pub line_no: usize,
+    pub match_line_no: usize,
+    pub line_no: Option<usize>,
+    pub fingerprint: u64, 
+    pub resulting_term: Option<String>,
+    pub z3_gen: Option<u32>,
     pub cost: f32,
+    pub quant: QuantIdx,
+    pub quant_discovered: bool,
     pub formula: String,
-    pub bound_terms: Vec<String>,
+    pub pattern: Option<String>,
     pub yields_terms: Vec<String>,
+    pub bound_terms: Vec<String>,
+    pub blamed_terms: Vec<String>,
+    pub equality_expls: Vec<String>,
+    pub dep_instantiations: Vec<NodeIndex>,
     pub node_index: NodeIndex,
-    pub quant_idx: QuantIdx,
+
 }
 
 #[derive(Default, Clone)]
@@ -275,23 +285,42 @@ impl InstGraph {
             let inst = parser.instantiations.get(*iidx).unwrap();
             let quant = parser.quantifiers.get(inst.quant).unwrap();
             let term_map = &parser.terms;
-            let pretty_text_map = |tidxs: &Vec<TermIdx>| {
+            let prettify = |tidx: &TermIdx| {
+                let term = parser.terms.get(*tidx).unwrap();
+                term.pretty_text(term_map)
+            };
+            let prettify_all = |tidxs: &Vec<TermIdx>| {
                 tidxs
                     .iter()
                     .map(|tidx| term_map.get(*tidx).unwrap())
                     .map(|term| term.pretty_text(term_map))
                     .collect::<Vec<String>>()
             };
-            let bound_terms = pretty_text_map(&inst.bound_terms);
-            let yields_terms = pretty_text_map(&inst.yields_terms);
+            let pretty_blamed_terms = inst
+                .blamed_terms
+                .iter()
+                .map(|term| match term {
+                    BlamedTermItem::Single(t) => prettify(t),
+                    BlamedTermItem::Pair(t1, t2) => format!("{} = {}", prettify(t1), prettify(t2)) 
+                })
+                .collect::<Vec<String>>();
             let inst_info = InstInfo {
-                line_no: inst.line_no.unwrap(),
+                match_line_no: inst.match_line_no,
+                line_no: inst.line_no,
+                fingerprint: *inst.fingerprint,
+                resulting_term: if let Some(t) = inst.resulting_term {Some(prettify(&t))} else { None },
+                z3_gen: inst.z3_gen,
                 cost: inst.cost,
+                quant: inst.quant,
+                quant_discovered: inst.quant_discovered,
                 formula: quant.pretty_text(term_map),
-                bound_terms,
-                yields_terms,
+                pattern: if let Some(t) = inst.pattern {Some(prettify(&t))} else { None }, 
+                yields_terms: prettify_all(&inst.yields_terms),
+                bound_terms: prettify_all(&inst.bound_terms),
+                blamed_terms: pretty_blamed_terms,
+                equality_expls: prettify_all(&inst.equality_expls),
+                dep_instantiations: Vec::new(),
                 node_index: NodeIndex::new(node_index),
-                quant_idx: inst.quant,
             };
             Some(inst_info)
         } else {

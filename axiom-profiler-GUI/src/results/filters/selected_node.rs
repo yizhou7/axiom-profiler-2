@@ -53,7 +53,7 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
         let selected_insts = props.selected_nodes.clone();
         Callback::from(move |_| { 
             for inst in &selected_insts {
-                callback.emit(Filter::IgnoreQuantifier(inst.quant_idx))
+                callback.emit(Filter::IgnoreQuantifier(inst.quant))
             }
         })
     };
@@ -71,20 +71,29 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
     let selected_nodes_info: Vec<VNode> = props
         .selected_nodes 
         .iter()
-        .map(|selected_inst| { html! {
+        .map(|selected_inst| { 
+            let get_ul = |label: &str, items: &Vec<String>| html! {
+                <>
+                    <h4>{label}</h4>
+                    <ul>{for items.iter().map(|item| html!{<li>{item}</li>})}</ul>
+                </>
+            };
+            html! {
             <details>
             <summary>{format!("Node {}", selected_inst.node_index.index())}</summary>
             <ul>
-                <li><h4>{"Instantiation happens at line number: "}</h4><p>{selected_inst.line_no}</p></li>
+                <li><h4>{"Instantiation happens at line number: "}</h4><p>{if let Some(val) = selected_inst.line_no {format!("{val}")} else { String::new() }}</p></li>
                 <li><h4>{"Cost: "}</h4><p>{selected_inst.cost}</p></li>
-                <li><h4>{"Instantiated formula: "}</h4><p>{selected_inst.formula.clone()}</p></li>
-                // <li><h4>{"Bound terms: "}</h4>{for &inst_info.bound_terms}</li>
-                // <li><h4>{"Yield terms: "}</h4>{for &inst_info.yields_terms}</li>
-                // <li><h4>{"Variable binding information: "}</h4></li>
-                // <li><h4>{"Involved equalities: "}</h4></li>
+                <li><h4>{"Instantiated formula: "}</h4><p>{&selected_inst.formula}</p></li>
+                <li>{get_ul("Blamed terms: ", &selected_inst.blamed_terms)}</li>
+                <li>{get_ul("Bound terms: ", &selected_inst.bound_terms)}</li>
+                <li>{get_ul("Yield terms: ", &selected_inst.yields_terms)}</li>
+                <li>{get_ul("Equality explanations: ", &selected_inst.equality_expls)}</li>
+                <li><h4>{"Resulting term: "}</h4><p>{if let Some(ref val) = selected_inst.resulting_term {format!("{val}")} else { String::new() }}</p></li>
             </ul>
         </details>
-        }}).collect();
+        }})
+        .collect();
     html! {
     // <div>
     <>
