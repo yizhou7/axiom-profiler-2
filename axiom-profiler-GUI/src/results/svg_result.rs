@@ -60,6 +60,7 @@ pub struct SVGResult {
     selected_insts: FxHashMap<NodeIndex, InstInfo>,
     filter_chain_link: WeakComponentLink<FilterChain>,
     on_node_select: Callback<usize>,
+    prev_edge_count: Option<usize>, // refers to the edge_count of the previously rendered graph
 }
 
 #[derive(Properties, PartialEq)]
@@ -85,6 +86,7 @@ impl Component for SVGResult {
             selected_insts: FxHashMap::default(),
             filter_chain_link: WeakComponentLink::default(),
             on_node_select: ctx.link().callback(Msg::UpdateSelectedNodes),
+            prev_edge_count: None,
         }
     }
 
@@ -101,9 +103,17 @@ impl Component for SVGResult {
                 false
             }
             Msg::RenderGraph(UserPermission { permission }) => {
-                // as long as displayed graph contains at most 125 nodes, render time is acceptable
-                log::debug!("The graph has {} nodes", self.inst_graph.node_count());
-                if self.inst_graph.edge_count() <= EDGE_LIMIT || permission {
+                let safe_to_render = if let Some(prev_edge_count) = self.prev_edge_count {
+                    let curr_edge_count = self.inst_graph.edge_count();
+                    curr_edge_count <= prev_edge_count || curr_edge_count <= EDGE_LIMIT
+                } else {
+                    // initially the node-count is 125 so it should be safe to render regardless of the 
+                    // number of edges
+                    // we are using the fact that only initially the self.prev_edge_count is None
+                    true
+                };
+                if safe_to_render || permission {
+                    self.prev_edge_count = Some(self.inst_graph.edge_count());
                     log::debug!("Rendering graph");
                     let filtered_graph = &self.inst_graph.inst_graph;
                     let dot_output = format!(
