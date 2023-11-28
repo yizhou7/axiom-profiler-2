@@ -127,15 +127,6 @@ impl InstGraph {
                 self.indirect_edges_of_hidden_node
                     .insert(*node, vec![indirect_edge]);
             }
-            // log!(
-            //     "Adding edge ",
-            //     pred.index(),
-            //     succ.index(),
-            //     " with index ",
-            //     indirect_edge.index(),
-            //     "to the indirect edges for node ",
-            //     node.index()
-            // );
         }
     }
 
@@ -148,7 +139,7 @@ impl InstGraph {
         // This is a total order since the line numbers are always guaranteed to be distinct
         // integers.
         let mut most_costly_insts: Vec<NodeIndex> = self.inst_graph.node_indices().collect();
-        most_costly_insts.sort_by(|node_a, node_b| {
+        let cost_order = |node_a: &NodeIndex, node_b: &NodeIndex| {
             let node_a_data = self.inst_graph.node_weight(*node_a).unwrap();
             let node_b_data = self.inst_graph.node_weight(*node_b).unwrap();
             if node_a_data.cost < node_b_data.cost {
@@ -160,7 +151,8 @@ impl InstGraph {
             } else {
                 std::cmp::Ordering::Less
             }
-        });
+        };
+        most_costly_insts.sort_unstable_by(cost_order);
         most_costly_insts.truncate(n);
         self.inst_graph
             .retain_nodes(|_, node| most_costly_insts.contains(&node));
@@ -343,8 +335,8 @@ impl InstGraph {
         for dep in &parser.dependencies {
             if let Some(to) = dep.to {
                 let quant_idx = dep.quant;
-                let quant = parser.quantifiers.get(quant_idx).unwrap();
-                let cost = quant.cost;
+                // let quant = parser.quantifiers.get(quant_idx).unwrap();
+                let cost = parser.instantiations.get(dep.to_iidx.unwrap()).unwrap().cost;
                 self.add_node(NodeData {
                     line_nr: to,
                     is_theory_inst: dep.quant_discovered,
