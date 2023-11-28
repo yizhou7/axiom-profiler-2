@@ -190,9 +190,13 @@ impl Component for SVGResult {
             }
             Msg::UpdateSvgText(svg_text) => {
                 log::debug!("Updating svg text");
-                self.svg_text = svg_text;
-                self.selected_insts.clear();
-                true
+                if svg_text != self.svg_text {
+                    self.svg_text = svg_text;
+                    self.selected_insts.clear();
+                    true
+                } else {
+                    false
+                }
             }
             Msg::UpdateSelectedNodes(index) => {
                 log::debug!("Updating selected node");
