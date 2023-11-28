@@ -1,5 +1,5 @@
 use super::graph_filters::{Filter, GraphFilter};
-use super::super::svg_result::{UserPermission, NODE_LIMIT};
+use super::super::svg_result::{UserPermission, DEFAULT_NODE_COUNT};
 use gloo::console::log;
 use yew::prelude::*;
 // use gloo_console::log;
@@ -35,7 +35,7 @@ impl yew::html::Component for FilterChain {
             .weak_link
             .borrow_mut()
             .replace(ctx.link().clone());
-        let filter_chain = vec![Filter::IgnoreTheorySolving, Filter::MaxInsts(NODE_LIMIT)];
+        let filter_chain = vec![Filter::IgnoreTheorySolving, Filter::MaxInsts(DEFAULT_NODE_COUNT)];
         for &filter in &filter_chain {
             ctx.props().apply_filter.emit(filter);
         }
@@ -71,7 +71,7 @@ impl yew::html::Component for FilterChain {
             Msg::ResetFilters => {
                 log!("resetting filters");
                 self.prev_filter_chain = self.filter_chain.clone();
-                self.filter_chain = vec![Filter::IgnoreTheorySolving, Filter::MaxInsts(NODE_LIMIT)];
+                self.filter_chain = vec![Filter::IgnoreTheorySolving, Filter::MaxInsts(DEFAULT_NODE_COUNT)];
                 ctx.props().reset_graph.emit(());
                 for &filter in &self.filter_chain {
                     ctx.props().apply_filter.emit(filter);

@@ -24,7 +24,8 @@ use yew::prelude::*;
 use fxhash::FxHashMap;
 use petgraph::graph::NodeIndex;
 
-pub const NODE_LIMIT: usize = 125;
+pub const EDGE_LIMIT: usize = 1000;
+pub const DEFAULT_NODE_COUNT: usize = 125;
 
 pub enum Msg {
     UpdateSvgText(AttrValue),
@@ -71,6 +72,7 @@ impl Component for SVGResult {
     type Properties = SVGProps;
 
     fn create(ctx: &Context<Self>) -> Self {
+        log::debug!("Creating SVGResult component");
         let parser = Z3Parser::from_str(&ctx.props().trace_file_text).process_all();
         let inst_graph = InstGraph::from(&parser);
         let total_nr_of_quants = parser.total_nr_of_quants();
@@ -101,7 +103,7 @@ impl Component for SVGResult {
             Msg::RenderGraph(UserPermission { permission }) => {
                 // as long as displayed graph contains at most 125 nodes, render time is acceptable
                 log::debug!("The graph has {} nodes", self.inst_graph.node_count());
-                if self.inst_graph.node_count() <= NODE_LIMIT || permission {
+                if self.inst_graph.edge_count() <= EDGE_LIMIT || permission {
                     log::debug!("Rendering graph");
                     let filtered_graph = &self.inst_graph.inst_graph;
                     let dot_output = format!(

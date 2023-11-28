@@ -110,7 +110,7 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
                     label={"Render the n most expensive instantiations where n = "}
                     dependency={props.dependency.clone()}
                     input_value={max_instantiations}
-                    default_value={super::super::svg_result::NODE_LIMIT}
+                    default_value={super::super::svg_result::DEFAULT_NODE_COUNT}
                     placeholder={""}
                 />
                 <button onclick={add_max_insts_filter}>{"Add"}</button>
