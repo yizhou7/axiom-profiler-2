@@ -18,7 +18,7 @@ use yew_router::prelude::*;
 // mod svg_result;
 // mod toggle_switch;
 // mod graph_container;
-mod results;
+pub mod results;
 mod utils;
 // mod select_dropdown;
 pub enum Msg {
@@ -157,7 +157,7 @@ impl ParserData {
 }
 
 #[function_component(App)]
-fn app() -> Html {
+pub fn app() -> Html {
     html! {
         <>
         // <div>
@@ -204,10 +204,3 @@ enum Route {
 //         </BrowserRouter>
 //     }
 // }
-
-fn main() {
-    wasm_logger::init(wasm_logger::Config::default());
-    log::debug!("App is starting");
-    // yew::Renderer::<Main>::new().render();
-    yew::Renderer::<App>::new().render();
-}

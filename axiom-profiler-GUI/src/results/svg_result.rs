@@ -1,8 +1,8 @@
 use self::colors::HSVColour;
-use super::filters::{
+use super::{filters::{
     filter_chain::{FilterChain, Msg as FilterChainMsg},
     graph_filters::Filter,
-};
+}, worker::Worker};
 use super::graph::graph_container::GraphContainer;
 use fxhash::FxHashMap;
 use material_yew::WeakComponentLink;
@@ -34,6 +34,7 @@ pub enum Msg {
     ApplyFilter(Filter),
     ResetGraph,
     GetUserPermission,
+    WorkerOutput(super::worker::WorkerOutput),
 }
 
 pub struct UserPermission {
@@ -67,6 +68,7 @@ pub struct SVGResult {
     filter_chain_link: WeakComponentLink<FilterChain>,
     on_node_select: Callback<usize>,
     graph_dim: GraphDimensions,
+    worker: Option<Box<dyn yew_agent::Bridge<Worker>>>,
 }
 
 #[derive(Properties, PartialEq)]
@@ -97,11 +99,15 @@ impl Component for SVGResult {
                 edge_count: 0,
                 prev_edge_count: None,
             },
+            worker: Some(Self::create_worker(ctx.link().clone())),
         }
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
+            Msg::WorkerOutput(out) => {
+                false
+            }
             Msg::ApplyFilter(filter) => {
                 log::debug!("Applying filter {}", filter);
                 filter.apply(&mut self.inst_graph);
@@ -264,6 +270,30 @@ impl Component for SVGResult {
                 />
             </>
         }
+    }
+}
+
+impl SVGResult {
+    /// Deletes the old worker with its queue of messages and creates a new one.
+    /// Any enqueued work will still continue to run (there is no way to cancel this
+    /// at the moment, see https://github.com/rustwasm/gloo/issues/408) but will not
+    /// send a `WorkerOutput` message on completion.
+    pub fn reset_worker(&mut self, link: yew::html::Scope<Self>) {
+        // The old worker is dropped when overwritten here. Not sure we need the option?
+        self.worker = Some(Self::create_worker(link));
+    }
+    /// Sends an input to the worker to process.
+    pub fn send_worker_input(&mut self, input: super::worker::WorkerInput) {
+        self.worker.as_mut().unwrap().send(input);
+    }
+
+    /// Used internally.
+    fn create_worker(link: yew::html::Scope<Self>) -> Box<dyn yew_agent::Bridge<Worker>> {
+        use yew_agent::Bridged;
+        let cb = std::rc::Rc::new(
+            move |e| link.send_message(Msg::WorkerOutput(e))
+        );
+        Worker::bridge(cb)
     }
 }
 
