@@ -117,15 +117,15 @@ impl InstGraph {
                 self.indirect_edges_of_hidden_node
                     .insert(*node, vec![indirect_edge]);
             }
-            log!(
-                "Adding edge ",
-                pred.index(),
-                succ.index(),
-                " with index ",
-                indirect_edge.index(),
-                "to the indirect edges for node ",
-                node.index()
-            );
+            // log!(
+            //     "Adding edge ",
+            //     pred.index(),
+            //     succ.index(),
+            //     " with index ",
+            //     indirect_edge.index(),
+            //     "to the indirect edges for node ",
+            //     node.index()
+            // );
         }
     }
 
