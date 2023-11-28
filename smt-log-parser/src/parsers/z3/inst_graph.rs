@@ -1,5 +1,6 @@
 use fxhash::FxHashMap;
 use gloo_console::log;
+use petgraph::Direction;
 use petgraph::graph::NodeIndex;
 use petgraph::{
     stable_graph::{EdgeIndex, StableGraph},
@@ -320,11 +321,29 @@ impl InstGraph {
         }
     }
 
-    pub fn node_has_filtered_direct_neighbours(&self, node_idx: NodeIndex) -> bool {
+    // pub fn node_has_filtered_direct_neighbours(&self, node_idx: NodeIndex) -> bool {
+    //     let nr_of_direct_neighbours = |graph: &StableGraph<NodeData, EdgeData>| {
+    //         graph
+    //             .edges_directed(node_idx, Incoming)
+    //             .chain(graph.edges_directed(node_idx, Outgoing))
+    //             .filter(|e| e.weight().edge_type == EdgeType::Direct)
+    //             .count()
+    //     };
+    //     nr_of_direct_neighbours(&self.inst_graph) < nr_of_direct_neighbours(&self.orig_graph)
+    // }
+
+    pub fn node_has_filtered_children(&self, node_idx: NodeIndex) -> bool {
+        self.node_has_filtered_direct_neighbours(node_idx, Outgoing)
+    }
+
+    pub fn node_has_filtered_parents(&self, node_idx: NodeIndex) -> bool {
+        self.node_has_filtered_direct_neighbours(node_idx, Incoming)
+    }
+
+    fn node_has_filtered_direct_neighbours(&self, node_idx: NodeIndex, direction: Direction) -> bool {
         let nr_of_direct_neighbours = |graph: &StableGraph<NodeData, EdgeData>| {
             graph
-                .edges_directed(node_idx, Incoming)
-                .chain(graph.edges_directed(node_idx, Outgoing))
+                .edges_directed(node_idx, direction)
                 .filter(|e| e.weight().edge_type == EdgeType::Direct)
                 .count()
         };

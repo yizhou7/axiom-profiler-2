@@ -132,9 +132,12 @@ impl Component for SVGResult {
                                 format!("label=\"{}\" style=\"{}\", shape=oval, fillcolor=\"{}\", fontcolor=black ",
                                         // node_data.line_nr,
                                         node_idx.index(),
-                                        match self.inst_graph.node_has_filtered_direct_neighbours(node_idx) {
-                                            true => "filled,diagonals",
-                                            false => "filled",
+                                        match (self.inst_graph.node_has_filtered_children(node_idx), 
+                                               self.inst_graph.node_has_filtered_parents(node_idx)) {
+                                            (false, false) => "filled",
+                                            (false, true) => "filled,diagonals",
+                                            (true, false) => "filled,diagonals",
+                                            (true, true) => "filled,diagonals",
                                         },
                                         self.colour_map.get(&node_data.quant_idx)
                                     )
