@@ -166,7 +166,6 @@ impl Component for SVGResult {
             Msg::GetUserPermission => {
                 log::debug!("Getting user permission");
                 let window = window().unwrap();
-                // Show the dialog with custom content
                 let node_count = self
                     .inst_graph
                     .node_count()
