@@ -109,7 +109,7 @@ pub fn integer_input(props: &UsizeInputProps) -> Html {
             dep,
         );
     }
-    let placeholder = props.placeholder.to_string(); 
+    let placeholder = props.placeholder.to_string();
 
     html! {
         <>

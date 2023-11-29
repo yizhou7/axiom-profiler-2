@@ -1,7 +1,7 @@
 use fxhash::FxHashMap;
 use gloo_console::log;
-use petgraph::Direction;
 use petgraph::graph::NodeIndex;
+use petgraph::Direction;
 use petgraph::{
     stable_graph::{EdgeIndex, StableGraph},
     visit::{Dfs, EdgeRef},
@@ -9,7 +9,7 @@ use petgraph::{
 };
 use std::fmt;
 
-use crate::items::{InstIdx, QuantIdx, TermIdx, BlamedTermItem};
+use crate::items::{BlamedTermItem, InstIdx, QuantIdx, TermIdx};
 
 use super::z3parser::Z3Parser;
 
@@ -55,7 +55,7 @@ impl fmt::Debug for EdgeData {
 pub struct InstInfo {
     pub match_line_no: usize,
     pub line_no: Option<usize>,
-    pub fingerprint: u64, 
+    pub fingerprint: u64,
     pub resulting_term: Option<String>,
     pub z3_gen: Option<u32>,
     pub cost: f32,
@@ -69,7 +69,6 @@ pub struct InstInfo {
     pub equality_expls: Vec<String>,
     pub dep_instantiations: Vec<NodeIndex>,
     pub node_index: NodeIndex,
-
 }
 
 #[derive(Default, Clone)]
@@ -294,20 +293,28 @@ impl InstGraph {
                 .iter()
                 .map(|term| match term {
                     BlamedTermItem::Single(t) => prettify(t),
-                    BlamedTermItem::Pair(t1, t2) => format!("{} = {}", prettify(t1), prettify(t2)) 
+                    BlamedTermItem::Pair(t1, t2) => format!("{} = {}", prettify(t1), prettify(t2)),
                 })
                 .collect::<Vec<String>>();
             let inst_info = InstInfo {
                 match_line_no: inst.match_line_no,
                 line_no: inst.line_no,
                 fingerprint: *inst.fingerprint,
-                resulting_term: if let Some(t) = inst.resulting_term {Some(prettify(&t))} else { None },
+                resulting_term: if let Some(t) = inst.resulting_term {
+                    Some(prettify(&t))
+                } else {
+                    None
+                },
                 z3_gen: inst.z3_gen,
                 cost: inst.cost,
                 quant: inst.quant,
                 quant_discovered: inst.quant_discovered,
                 formula: quant.pretty_text(term_map),
-                pattern: if let Some(t) = inst.pattern {Some(prettify(&t))} else { None }, 
+                pattern: if let Some(t) = inst.pattern {
+                    Some(prettify(&t))
+                } else {
+                    None
+                },
                 yields_terms: prettify_all(&inst.yields_terms),
                 bound_terms: prettify_all(&inst.bound_terms),
                 blamed_terms: pretty_blamed_terms,
@@ -340,7 +347,11 @@ impl InstGraph {
         self.node_has_filtered_direct_neighbours(node_idx, Incoming)
     }
 
-    fn node_has_filtered_direct_neighbours(&self, node_idx: NodeIndex, direction: Direction) -> bool {
+    fn node_has_filtered_direct_neighbours(
+        &self,
+        node_idx: NodeIndex,
+        direction: Direction,
+    ) -> bool {
         let nr_of_direct_neighbours = |graph: &StableGraph<NodeData, EdgeData>| {
             graph
                 .edges_directed(node_idx, direction)
@@ -355,7 +366,11 @@ impl InstGraph {
             if let Some(to) = dep.to {
                 let quant_idx = dep.quant;
                 // let quant = parser.quantifiers.get(quant_idx).unwrap();
-                let cost = parser.instantiations.get(dep.to_iidx.unwrap()).unwrap().cost;
+                let cost = parser
+                    .instantiations
+                    .get(dep.to_iidx.unwrap())
+                    .unwrap()
+                    .cost;
                 self.add_node(NodeData {
                     line_nr: to,
                     is_theory_inst: dep.quant_discovered,

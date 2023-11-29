@@ -1,7 +1,7 @@
-use yew::prelude::*;
+use wasm_bindgen::{JsCast, UnwrapThrowExt};
 use web_sys::Event;
 use web_sys::HtmlInputElement;
-use wasm_bindgen::{JsCast, UnwrapThrowExt};
+use yew::prelude::*;
 
 use super::graph::Graph;
 
@@ -25,9 +25,7 @@ impl Component for GraphContainer {
     type Properties = GraphContainerProps;
 
     fn create(_ctx: &Context<Self>) -> Self {
-        Self {
-            zoom_factor: 1.0,
-        }
+        Self { zoom_factor: 1.0 }
     }
 
     fn update(&mut self, _ctx: &Context<Self>, msg: Self::Message) -> bool {
@@ -35,7 +33,7 @@ impl Component for GraphContainer {
             Msg::SetValueTo(value) => {
                 self.zoom_factor = value;
                 true
-            },
+            }
             Msg::Noop => false,
         }
     }
@@ -53,29 +51,23 @@ impl Component for GraphContainer {
                         // log::debug!("Setting the value to {}", value);
                         Msg::SetValueTo(value)
                     }
-                    Err(_) => {
-                        Msg::SetValueTo(1.0)
-                    }
+                    Err(_) => Msg::SetValueTo(1.0),
                 }
             }
         };
-        let set_value_on_enter = ctx.link().callback(
-            move |key_event: KeyboardEvent| {
-                if key_event.key() == "Enter" {
-                    let event: Event = key_event.clone().into();
-                    set_value(event)
-                } else {
-                    Msg::Noop
-                }
-            }
-        );
-        let set_value_on_blur = ctx.link().callback(
-            move |blur_event: FocusEvent| {
-                let event: Event = blur_event.clone().into();
+        let set_value_on_enter = ctx.link().callback(move |key_event: KeyboardEvent| {
+            if key_event.key() == "Enter" {
+                let event: Event = key_event.clone().into();
                 set_value(event)
+            } else {
+                Msg::Noop
             }
-        );
-        
+        });
+        let set_value_on_blur = ctx.link().callback(move |blur_event: FocusEvent| {
+            let event: Event = blur_event.clone().into();
+            set_value(event)
+        });
+
         html! {
         <div style="flex: 70%; height: 85vh; overflow: auto; position: relative;">
             <div style="position: sticky; top: 0px; left: 0px; z-index: 1">

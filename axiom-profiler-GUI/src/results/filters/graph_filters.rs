@@ -1,7 +1,5 @@
-use crate::{
-    utils::input_state::{InputValue, UsizeInput},
-};
 use super::selected_node::SelectedNode;
+use crate::utils::input_state::{InputValue, UsizeInput};
 use petgraph::{stable_graph::NodeIndex, Direction};
 use smt_log_parser::{
     items::QuantIdx,

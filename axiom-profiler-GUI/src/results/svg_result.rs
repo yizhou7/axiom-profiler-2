@@ -4,9 +4,11 @@ use super::filters::{
     graph_filters::Filter,
 };
 use super::graph::graph_container::GraphContainer;
+use fxhash::FxHashMap;
 use material_yew::WeakComponentLink;
 use num_format::{Locale, ToFormattedString};
 use petgraph::dot::{Config, Dot};
+use petgraph::graph::NodeIndex;
 use smt_log_parser::{
     items::QuantIdx,
     parsers::{
@@ -21,8 +23,6 @@ use std::num::NonZeroUsize;
 use viz_js::VizInstance;
 use web_sys::window;
 use yew::prelude::*;
-use fxhash::FxHashMap;
-use petgraph::graph::NodeIndex;
 
 pub const EDGE_LIMIT: usize = 1000;
 pub const DEFAULT_NODE_COUNT: usize = 125;
@@ -107,7 +107,7 @@ impl Component for SVGResult {
                     let curr_edge_count = self.inst_graph.edge_count();
                     curr_edge_count <= prev_edge_count || curr_edge_count <= EDGE_LIMIT
                 } else {
-                    // initially the node-count is 125 so it should be safe to render regardless of the 
+                    // initially the node-count is 125 so it should be safe to render regardless of the
                     // number of edges
                     // we are using the fact that only initially the self.prev_edge_count is None
                     true
@@ -129,17 +129,15 @@ impl Component for SVGResult {
                                 }
                             ),
                             &|_, (node_idx, node_data)| {
-                                format!("label=\"{}\" style=\"{}\", shape=oval, fillcolor=\"{}\", fontcolor=black ",
-                                        // node_data.line_nr,
+                                format!("label=\"{}\" style=filled shape=oval fillcolor=\"{}\" fontcolor=black gradientangle=90",
                                         node_idx.index(),
                                         match (self.inst_graph.node_has_filtered_children(node_idx), 
                                                self.inst_graph.node_has_filtered_parents(node_idx)) {
-                                            (false, false) => "filled",
-                                            (false, true) => "filled,diagonals",
-                                            (true, false) => "filled,diagonals",
-                                            (true, true) => "filled,diagonals",
+                                            (false, false) => format!("{}", self.colour_map.get(&node_data.quant_idx, 0.7)),
+                                            (false, true) => format!("{}:{}", self.colour_map.get(&node_data.quant_idx, 1.0), self.colour_map.get(&node_data.quant_idx, 0.1)),
+                                            (true, false) => format!("{}:{}", self.colour_map.get(&node_data.quant_idx, 0.1), self.colour_map.get(&node_data.quant_idx, 1.0)),
+                                            (true, true) => format!("{}", self.colour_map.get(&node_data.quant_idx, 0.3)),
                                         },
-                                        self.colour_map.get(&node_data.quant_idx)
                                     )
                             },
                         )
@@ -214,10 +212,14 @@ impl Component for SVGResult {
             }
             Msg::UpdateSelectedNodes(index) => {
                 log::debug!("Updating selected node");
-                let selected_inst = self.inst_graph.get_instantiation_info(index, &self.parser).unwrap();
+                let selected_inst = self
+                    .inst_graph
+                    .get_instantiation_info(index, &self.parser)
+                    .unwrap();
                 let selected_inst_node_index = selected_inst.node_index;
                 if !self.selected_insts.contains_key(&selected_inst_node_index) {
-                    self.selected_insts.insert(selected_inst_node_index, selected_inst);
+                    self.selected_insts
+                        .insert(selected_inst_node_index, selected_inst);
                 } else {
                     self.selected_insts.remove(&selected_inst_node_index);
                 }
@@ -274,13 +276,13 @@ impl QuantIdxToColourMap {
         }
     }
 
-    pub fn get(&self, qidx: &QuantIdx) -> HSVColour {
+    pub fn get(&self, qidx: &QuantIdx, sat: f64) -> HSVColour {
         let idx = usize::from(*qidx);
         debug_assert!(idx < self.total_nr_of_quants);
         let idx_perm = (idx * self.coprime.get() + self.shift) % self.total_nr_of_quants;
         HSVColour {
             hue: idx_perm as f64 / self.total_nr_of_quants as f64,
-            sat: 0.4,
+            sat,
             val: 0.95,
         }
     }

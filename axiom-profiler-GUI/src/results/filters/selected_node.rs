@@ -51,7 +51,7 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
     let ignore_quantifier = {
         let callback = props.action.clone();
         let selected_insts = props.selected_nodes.clone();
-        Callback::from(move |_| { 
+        Callback::from(move |_| {
             for inst in &selected_insts {
                 callback.emit(Filter::IgnoreQuantifier(inst.quant))
             }
@@ -105,7 +105,7 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
         <button onclick={ignore_quantifier}>{"Ignore all nodes of this quantifier"}</button>
         <h2>{"Information about selected nodes:"}</h2>
         { for selected_nodes_info }
-        
+
     // </div>
     </>
     }
