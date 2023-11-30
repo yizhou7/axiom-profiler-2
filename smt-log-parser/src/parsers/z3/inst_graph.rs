@@ -1,5 +1,6 @@
 use fxhash::FxHashMap;
 use gloo_console::log;
+use petgraph::adj::UnweightedList;
 use petgraph::graph::NodeIndex;
 use petgraph::Direction;
 use petgraph::{
@@ -92,12 +93,17 @@ impl InstGraph {
     }
 
     pub fn retain_nodes_and_reconnect(&mut self, retain: impl Fn(&NodeData) -> bool) {
+        // find all nodes to remove according to retain-predicate
         let nodes_to_remove: Vec<NodeIndex> = self
             .inst_graph
             .node_indices()
             .filter(|&node_idx| !retain(self.inst_graph.node_weight(node_idx).unwrap()))
             .collect();
         let mut edges_to_add: Vec<(NodeIndex, NodeIndex, NodeIndex)> = Vec::new();
+        // iterate through all nodes to remove and record which (indirect) edges should be 
+        // added to reconnect the predecessors and successors of the removed nodes 
+        // For each such edge, record which node it replaced. 
+        // (pred, node, succ) means that the edge (pred, succ) replaces node
         for &node in &nodes_to_remove {
             let preds: Vec<NodeIndex> =
                 self.inst_graph.neighbors_directed(node, Incoming).collect();
@@ -106,12 +112,15 @@ impl InstGraph {
             self.inst_graph.remove_node(node);
             for &pred in &preds {
                 for &succ in &succs {
+                    // need to be careful here: we only add the edge (pred, succ) if 
+                    // neither pred nor succ is contained in the nodes to remove
                     if !nodes_to_remove.contains(&pred) && !nodes_to_remove.contains(&succ) {
                         edges_to_add.push((pred, node, succ));
                     }
                 }
             }
         }
+        // add all indirect edges found in previous loop 
         for (pred, node, succ) in &edges_to_add {
             let indirect_edge = self.inst_graph.add_edge(
                 *pred,
@@ -121,6 +130,7 @@ impl InstGraph {
                     hidden_node: Some(*node),
                 },
             );
+            // need to record which indirect edges should be hidden when node is inserted into the graph again
             if let Some(indirect_edges) = self.indirect_edges_of_hidden_node.get_mut(node) {
                 indirect_edges.push(indirect_edge);
             } else {
@@ -196,10 +206,16 @@ impl InstGraph {
     }
 
     pub fn show_neighbours(&mut self, node: NodeIndex, direction: petgraph::Direction) {
+        // find all neighbours of node in the desired direction
         let neighbours: Vec<NodeIndex> = self
             .orig_graph
             .neighbors_directed(node, direction)
             .collect();
+        // find all the incoming and outgoing edges of the neighbours since these might need to be
+        // added to the graph in case the endpoints are in the graph
+
+        // TODO: only keep those edges where both endpoints are in the node-set of the current graph
+        // or in neighbours?
         let neighbours_edges: Vec<EdgeIndex> = neighbours
             .iter()
             .flat_map(|&neighbour| {
@@ -208,9 +224,10 @@ impl InstGraph {
                     .chain(self.orig_graph.edges_directed(neighbour, Incoming))
                     .map(|e| e.id())
             })
-            // .flatten()
             .collect();
         let mut new_inst_graph = self.orig_graph.filter_map(
+            // we keep all those nodes of the original graph which are either in the current 
+            // graph or a neighbour of node
             |node, &node_data| {
                 if self.inst_graph.contains_node(node) || neighbours.contains(&node) {
                     Some(node_data)
@@ -218,6 +235,8 @@ impl InstGraph {
                     None
                 }
             },
+            // we keep all those edges of the original graph which are either in the current
+            // graph or a neighbour's edge
             |edge, &edge_data| {
                 if self.inst_graph.edge_indices().any(|e| e == edge)
                     || neighbours_edges.contains(&edge)
@@ -228,11 +247,14 @@ impl InstGraph {
                 }
             },
         );
+        // find all the redundant indirect edges, i.e., indirect edges which were added
+        // because a node that was removed is now visible again due to the previous step
         let redundant_indirect_edges: Vec<EdgeIndex> = neighbours
             .iter()
             .filter_map(|node| self.indirect_edges_of_hidden_node.remove(node))
             .flatten()
             .collect();
+        // find all indirect edges that are not redundant, i.e., should be visible
         let visible_indirect_edges = self
             .inst_graph
             .edge_indices()
@@ -248,8 +270,19 @@ impl InstGraph {
                     self.inst_graph.edge_weight(e).unwrap(),
                 )
             });
+        // add all visible indirect edges to the new_inst_graph
         for (from, to, data) in visible_indirect_edges {
             let new_idx = new_inst_graph.add_edge(from, to, *data);
+            log!(format!("Adding indirect edge ({},{})", from.index(), to.index()));
+            // One problem is that if one of the hidden_edges was already previously
+            // in the inst_graph and now it has been added to new_inst_graph then its 
+            // index changes due to add_edge and hence we need to push this new_idx
+            // to the hidden_edges of the node it hides
+
+            // TODO: make sure we don't need to add edges such that the indirect edges'
+            // indices stay the same? But then we potentially have to add A LOT of edges
+            // Alternatively we could just remove the old index of the indirect edge
+            // from the hidden_edges here
             let hidden_node = data.hidden_node.unwrap();
             let hidden_edges = self
                 .indirect_edges_of_hidden_node
