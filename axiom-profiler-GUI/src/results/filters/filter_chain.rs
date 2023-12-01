@@ -18,8 +18,6 @@ pub struct FilterChain {
 }
 
 const DEFAULT_FILTER_CHAIN: &[Filter] = &[Filter::IgnoreTheorySolving, Filter::MaxInsts(DEFAULT_NODE_COUNT)];
-// const DEFAULT_FILTER_CHAIN: &[Filter] = &[Filter::MaxInsts(DEFAULT_NODE_COUNT)];
-// const DEFAULT_FILTER_CHAIN: &[Filter] = &[Filter::IgnoreTheorySolving];
 
 #[derive(Properties, PartialEq)]
 pub struct FilterChainProps {
@@ -39,10 +37,6 @@ impl yew::html::Component for FilterChain {
             .weak_link
             .borrow_mut()
             .replace(ctx.link().clone());
-        // let filter_chain = vec![
-            // Filter::IgnoreTheorySolving,
-            // Filter::MaxInsts(DEFAULT_NODE_COUNT),
-        // ];
         let filter_chain = DEFAULT_FILTER_CHAIN.to_vec();
         for &filter in &filter_chain {
             ctx.props().apply_filter.emit(filter);
