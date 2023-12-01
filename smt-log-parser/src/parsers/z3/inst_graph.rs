@@ -169,7 +169,7 @@ impl InstGraph {
     }
 
     pub fn keep_n_most_costly(&mut self, n: usize) {
-        let visible_nodes: Vec<NodeIndex> = self.visible_graph.node_indices().collect(); 
+        let visible_nodes: Vec<NodeIndex> = self.visible_graph.node_weights().map(|node| node.orig_graph_idx).collect(); 
         let nth_costliest_visible_node = self
             .cost_ranked_node_indices
             .iter()
@@ -180,7 +180,7 @@ impl InstGraph {
         let nth_largest_cost_rank = self.orig_graph.node_weight(*nth_costliest_visible_node).unwrap().cost_rank;
         // among the visible nodes keep those whose cost-rank
         // is larger than the cost rank of the n-th costliest 
-        self.retain_nodes(|node| node.visible && node.cost_rank >= nth_largest_cost_rank);
+        self.retain_nodes(|node| node.visible && node.cost_rank <= nth_largest_cost_rank);
     }
 
     pub fn remove_subtree_with_root(&mut self, root: NodeIndex) {
