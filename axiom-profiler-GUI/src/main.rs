@@ -114,10 +114,15 @@ impl Component for FileDataComponent {
             let files = e.target_dyn_into::<HtmlInputElement>().unwrap().files();
             Msg::Files(files.map(FileList::from))
         });
+        // Parse the timestamp at compile time
+        let timestamp = chrono::DateTime::parse_from_rfc3339(env!("VERGEN_GIT_COMMIT_TIMESTAMP")).unwrap();
+        // Format using https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+        let version_info = format!("{} ({})", env!("VERGEN_GIT_DESCRIBE"), timestamp.format("%-d %b %y %H:%M"));
         html! {
             <div>
                 <div style="height: 15vh;">
                     <h1>{"Axiom Profiler"}</h1>
+                    <p style="margin-top: -25px"><small>{version_info}</small></p>
                     <h2>{"Choose a log file:"}</h2>
                     <input type="file" accept=".log" onchange={on_change} multiple=false/>
                 </div>
