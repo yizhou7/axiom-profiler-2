@@ -105,6 +105,7 @@ impl Component for SVGResult {
                 false
             }
             Msg::RenderGraph(UserPermission { permission }) => {
+                self.inst_graph.retain_visible_nodes_and_reconnect();
                 let safe_to_render = if let Some(prev_edge_count) = self.prev_edge_count {
                     let curr_edge_count = self.inst_graph.edge_count();
                     curr_edge_count <= prev_edge_count || curr_edge_count <= EDGE_LIMIT
@@ -117,7 +118,6 @@ impl Component for SVGResult {
                 if safe_to_render || permission {
                     self.prev_edge_count = Some(self.inst_graph.edge_count());
                     log::debug!("Rendering graph");
-                    self.inst_graph.retain_visible_nodes_and_reconnect();
                     log::debug!("The graph you are about to render contains {} nodes", self.inst_graph.node_count());
                     let filtered_graph = &self.inst_graph.visible_graph;
                     // let filtered_graph = &self.inst_graph.inst_graph;
