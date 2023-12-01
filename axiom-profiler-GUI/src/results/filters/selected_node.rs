@@ -101,7 +101,7 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
         <button onclick={hide_node}>{"Hide subtree with this root"}</button>
         <button onclick={show_children}>{"Show children"}</button>
         <button onclick={show_parents}>{"Show parents"}</button>
-        <button onclick={show_source_tree}>{"Only show ancestors"}</button>
+        <button onclick={show_source_tree}>{"Show ancestors"}</button>
         <button onclick={ignore_quantifier}>{"Ignore all nodes of this quantifier"}</button>
         <h2>{"Information about selected nodes:"}</h2>
         { for selected_nodes_info }

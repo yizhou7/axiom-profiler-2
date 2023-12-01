@@ -196,11 +196,10 @@ impl InstGraph {
     }
 
     pub fn show_ancestors(&mut self, node: NodeIndex) {
-        // let orig_with_reversed_edges = petgraph::visit::Reversed(&self.orig_graph);
-        // let mut dfs = Dfs::new(orig_with_reversed_edges, node);
-        // while let Some(nx) = dfs.next(orig_with_reversed_edges) {
-        //     self.orig_graph[nx].visible = true;
-        // }
+        let mut dfs = Dfs::new(petgraph::visit::Reversed(&self.orig_graph), node);
+        while let Some(nx) = dfs.next(petgraph::visit::Reversed(&self.orig_graph)) {
+            self.orig_graph[nx].visible = true;
+        }
     }
 
     pub fn reset(&mut self) {

@@ -30,7 +30,7 @@ impl Display for Filter {
             Self::MaxInsts(max) => write!(f, "Show the {} most expensive instantiations", max),
             Self::HideSubTreeWithRoot(nidx) => write!(f, "Hide node {} and its descendants", nidx.index()),
             Self::ShowSourceTree(nidx) => {
-                write!(f, "Only show the ancestors of node {}", nidx.index())
+                write!(f, "Show the ancestors of node {}", nidx.index())
             }
             Self::ShowNeighbours(nidx, direction) => match direction {
                 Direction::Incoming => write!(f, "Show the parents of node {}", nidx.index()),
