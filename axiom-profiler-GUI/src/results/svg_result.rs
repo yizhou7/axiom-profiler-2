@@ -128,12 +128,21 @@ impl Component for SVGResult {
                     self.graph_dim.prev_edge_count = Some(edge_count);
                     log::debug!("Rendering graph");
                     let filtered_graph = &self.inst_graph.visible_graph;
-                    // let filtered_graph = &self.inst_graph.inst_graph;
+
+                    // Performance observations (default value is in [])
+                    //  - splines=false -> 38s | [splines=true] -> ??
+                    //  - nslimit=2 -> 7s | nslimit=4 -> 9s | nslimit=7 -> 11.5s | nslimit=10 -> 14s | [nslimit=INT_MAX] -> 38s
+                    //  - [mclimit=1] -> 7s | mclimit=0.5 -> 4s (with nslimit=2)
+                    // `ranksep` dictates the distance between ranks (rows) in the graph,
+                    // it should be set dynamically based on the average number of children
+                    // per node out of all nodes with at least one child.
+                    let settings = ["ranksep=1.0;", "splines=false;", "nslimit=6;", "mclimit=0.6;"];
                     let dot_output = format!(
-                        "{:?}",
+                        "digraph {{\n{}\n{:?}\n}}",
+                        settings.join("\n"),
                         Dot::with_attr_getters(
                             filtered_graph,
-                            &[Config::EdgeNoLabel, Config::NodeNoLabel],
+                            &[Config::EdgeNoLabel, Config::NodeNoLabel, Config::GraphContentOnly],
                             &|_, edge_data| format!(
                                 "style={}",
                                 match edge_data.weight().edge_type {
