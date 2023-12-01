@@ -188,37 +188,20 @@ impl InstGraph {
     }
 
     pub fn remove_subtree_with_root(&mut self, root: NodeIndex) {
-    //     let mut dfs = Dfs::new(&self.inst_graph, root);
-    //     // iterate through all descendants of root and mark them to be removed
-    //     while let Some(nx) = dfs.next(&self.inst_graph) {
-    //         self.inst_graph[nx].remove = true;
-    //     }
-    //     // remove the marked nodes
-    //     self.inst_graph
-    //         .retain_nodes(|graph, node| !graph.node_weight(node).unwrap().remove)
-    // }
+        let mut dfs = Dfs::new(&self.orig_graph, root);
+        // iterate through all descendants of root and mark them to be hidden 
+        while let Some(nx) = dfs.next(&self.orig_graph) {
+            self.orig_graph[nx].visible = false;
+        }
+    }
 
-    // pub fn only_show_ancestors(&mut self, node: NodeIndex) {
-    //     // create new graph which is identical to original one except that all nodes have
-    //     // remove = true instead of remove = false
-    //     let mut ancestors = self.orig_graph.map(
-    //         |_, &node| {
-    //             let mut hidden_node = node;
-    //             hidden_node.remove = true;
-    //             hidden_node
-    //         },
-    //         |_, &edge| edge,
-    //     );
-    //     // visit all ancestors of node (argument) and set their remove-field to false since we want to retain them
+    // pub fn show_ancestors(&mut self, node: NodeIndex) {
     //     let orig_with_reversed_edges = petgraph::visit::Reversed(&self.orig_graph);
     //     let mut dfs = Dfs::new(orig_with_reversed_edges, node);
     //     while let Some(nx) = dfs.next(orig_with_reversed_edges) {
-    //         ancestors[nx].remove = false;
+    //         self.orig_graph[nx].visible = true;
     //     }
-    //     // retain all ancestors of node, i.e., where remove-field was previously set to true
-    //     ancestors.retain_nodes(|graph, node| !graph.node_weight(node).unwrap().remove);
-    //     self.inst_graph = ancestors
-    }
+    // }
 
     pub fn reset(&mut self) {
         for node in self.orig_graph.node_weights_mut() {
@@ -228,91 +211,10 @@ impl InstGraph {
     }
 
     pub fn show_neighbours(&mut self, node: NodeIndex, direction: petgraph::Direction) {
-        // // find all neighbours of node in the desired direction
-        // let neighbours: Vec<NodeIndex> = self
-        //     .orig_graph
-        //     .neighbors_directed(node, direction)
-        //     .collect();
-        // // find all the incoming and outgoing edges of the neighbours since these might need to be
-        // // added to the graph in case the endpoints are in the graph
-
-        // // TODO: only keep those edges where both endpoints are in the node-set of the current graph
-        // // or in neighbours?
-        // let neighbours_edges: Vec<EdgeIndex> = neighbours
-        //     .iter()
-        //     .flat_map(|&neighbour| {
-        //         self.orig_graph
-        //             .edges_directed(neighbour, Outgoing)
-        //             .chain(self.orig_graph.edges_directed(neighbour, Incoming))
-        //             .map(|e| e.id())
-        //     })
-        //     .collect();
-        // let mut new_inst_graph = self.orig_graph.filter_map(
-        //     // we keep all those nodes of the original graph which are either in the current 
-        //     // graph or a neighbour of node
-        //     |node, &node_data| {
-        //         if self.inst_graph.node_indices().any(|nidx| nidx == node) || neighbours.contains(&node) {
-        //             Some(node_data)
-        //         } else {
-        //             None
-        //         }
-        //     },
-        //     // we keep all those edges of the original graph which are either in the current
-        //     // graph or a neighbour's edge
-        //     |edge, &edge_data| {
-        //         if self.inst_graph.edge_indices().any(|e| e == edge)
-        //             || neighbours_edges.contains(&edge)
-        //         {
-        //             Some(edge_data)
-        //         } else {
-        //             None
-        //         }
-        //     },
-        // );
-        // // find all the redundant indirect edges, i.e., indirect edges which were added
-        // // because a node that was removed is now visible again due to the previous step
-        // let redundant_indirect_edges: Vec<EdgeIndex> = neighbours
-        //     .iter()
-        //     .filter_map(|node| self.indirect_edges_of_hidden_node.remove(node))
-        //     .flatten()
-        //     .collect();
-        // // find all indirect edges that are not redundant, i.e., should be visible
-        // let visible_indirect_edges = self
-        //     .inst_graph
-        //     .edge_indices()
-        //     .filter(|&e| {
-        //         self.inst_graph.edge_weight(e).unwrap().edge_type == EdgeType::Indirect
-        //             && !redundant_indirect_edges.contains(&e)
-        //     })
-        //     .map(|e| {
-        //         let endpoints = self.inst_graph.edge_endpoints(e).unwrap();
-        //         (
-        //             endpoints.0,
-        //             endpoints.1,
-        //             self.inst_graph.edge_weight(e).unwrap(),
-        //         )
-        //     });
-        // // add all visible indirect edges to the new_inst_graph
-        // for (from, to, data) in visible_indirect_edges {
-        //     let new_idx = new_inst_graph.add_edge(from, to, *data);
-        //     log!(format!("Adding indirect edge ({},{})", from.index(), to.index()));
-        //     // One problem is that if one of the hidden_edges was already previously
-        //     // in the inst_graph and now it has been added to new_inst_graph then its 
-        //     // index changes due to add_edge and hence we need to push this new_idx
-        //     // to the hidden_edges of the node it hides
-
-        //     // TODO: make sure we don't need to add edges such that the indirect edges'
-        //     // indices stay the same? But then we potentially have to add A LOT of edges
-        //     // Alternatively we could just remove the old index of the indirect edge
-        //     // from the hidden_edges here
-        //     // let hidden_node = data.hidden_node.unwrap();
-        //     // let hidden_edges = self
-        //     //     .indirect_edges_of_hidden_node
-        //     //     .get_mut(&hidden_node)
-        //     //     .unwrap();
-        //     // hidden_edges.push(new_idx);
-        // }
-        // self.inst_graph = new_inst_graph;
+        let neighbour_indices: Vec<NodeIndex> = self.orig_graph.neighbors_directed(node, direction).collect();
+        for neighbour in neighbour_indices {
+            self.orig_graph.node_weight_mut(neighbour).unwrap().visible = true;
+        };
     }
 
     pub fn node_count(&self) -> usize {
@@ -383,17 +285,6 @@ impl InstGraph {
         }
     }
 
-    // pub fn node_has_filtered_direct_neighbours(&self, node_idx: NodeIndex) -> bool {
-    //     let nr_of_direct_neighbours = |graph: &StableGraph<NodeData, EdgeData>| {
-    //         graph
-    //             .edges_directed(node_idx, Incoming)
-    //             .chain(graph.edges_directed(node_idx, Outgoing))
-    //             .filter(|e| e.weight().edge_type == EdgeType::Direct)
-    //             .count()
-    //     };
-    //     nr_of_direct_neighbours(&self.inst_graph) < nr_of_direct_neighbours(&self.orig_graph)
-    // }
-
     pub fn node_has_filtered_children(&self, node_idx: NodeIndex) -> bool {
         self.node_has_filtered_direct_neighbours(node_idx, Outgoing)
     }
@@ -428,7 +319,6 @@ impl InstGraph {
         for dep in &parser.dependencies {
             if let Some(to) = dep.to {
                 let quant_idx = dep.quant;
-                // let quant = parser.quantifiers.get(quant_idx).unwrap();
                 let cost = parser
                     .instantiations
                     .get(dep.to_iidx.unwrap())
@@ -518,20 +408,11 @@ impl InstGraph {
             self.node_of_line_nr.get(&from),
             self.node_of_line_nr.get(&to),
         ) {
-            // self.inst_graph.add_edge(
-            //     from_node_idx,
-            //     to_node_idx,
-            //     EdgeData {
-            //         edge_type: EdgeType::Direct,
-            //         // hidden_node: None,
-            //     },
-            // );
             self.orig_graph.add_edge(
                 from_node_idx,
                 to_node_idx,
                 EdgeData {
                     edge_type: EdgeType::Direct,
-                    // hidden_node: None,
                 },
             );
         }

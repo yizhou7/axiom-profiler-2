@@ -14,7 +14,7 @@ pub enum Filter {
     IgnoreTheorySolving,
     IgnoreQuantifier(QuantIdx),
     MaxInsts(usize),
-    Hide(NodeIndex),
+    HideSubTreeWithRoot(NodeIndex),
     ShowNeighbours(NodeIndex, Direction),
     ShowSourceTree(NodeIndex),
 }
@@ -28,7 +28,7 @@ impl Display for Filter {
                 write!(f, "Ignore instantiations of quantifier {}", qidx)
             }
             Self::MaxInsts(max) => write!(f, "Show the {} most expensive instantiations", max),
-            Self::Hide(nidx) => write!(f, "Hide node {} and its descendants", nidx.index()),
+            Self::HideSubTreeWithRoot(nidx) => write!(f, "Hide node {} and its descendants", nidx.index()),
             Self::ShowSourceTree(nidx) => {
                 write!(f, "Only show the ancestors of node {}", nidx.index())
             }
@@ -53,10 +53,10 @@ impl Filter {
                 graph.retain_nodes(|node: &NodeData| node.quant_idx != qidx)
             },
             Filter::MaxInsts(n) => graph.keep_n_most_costly(n),
+            Filter::HideSubTreeWithRoot(nidx) => graph.remove_subtree_with_root(nidx),
+            Filter::ShowNeighbours(nidx, direction) => graph.show_neighbours(nidx, direction),
+            // Filter::ShowSourceTree(nidx) => graph.show_ancestors(nidx),
             _ => (),
-            // Filter::Hide(nidx) => graph.remove_subtree_with_root(nidx),
-            // Filter::ShowNeighbours(nidx, direction) => graph.show_neighbours(nidx, direction),
-            // Filter::ShowSourceTree(nidx) => graph.only_show_ancestors(nidx),
         }
     }
 }

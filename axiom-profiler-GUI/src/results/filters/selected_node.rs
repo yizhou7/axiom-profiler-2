@@ -17,7 +17,7 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
         let selected_insts = props.selected_nodes.clone();
         Callback::from(move |_| {
             for inst in &selected_insts {
-                callback.emit(Filter::Hide(inst.node_index));
+                callback.emit(Filter::HideSubTreeWithRoot(inst.node_index));
             }
         })
     };
@@ -98,7 +98,7 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
     // <div>
     <>
         <h4>{selected_nodes_text}</h4>
-        <button onclick={hide_node}>{"Hide"}</button>
+        <button onclick={hide_node}>{"Hide subtree with this root"}</button>
         <button onclick={show_children}>{"Show children"}</button>
         <button onclick={show_parents}>{"Show parents"}</button>
         <button onclick={show_source_tree}>{"Only show ancestors"}</button>
