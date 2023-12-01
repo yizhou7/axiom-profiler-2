@@ -1,13 +1,13 @@
 use fxhash::FxHashMap;
 use gloo_console::log;
-use petgraph::graph::{NodeIndex, Edge};
+use petgraph::graph::{Edge, NodeIndex};
 use petgraph::visit::IntoEdgeReferences;
-use petgraph::{Direction, Graph};
 use petgraph::{
     stable_graph::EdgeIndex,
     visit::{Dfs, EdgeRef},
     Direction::{Incoming, Outgoing},
 };
+use petgraph::{Direction, Graph};
 use std::fmt;
 
 use crate::items::{BlamedTermItem, InstIdx, QuantIdx, TermIdx};
@@ -120,17 +120,20 @@ impl InstGraph {
         let out_set: Vec<NodeIndex> = new_inst_graph
             .node_indices()
             .into_iter()
-            .filter(|node| { 
+            .filter(|node| {
                 let new_child_count = new_inst_graph.neighbors_directed(*node, Outgoing).count();
                 let old_child_count = new_inst_graph.node_weight(*node).unwrap().child_count;
                 new_child_count < old_child_count
-             })
+            })
             .collect();
         // nodes with missing parents
         let in_set: Vec<NodeIndex> = new_inst_graph
             .node_indices()
             .into_iter()
-            .filter(|node| new_inst_graph.neighbors_directed(*node, Incoming).count() < new_inst_graph.node_weight(*node).unwrap().parent_count)
+            .filter(|node| {
+                new_inst_graph.neighbors_directed(*node, Incoming).count()
+                    < new_inst_graph.node_weight(*node).unwrap().parent_count
+            })
             .collect();
         // remove all (direct) edges since we now want to compute the transitive reduction of the indirect edges
         new_inst_graph.clear_edges();
@@ -140,39 +143,59 @@ impl InstGraph {
             for &v in &in_set {
                 let old_u = new_inst_graph.node_weight(u).unwrap().orig_graph_idx;
                 let old_v = new_inst_graph.node_weight(v).unwrap().orig_graph_idx;
-                if old_u != old_v && petgraph::algo::has_path_connecting(&self.orig_graph, old_u, old_v, None) {
-                    new_inst_graph.add_edge(u, v, EdgeData { edge_type: EdgeType::Indirect});
-                } 
+                if old_u != old_v
+                    && petgraph::algo::has_path_connecting(&self.orig_graph, old_u, old_v, None)
+                {
+                    new_inst_graph.add_edge(
+                        u,
+                        v,
+                        EdgeData {
+                            edge_type: EdgeType::Indirect,
+                        },
+                    );
+                }
             }
         }
-        // compute transitive reduction to minimize |E| and not clutter the graph 
+        // compute transitive reduction to minimize |E| and not clutter the graph
         let toposorted_dag = petgraph::algo::toposort(&new_inst_graph, None).unwrap();
-        let (intermediate, _) = petgraph::algo::tred::dag_to_toposorted_adjacency_list::<_, u32>(&new_inst_graph, &toposorted_dag);
+        let (intermediate, _) = petgraph::algo::tred::dag_to_toposorted_adjacency_list::<_, u32>(
+            &new_inst_graph,
+            &toposorted_dag,
+        );
         // in tred, the node indices are replaced by their topological rank
-        // but revmap can be used to map from indices in new_inst_graph to indices in tred 
+        // but revmap can be used to map from indices in new_inst_graph to indices in tred
         let (tred, _) = petgraph::algo::tred::dag_transitive_reduction_closure(&intermediate);
         // remove all edges since we only want the direct edges and the indirect edges in the transitive reduction in the final graph
         new_inst_graph.clear_edges();
         // add all direct edges to new_inst_graph that we removed previously
         for direct_edge in direct_edges {
-            new_inst_graph.add_edge(direct_edge.source(), direct_edge.target(), direct_edge.weight);
+            new_inst_graph.add_edge(
+                direct_edge.source(),
+                direct_edge.target(),
+                direct_edge.weight,
+            );
         }
-        // add all indirect edges from transitive reduction 
+        // add all indirect edges from transitive reduction
         for indirect_edge in tred.edge_references() {
             new_inst_graph.add_edge(
-                toposorted_dag[indirect_edge.source() as usize], 
-                toposorted_dag[indirect_edge.target() as usize], 
-                EdgeData { edge_type: EdgeType::Indirect }
+                toposorted_dag[indirect_edge.source() as usize],
+                toposorted_dag[indirect_edge.target() as usize],
+                EdgeData {
+                    edge_type: EdgeType::Indirect,
+                },
             );
         }
         self.visible_graph = new_inst_graph;
-        (self.visible_graph.node_count(), self.visible_graph.edge_count())
+        (
+            self.visible_graph.node_count(),
+            self.visible_graph.edge_count(),
+        )
     }
 
     pub fn keep_n_most_costly(&mut self, n: usize) {
         let visible_nodes: Vec<NodeIndex> = self
             .orig_graph
-            .node_indices() 
+            .node_indices()
             .filter(|n| self.orig_graph.node_weight(*n).unwrap().visible)
             .collect();
         let nth_costliest_visible_node = self
@@ -182,9 +205,13 @@ impl InstGraph {
             .take(n)
             .last()
             .unwrap();
-        let nth_largest_cost_rank = self.orig_graph.node_weight(*nth_costliest_visible_node).unwrap().cost_rank;
+        let nth_largest_cost_rank = self
+            .orig_graph
+            .node_weight(*nth_costliest_visible_node)
+            .unwrap()
+            .cost_rank;
         // among the visible nodes keep those whose cost-rank
-        // is larger than the cost rank of the n-th costliest 
+        // is larger than the cost rank of the n-th costliest
         self.retain_nodes(|node| node.visible && node.cost_rank <= nth_largest_cost_rank);
     }
 
@@ -210,10 +237,13 @@ impl InstGraph {
     }
 
     pub fn show_neighbours(&mut self, node: NodeIndex, direction: petgraph::Direction) {
-        let neighbour_indices: Vec<NodeIndex> = self.orig_graph.neighbors_directed(node, direction).collect();
+        let neighbour_indices: Vec<NodeIndex> = self
+            .orig_graph
+            .neighbors_directed(node, direction)
+            .collect();
         for neighbour in neighbour_indices {
             self.orig_graph.node_weight_mut(neighbour).unwrap().visible = true;
-        };
+        }
     }
 
     pub fn get_instantiation_info(&self, node_index: usize, parser: &Z3Parser) -> Option<InstInfo> {
@@ -289,18 +319,16 @@ impl InstGraph {
         node_idx: NodeIndex,
         direction: Direction,
     ) -> bool {
-        let neighbours = self.orig_graph
+        let neighbours = self
+            .orig_graph
             .edges_directed(node_idx, direction)
             .filter(|e| e.weight().edge_type == EdgeType::Direct)
-            .map(|e| {
-                match direction {
-                    Outgoing => e.target(),
-                    Incoming => e.source(),
-                }
-            }
-        ); 
-        let (visible_neighbours, hidden_neighbours): (Vec<NodeIndex>, Vec<NodeIndex>) = neighbours
-            .partition(|n| self.orig_graph.node_weight(*n).unwrap().visible);
+            .map(|e| match direction {
+                Outgoing => e.target(),
+                Incoming => e.source(),
+            });
+        let (visible_neighbours, hidden_neighbours): (Vec<NodeIndex>, Vec<NodeIndex>) =
+            neighbours.partition(|n| self.orig_graph.node_weight(*n).unwrap().visible);
         let nr_visible_neighbours = visible_neighbours.len();
         let nr_hidden_neighbours = hidden_neighbours.len();
         nr_visible_neighbours < nr_hidden_neighbours + nr_visible_neighbours
@@ -325,7 +353,7 @@ impl InstGraph {
                     child_count: 0,
                     parent_count: 0,
                     orig_graph_idx: NodeIndex::default(),
-                    cost_rank: 0, 
+                    cost_rank: 0,
                 });
             }
         }
@@ -339,17 +367,18 @@ impl InstGraph {
             }
         }
         // precompute number of children and parents of each node
-        self.orig_graph = self.orig_graph.map(|nidx, data| {
-            let child_count = self.orig_graph.neighbors_directed(nidx, Outgoing).count();
-            let parent_count = self.orig_graph.neighbors_directed(nidx, Incoming).count();
-            let mut new_data = data.clone(); 
-            new_data.child_count = child_count;
-            new_data.parent_count = parent_count;
-            new_data
+        self.orig_graph = self.orig_graph.map(
+            |nidx, data| {
+                let child_count = self.orig_graph.neighbors_directed(nidx, Outgoing).count();
+                let parent_count = self.orig_graph.neighbors_directed(nidx, Incoming).count();
+                let mut new_data = data.clone();
+                new_data.child_count = child_count;
+                new_data.parent_count = parent_count;
+                new_data
             },
-            |_, data| *data
+            |_, data| *data,
         );
-        // precompute the cost-rank of all nodes by sorting the node_indices by our cost-order 
+        // precompute the cost-rank of all nodes by sorting the node_indices by our cost-order
         // in descending order and then assigning the rank to each node
         // Our cost-order is defined as follows:
         // inst_b > inst_a iff (cost_b > cost_a or (cost_b = cost_a and line_nr_b < line_nr_a))
@@ -390,7 +419,10 @@ impl InstGraph {
             // Also, using StableGraph where node-indices stay stable across removals
             // is not viable here since StableGraph does not implement NodeCompactIndexable
             // which is needed for petgraph::algo::tred::dag_to_toposorted_adjacency_list
-            self.orig_graph.node_weight_mut(node).unwrap().orig_graph_idx = node;
+            self.orig_graph
+                .node_weight_mut(node)
+                .unwrap()
+                .orig_graph_idx = node;
         }
     }
 

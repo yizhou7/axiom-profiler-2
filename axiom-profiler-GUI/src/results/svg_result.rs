@@ -92,7 +92,11 @@ impl Component for SVGResult {
             selected_insts: FxHashMap::default(),
             filter_chain_link: WeakComponentLink::default(),
             on_node_select: ctx.link().callback(Msg::UpdateSelectedNodes),
-            graph_dim: GraphDimensions { node_count: 0, edge_count: 0, prev_edge_count: None },
+            graph_dim: GraphDimensions {
+                node_count: 0,
+                edge_count: 0,
+                prev_edge_count: None,
+            },
         }
     }
 
@@ -174,14 +178,8 @@ impl Component for SVGResult {
             Msg::GetUserPermission => {
                 log::debug!("Getting user permission");
                 let window = window().unwrap();
-                let node_count = self
-                    .graph_dim
-                    .node_count
-                    .to_formatted_string(&Locale::en);
-                let edge_count = self
-                    .graph_dim
-                    .edge_count
-                    .to_formatted_string(&Locale::en);
+                let node_count = self.graph_dim.node_count.to_formatted_string(&Locale::en);
+                let edge_count = self.graph_dim.edge_count.to_formatted_string(&Locale::en);
                 let message = format!("Warning: The graph you are about to render contains {} nodes and {} edges, rendering might be slow. Do you want to proceed?", node_count, edge_count);
                 let result = window.confirm_with_message(&message);
                 match result {

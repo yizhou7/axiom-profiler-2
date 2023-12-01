@@ -28,16 +28,13 @@ impl Display for Filter {
                 write!(f, "Ignore instantiations of quantifier {}", qidx)
             }
             Self::MaxInsts(max) => write!(f, "Show the {} most expensive instantiations", max),
-            Self::VisitSubTreeWithRoot(nidx, retain) => 
-                match retain {
-                    true => write!(f, "Show node {} and its descendants", nidx.index()),
-                    false => write!(f, "Hide node {} and its descendants", nidx.index()),
-                }
-            Self::VisitSourceTree(nidx, retain) => {
-                match retain {
-                    true => write!(f, "Show node {} and its ancestors", nidx.index()),
-                    false => write!(f, "Hide node {} and its ancestors", nidx.index()),
-                }
+            Self::VisitSubTreeWithRoot(nidx, retain) => match retain {
+                true => write!(f, "Show node {} and its descendants", nidx.index()),
+                false => write!(f, "Hide node {} and its descendants", nidx.index()),
+            },
+            Self::VisitSourceTree(nidx, retain) => match retain {
+                true => write!(f, "Show node {} and its ancestors", nidx.index()),
+                false => write!(f, "Hide node {} and its ancestors", nidx.index()),
             },
             Self::ShowNeighbours(nidx, direction) => match direction {
                 Direction::Incoming => write!(f, "Show the parents of node {}", nidx.index()),
@@ -50,15 +47,14 @@ impl Display for Filter {
 impl Filter {
     pub fn apply(self: Filter, graph: &mut InstGraph) {
         match self {
-            Filter::MaxNodeIdx(max) => {
-                graph.retain_nodes(|node: &NodeData| usize::from(node.orig_graph_idx.index()) <= max)
-            }
+            Filter::MaxNodeIdx(max) => graph
+                .retain_nodes(|node: &NodeData| usize::from(node.orig_graph_idx.index()) <= max),
             Filter::IgnoreTheorySolving => {
                 graph.retain_nodes(|node: &NodeData| !node.is_theory_inst)
             }
             Filter::IgnoreQuantifier(qidx) => {
                 graph.retain_nodes(|node: &NodeData| node.quant_idx != qidx)
-            },
+            }
             Filter::MaxInsts(n) => graph.keep_n_most_costly(n),
             Filter::ShowNeighbours(nidx, direction) => graph.show_neighbours(nidx, direction),
             Filter::VisitSubTreeWithRoot(nidx, retain) => graph.visit_descendants(nidx, retain),

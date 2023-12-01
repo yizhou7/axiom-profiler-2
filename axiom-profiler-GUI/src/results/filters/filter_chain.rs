@@ -17,7 +17,10 @@ pub struct FilterChain {
     prev_filter_chain: Vec<Filter>,
 }
 
-const DEFAULT_FILTER_CHAIN: &[Filter] = &[Filter::IgnoreTheorySolving, Filter::MaxInsts(DEFAULT_NODE_COUNT)];
+const DEFAULT_FILTER_CHAIN: &[Filter] = &[
+    Filter::IgnoreTheorySolving,
+    Filter::MaxInsts(DEFAULT_NODE_COUNT),
+];
 
 #[derive(Properties, PartialEq)]
 pub struct FilterChainProps {
@@ -73,7 +76,7 @@ impl yew::html::Component for FilterChain {
             Msg::ResetFilters => {
                 log!("resetting filters");
                 self.prev_filter_chain = self.filter_chain.clone();
-                self.filter_chain = DEFAULT_FILTER_CHAIN.to_vec(); 
+                self.filter_chain = DEFAULT_FILTER_CHAIN.to_vec();
                 ctx.props().reset_graph.emit(());
                 for &filter in &self.filter_chain {
                     ctx.props().apply_filter.emit(filter);
