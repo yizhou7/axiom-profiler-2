@@ -98,7 +98,7 @@ impl InstGraph {
         }
     }
 
-    pub fn retain_visible_nodes_and_reconnect(&mut self) {
+    pub fn retain_visible_nodes_and_reconnect(&mut self) -> (usize, usize) {
         // retain all visible nodes
         let mut new_inst_graph = self.orig_graph.filter_map(
             |_, &node| {
@@ -166,6 +166,7 @@ impl InstGraph {
             );
         }
         self.visible_graph = new_inst_graph;
+        (self.visible_graph.node_count(), self.visible_graph.edge_count())
     }
 
     pub fn keep_n_most_costly(&mut self, n: usize) {
@@ -213,14 +214,6 @@ impl InstGraph {
         for neighbour in neighbour_indices {
             self.orig_graph.node_weight_mut(neighbour).unwrap().visible = true;
         };
-    }
-
-    pub fn node_count(&self) -> usize {
-        self.visible_graph.node_count()
-    }
-
-    pub fn edge_count(&self) -> usize {
-        self.visible_graph.edge_count()
     }
 
     pub fn get_instantiation_info(&self, node_index: usize, parser: &Z3Parser) -> Option<InstInfo> {

@@ -24,7 +24,7 @@ use viz_js::VizInstance;
 use web_sys::window;
 use yew::prelude::*;
 
-pub const EDGE_LIMIT: usize = 1000;
+pub const EDGE_LIMIT: usize = 500;
 pub const DEFAULT_NODE_COUNT: usize = 125;
 
 pub enum Msg {
@@ -52,6 +52,12 @@ impl From<bool> for UserPermission {
     }
 }
 
+struct GraphDimensions {
+    node_count: usize,
+    edge_count: usize,
+    prev_edge_count: Option<usize>,
+}
+
 pub struct SVGResult {
     parser: Z3Parser,
     colour_map: QuantIdxToColourMap,
@@ -60,7 +66,7 @@ pub struct SVGResult {
     selected_insts: FxHashMap<NodeIndex, InstInfo>,
     filter_chain_link: WeakComponentLink<FilterChain>,
     on_node_select: Callback<usize>,
-    prev_edge_count: Option<usize>, // refers to the edge_count of the previously rendered graph
+    graph_dim: GraphDimensions,
 }
 
 #[derive(Properties, PartialEq)]
@@ -86,7 +92,7 @@ impl Component for SVGResult {
             selected_insts: FxHashMap::default(),
             filter_chain_link: WeakComponentLink::default(),
             on_node_select: ctx.link().callback(Msg::UpdateSelectedNodes),
-            prev_edge_count: None,
+            graph_dim: GraphDimensions { node_count: 0, edge_count: 0, prev_edge_count: None },
         }
     }
 
@@ -95,20 +101,19 @@ impl Component for SVGResult {
             Msg::ApplyFilter(filter) => {
                 log::debug!("Applying filter {}", filter);
                 filter.apply(&mut self.inst_graph);
-                log::debug!("After applying filter \"{}\", the graph contains {} nodes", filter, self.inst_graph.node_count());
                 false
             }
             Msg::ResetGraph => {
                 log::debug!("Resetting graph");
                 self.inst_graph.reset();
-                log::debug!("After resetting, the graph contains {} nodes", self.inst_graph.node_count());
                 false
             }
             Msg::RenderGraph(UserPermission { permission }) => {
-                self.inst_graph.retain_visible_nodes_and_reconnect();
-                let safe_to_render = if let Some(prev_edge_count) = self.prev_edge_count {
-                    let curr_edge_count = self.inst_graph.edge_count();
-                    curr_edge_count <= prev_edge_count || curr_edge_count <= EDGE_LIMIT
+                let (node_count, edge_count) = self.inst_graph.retain_visible_nodes_and_reconnect();
+                self.graph_dim.node_count = node_count;
+                self.graph_dim.edge_count = edge_count;
+                let safe_to_render = if let Some(prev_edge_count) = self.graph_dim.prev_edge_count {
+                    edge_count <= prev_edge_count || edge_count <= EDGE_LIMIT
                 } else {
                     // initially the node-count is 125 so it should be safe to render regardless of the
                     // number of edges
@@ -116,9 +121,8 @@ impl Component for SVGResult {
                     true
                 };
                 if safe_to_render || permission {
-                    self.prev_edge_count = Some(self.inst_graph.edge_count());
+                    self.graph_dim.prev_edge_count = Some(edge_count);
                     log::debug!("Rendering graph");
-                    log::debug!("The graph you are about to render contains {} nodes", self.inst_graph.node_count());
                     let filtered_graph = &self.inst_graph.visible_graph;
                     // let filtered_graph = &self.inst_graph.inst_graph;
                     let dot_output = format!(
@@ -171,12 +175,12 @@ impl Component for SVGResult {
                 log::debug!("Getting user permission");
                 let window = window().unwrap();
                 let node_count = self
-                    .inst_graph
-                    .node_count()
+                    .graph_dim
+                    .node_count
                     .to_formatted_string(&Locale::en);
                 let edge_count = self
-                    .inst_graph
-                    .edge_count()
+                    .graph_dim
+                    .edge_count
                     .to_formatted_string(&Locale::en);
                 let message = format!("Warning: The graph you are about to render contains {} nodes and {} edges, rendering might be slow. Do you want to proceed?", node_count, edge_count);
                 let result = window.confirm_with_message(&message);
@@ -237,7 +241,7 @@ impl Component for SVGResult {
     fn view(&self, ctx: &Context<Self>) -> Html {
         // let on_node_select = ctx.link().callback(Msg::UpdateSelectedNode);
         let node_and_edge_count_preview = html! {
-            <h4>{format!{"The filtered graph contains {} nodes and {} edges", self.inst_graph.node_count(), self.inst_graph.edge_count()}}</h4>
+            <h4>{format!{"The filtered graph contains {} nodes and {} edges", self.graph_dim.node_count, self.graph_dim.edge_count}}</h4>
         };
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
