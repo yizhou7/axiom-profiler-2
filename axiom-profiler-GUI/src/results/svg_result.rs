@@ -95,11 +95,13 @@ impl Component for SVGResult {
             Msg::ApplyFilter(filter) => {
                 log::debug!("Applying filter {}", filter);
                 filter.apply(&mut self.inst_graph);
+                log::debug!("After applying filter \"{}\", the graph contains {} nodes", filter, self.inst_graph.node_count());
                 false
             }
             Msg::ResetGraph => {
                 log::debug!("Resetting graph");
                 self.inst_graph.reset();
+                log::debug!("After resetting, the graph contains {} nodes", self.inst_graph.node_count());
                 false
             }
             Msg::RenderGraph(UserPermission { permission }) => {
@@ -116,6 +118,7 @@ impl Component for SVGResult {
                     self.prev_edge_count = Some(self.inst_graph.edge_count());
                     log::debug!("Rendering graph");
                     self.inst_graph.retain_visible_nodes_and_reconnect();
+                    log::debug!("The graph you are about to render contains {} nodes", self.inst_graph.node_count());
                     let filtered_graph = &self.inst_graph.visible_graph;
                     // let filtered_graph = &self.inst_graph.inst_graph;
                     let dot_output = format!(

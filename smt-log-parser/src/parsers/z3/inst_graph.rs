@@ -169,7 +169,11 @@ impl InstGraph {
     }
 
     pub fn keep_n_most_costly(&mut self, n: usize) {
-        let visible_nodes: Vec<NodeIndex> = self.visible_graph.node_weights().map(|node| node.orig_graph_idx).collect(); 
+        let visible_nodes: Vec<NodeIndex> = self
+            .orig_graph
+            .node_indices() 
+            .filter(|n| self.orig_graph.node_weight(*n).unwrap().visible)
+            .collect();
         let nth_costliest_visible_node = self
             .cost_ranked_node_indices
             .iter()
