@@ -12,12 +12,21 @@ pub struct SelectedNodeProps {
 
 #[function_component(SelectedNode)]
 pub fn selected_node(props: &SelectedNodeProps) -> Html {
-    let hide_node = {
+    let hide_subtree = {
         let callback = props.action.clone();
         let selected_insts = props.selected_nodes.clone();
         Callback::from(move |_| {
             for inst in &selected_insts {
-                callback.emit(Filter::HideSubTreeWithRoot(inst.node_index));
+                callback.emit(Filter::VisitSubTreeWithRoot(inst.node_index, false));
+            }
+        })
+    };
+    let show_subtree = {
+        let callback = props.action.clone();
+        let selected_insts = props.selected_nodes.clone();
+        Callback::from(move |_| {
+            for inst in &selected_insts {
+                callback.emit(Filter::VisitSubTreeWithRoot(inst.node_index, true));
             }
         })
     };
@@ -44,7 +53,16 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
         let selected_insts = props.selected_nodes.clone();
         Callback::from(move |_| {
             for inst in &selected_insts {
-                callback.emit(Filter::ShowSourceTree(inst.node_index))
+                callback.emit(Filter::VisitSourceTree(inst.node_index, true))
+            }
+        })
+    };
+    let hide_source_tree = {
+        let callback = props.action.clone();
+        let selected_insts = props.selected_nodes.clone();
+        Callback::from(move |_| {
+            for inst in &selected_insts {
+                callback.emit(Filter::VisitSourceTree(inst.node_index, false))
             }
         })
     };
@@ -98,10 +116,18 @@ pub fn selected_node(props: &SelectedNodeProps) -> Html {
     // <div>
     <>
         <h4>{selected_nodes_text}</h4>
-        <button onclick={hide_node}>{"Hide subtree with this root"}</button>
-        <button onclick={show_children}>{"Show children"}</button>
-        <button onclick={show_parents}>{"Show parents"}</button>
-        <button onclick={show_source_tree}>{"Show ancestors"}</button>
+        <div>
+            <button onclick={show_subtree}>{"Show subtree with this root"}</button>
+            <button onclick={hide_subtree}>{"Hide subtree with this root"}</button>
+        </div>
+        <div>
+            <button onclick={show_children}>{"Show children"}</button>
+            <button onclick={show_parents}>{"Show parents"}</button>
+        </div>
+        <div>
+            <button onclick={show_source_tree}>{"Show ancestors"}</button>
+            <button onclick={hide_source_tree}>{"Hide ancestors"}</button>
+        </div>
         <button onclick={ignore_quantifier}>{"Ignore all nodes of this quantifier"}</button>
         <h2>{"Information about selected nodes:"}</h2>
         { for selected_nodes_info }

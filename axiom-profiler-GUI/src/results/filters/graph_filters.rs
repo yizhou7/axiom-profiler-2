@@ -14,9 +14,9 @@ pub enum Filter {
     IgnoreTheorySolving,
     IgnoreQuantifier(QuantIdx),
     MaxInsts(usize),
-    HideSubTreeWithRoot(NodeIndex),
     ShowNeighbours(NodeIndex, Direction),
-    ShowSourceTree(NodeIndex),
+    VisitSourceTree(NodeIndex, bool),
+    VisitSubTreeWithRoot(NodeIndex, bool),
 }
 
 impl Display for Filter {
@@ -28,10 +28,17 @@ impl Display for Filter {
                 write!(f, "Ignore instantiations of quantifier {}", qidx)
             }
             Self::MaxInsts(max) => write!(f, "Show the {} most expensive instantiations", max),
-            Self::HideSubTreeWithRoot(nidx) => write!(f, "Hide node {} and its descendants", nidx.index()),
-            Self::ShowSourceTree(nidx) => {
-                write!(f, "Show the ancestors of node {}", nidx.index())
-            }
+            Self::VisitSubTreeWithRoot(nidx, retain) => 
+                match retain {
+                    true => write!(f, "Show node {} and its descendants", nidx.index()),
+                    false => write!(f, "Hide node {} and its descendants", nidx.index()),
+                }
+            Self::VisitSourceTree(nidx, retain) => {
+                match retain {
+                    true => write!(f, "Show node {} and its ancestors", nidx.index()),
+                    false => write!(f, "Hide node {} and its ancestors", nidx.index()),
+                }
+            },
             Self::ShowNeighbours(nidx, direction) => match direction {
                 Direction::Incoming => write!(f, "Show the parents of node {}", nidx.index()),
                 Direction::Outgoing => write!(f, "Show the children of node {}", nidx.index()),
@@ -53,9 +60,9 @@ impl Filter {
                 graph.retain_nodes(|node: &NodeData| node.quant_idx != qidx)
             },
             Filter::MaxInsts(n) => graph.keep_n_most_costly(n),
-            Filter::HideSubTreeWithRoot(nidx) => graph.remove_subtree_with_root(nidx),
             Filter::ShowNeighbours(nidx, direction) => graph.show_neighbours(nidx, direction),
-            Filter::ShowSourceTree(nidx) => graph.show_ancestors(nidx),
+            Filter::VisitSubTreeWithRoot(nidx, retain) => graph.visit_descendants(nidx, retain),
+            Filter::VisitSourceTree(nidx, retain) => graph.visit_ancestors(nidx, retain),
         }
     }
 }

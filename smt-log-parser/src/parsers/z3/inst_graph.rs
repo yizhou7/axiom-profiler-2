@@ -187,18 +187,17 @@ impl InstGraph {
         self.retain_nodes(|node| node.visible && node.cost_rank <= nth_largest_cost_rank);
     }
 
-    pub fn remove_subtree_with_root(&mut self, root: NodeIndex) {
+    pub fn visit_descendants(&mut self, root: NodeIndex, retain: bool) {
         let mut dfs = Dfs::new(&self.orig_graph, root);
-        // iterate through all descendants of root and mark them to be hidden 
         while let Some(nx) = dfs.next(&self.orig_graph) {
-            self.orig_graph[nx].visible = false;
+            self.orig_graph[nx].visible = retain;
         }
     }
 
-    pub fn show_ancestors(&mut self, node: NodeIndex) {
+    pub fn visit_ancestors(&mut self, node: NodeIndex, retain: bool) {
         let mut dfs = Dfs::new(petgraph::visit::Reversed(&self.orig_graph), node);
         while let Some(nx) = dfs.next(petgraph::visit::Reversed(&self.orig_graph)) {
-            self.orig_graph[nx].visible = true;
+            self.orig_graph[nx].visible = retain;
         }
     }
 
