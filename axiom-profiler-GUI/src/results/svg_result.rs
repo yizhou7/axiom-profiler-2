@@ -115,7 +115,9 @@ impl Component for SVGResult {
                 if safe_to_render || permission {
                     self.prev_edge_count = Some(self.inst_graph.edge_count());
                     log::debug!("Rendering graph");
-                    let filtered_graph = &self.inst_graph.inst_graph;
+                    self.inst_graph.retain_visible_nodes_and_reconnect();
+                    let filtered_graph = &self.inst_graph.visible_graph;
+                    // let filtered_graph = &self.inst_graph.inst_graph;
                     let dot_output = format!(
                         "{:?}",
                         Dot::with_attr_getters(
@@ -130,7 +132,8 @@ impl Component for SVGResult {
                             ),
                             &|_, (node_idx, node_data)| {
                                 format!("label=\"{}\" style=filled shape=oval fillcolor=\"{}\" fontcolor=black gradientangle=90",
-                                        node_idx.index(),
+                                        // node_idx.index(),
+                                        node_data.orig_graph_idx.index(),
                                         match (self.inst_graph.node_has_filtered_children(node_idx), 
                                                self.inst_graph.node_has_filtered_parents(node_idx)) {
                                             (false, false) => format!("{}", self.colour_map.get(&node_data.quant_idx, 0.7)),

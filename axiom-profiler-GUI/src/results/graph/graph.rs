@@ -62,16 +62,16 @@ pub fn graph(props: &GraphProps) -> Html {
                     .map(|i| {
                         // extract node_index from node to construct callback that emits it
                         let node = descendant_nodes.item(i).unwrap();
-                        let title_element = node
-                            .query_selector("title")
+                        let text_element = node
+                            .query_selector("text")
                             .expect("Failed to select title element")
                             .unwrap();
-                        let title_content = title_element.text_content().unwrap();
+                        let text_content = text_element.text_content().unwrap();
                         let ellipse = node
                             .query_selector("ellipse")
                             .expect("Failed to select title element")
                             .unwrap();
-                        let node_index = title_content.parse::<usize>().unwrap();
+                        let node_index = text_content.parse::<usize>().unwrap();
                         let callback = callback.clone();
                         let closure: Closure<dyn Fn(Event)> = Closure::new(move |_: Event| {
                             // the selected node should become bold whenever it's clicked on the first time

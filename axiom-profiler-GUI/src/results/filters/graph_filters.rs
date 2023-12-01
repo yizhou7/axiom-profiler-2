@@ -44,18 +44,19 @@ impl Filter {
     pub fn apply(self: Filter, graph: &mut InstGraph) {
         match self {
             Filter::MaxNodeIdx(max) => {
-                graph.retain_nodes(|node: &NodeData| usize::from(node.inst_idx.unwrap()) <= max)
+                graph.retain_nodes(|node: &NodeData| usize::from(node.orig_graph_idx.index()) <= max)
             }
             Filter::IgnoreTheorySolving => {
-                graph.retain_nodes_and_reconnect(|node: &NodeData| !node.is_theory_inst)
+                graph.retain_nodes(|node: &NodeData| !node.is_theory_inst)
             }
             Filter::IgnoreQuantifier(qidx) => {
-                graph.retain_nodes_and_reconnect(|node: &NodeData| node.quant_idx != qidx)
-            }
+                graph.retain_nodes(|node: &NodeData| node.quant_idx != qidx)
+            },
             Filter::MaxInsts(n) => graph.keep_n_most_costly(n),
-            Filter::Hide(nidx) => graph.remove_subtree_with_root(nidx),
-            Filter::ShowNeighbours(nidx, direction) => graph.show_neighbours(nidx, direction),
-            Filter::ShowSourceTree(nidx) => graph.only_show_ancestors(nidx),
+            _ => (),
+            // Filter::Hide(nidx) => graph.remove_subtree_with_root(nidx),
+            // Filter::ShowNeighbours(nidx, direction) => graph.show_neighbours(nidx, direction),
+            // Filter::ShowSourceTree(nidx) => graph.only_show_ancestors(nidx),
         }
     }
 }
