@@ -195,13 +195,13 @@ impl InstGraph {
         }
     }
 
-    // pub fn show_ancestors(&mut self, node: NodeIndex) {
-    //     let orig_with_reversed_edges = petgraph::visit::Reversed(&self.orig_graph);
-    //     let mut dfs = Dfs::new(orig_with_reversed_edges, node);
-    //     while let Some(nx) = dfs.next(orig_with_reversed_edges) {
-    //         self.orig_graph[nx].visible = true;
-    //     }
-    // }
+    pub fn show_ancestors(&mut self, node: NodeIndex) {
+        // let orig_with_reversed_edges = petgraph::visit::Reversed(&self.orig_graph);
+        // let mut dfs = Dfs::new(orig_with_reversed_edges, node);
+        // while let Some(nx) = dfs.next(orig_with_reversed_edges) {
+        //     self.orig_graph[nx].visible = true;
+        // }
+    }
 
     pub fn reset(&mut self) {
         for node in self.orig_graph.node_weights_mut() {

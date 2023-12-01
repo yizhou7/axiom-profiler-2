@@ -55,8 +55,7 @@ impl Filter {
             Filter::MaxInsts(n) => graph.keep_n_most_costly(n),
             Filter::HideSubTreeWithRoot(nidx) => graph.remove_subtree_with_root(nidx),
             Filter::ShowNeighbours(nidx, direction) => graph.show_neighbours(nidx, direction),
-            // Filter::ShowSourceTree(nidx) => graph.show_ancestors(nidx),
-            _ => (),
+            Filter::ShowSourceTree(nidx) => graph.show_ancestors(nidx),
         }
     }
 }
