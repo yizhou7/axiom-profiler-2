@@ -1,5 +1,5 @@
 [package]
-name = "yew-testing"
+name = "axiom-profiler-gui"
 version = "0.1.0"
 edition = "2021"
 
@@ -32,6 +32,7 @@ gloo-console = "0.3.0"
 num-format = "0.4.4"
 material-yew = "0.3.0"
 paste = "1.0.14"
+yew-agent = "0.2.0"
 chrono = "0.4"
 
 [build-dependencies]
