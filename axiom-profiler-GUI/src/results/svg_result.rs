@@ -23,6 +23,7 @@ use std::num::NonZeroUsize;
 use viz_js::VizInstance;
 use web_sys::window;
 use yew::prelude::*;
+use indexmap::map::IndexMap;
 
 pub const EDGE_LIMIT: usize = 500;
 pub const DEFAULT_NODE_COUNT: usize = 125;
@@ -64,7 +65,7 @@ pub struct SVGResult {
     colour_map: QuantIdxToColourMap,
     inst_graph: InstGraph,
     svg_text: AttrValue,
-    selected_insts: FxHashMap<NodeIndex, InstInfo>,
+    selected_insts: IndexMap<NodeIndex, InstInfo>,
     filter_chain_link: WeakComponentLink<FilterChain>,
     on_node_select: Callback<usize>,
     graph_dim: GraphDimensions,
@@ -91,7 +92,7 @@ impl Component for SVGResult {
             colour_map,
             inst_graph,
             svg_text: AttrValue::default(),
-            selected_insts: FxHashMap::default(),
+            selected_insts: IndexMap::new(),
             filter_chain_link: WeakComponentLink::default(),
             on_node_select: ctx.link().callback(Msg::UpdateSelectedNodes),
             graph_dim: GraphDimensions {
@@ -240,11 +241,10 @@ impl Component for SVGResult {
                     .get_instantiation_info(index, &self.parser)
                     .unwrap();
                 let selected_inst_node_index = selected_inst.node_index;
-                if !self.selected_insts.contains_key(&selected_inst_node_index) {
-                    self.selected_insts
-                        .insert(selected_inst_node_index, selected_inst);
-                } else {
+                if let Some (_) = self.selected_insts.get(&selected_inst_node_index) {
                     self.selected_insts.remove(&selected_inst_node_index);
+                } else {
+                    self.selected_insts.insert(selected_inst_node_index, selected_inst);
                 }
                 true
             }
