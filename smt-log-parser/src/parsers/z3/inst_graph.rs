@@ -135,15 +135,13 @@ impl InstGraph {
                     < new_inst_graph.node_weight(*node).unwrap().parent_count
             })
             .collect();
-        // remove all (direct) edges since we now want to compute the transitive reduction of the indirect edges
-        new_inst_graph.clear_edges();
         // add all edges (u,v) in out_set x in_set to the new_inst_graph where v is reachable from u in the original graph
-        // i.e., all indirect edges
+        // and (u,v) is not an edge in the original graph, i.e., all indirect edges
         for &u in &out_set {
             for &v in &in_set {
                 let old_u = new_inst_graph.node_weight(u).unwrap().orig_graph_idx;
                 let old_v = new_inst_graph.node_weight(v).unwrap().orig_graph_idx;
-                if old_u != old_v
+                if old_u != old_v && !self.orig_graph.contains_edge(old_u, old_v)
                     && petgraph::algo::has_path_connecting(&self.orig_graph, old_u, old_v, None)
                 {
                     new_inst_graph.add_edge(
@@ -162,8 +160,6 @@ impl InstGraph {
             &new_inst_graph,
             &toposorted_dag,
         );
-        // in tred, the node indices are replaced by their topological rank
-        // but revmap can be used to map from indices in new_inst_graph to indices in tred
         let (tred, _) = petgraph::algo::tred::dag_transitive_reduction_closure(&intermediate);
         // remove all edges since we only want the direct edges and the indirect edges in the transitive reduction in the final graph
         new_inst_graph.clear_edges();
@@ -175,15 +171,22 @@ impl InstGraph {
                 direct_edge.weight,
             );
         }
-        // add all indirect edges from transitive reduction
+        // add all indirect edges from transitive reduction that are not direct edges
         for indirect_edge in tred.edge_references() {
-            new_inst_graph.add_edge(
-                toposorted_dag[indirect_edge.source() as usize],
-                toposorted_dag[indirect_edge.target() as usize],
-                EdgeData {
-                    edge_type: EdgeType::Indirect,
-                },
-            );
+            // in tred, the node indices are replaced by their topological rank
+            // hence we need to look up the index before adding to new_inst_graph
+            let source = toposorted_dag[indirect_edge.source() as usize];
+            let target = toposorted_dag[indirect_edge.target() as usize];
+            // we only want indirect edges
+            if !new_inst_graph.contains_edge(source, target) {
+                new_inst_graph.add_edge(
+                    source,
+                    target,
+                    EdgeData {
+                        edge_type: EdgeType::Indirect,
+                    },
+                );
+            }
         }
         self.visible_graph = new_inst_graph;
         (
