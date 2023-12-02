@@ -5,76 +5,31 @@ use yew::{prelude::*, virtual_dom::VNode};
 use super::graph_filters::Filter;
 
 #[derive(Properties, PartialEq)]
-pub struct SelectedNodeProps {
+pub struct SelectedNodesProps {
     pub selected_nodes: Vec<InstInfo>,
-    pub action: Callback<Filter>,
+    pub action: Callback<Vec<Filter>>,
 }
 
-#[function_component(SelectedNode)]
-pub fn selected_node(props: &SelectedNodeProps) -> Html {
-    let hide_subtree = {
+#[function_component(SelectedNodes)]
+pub fn selected_node(props: &SelectedNodesProps) -> Html {
+    let callback_from = |filter_for_inst: Box<dyn Fn(&InstInfo) -> Filter>| {
         let callback = props.action.clone();
         let selected_insts = props.selected_nodes.clone();
         Callback::from(move |_| {
-            for inst in &selected_insts {
-                callback.emit(Filter::VisitSubTreeWithRoot(inst.node_index, false));
-            }
+            let filters: Vec<Filter> = selected_insts
+                .iter()
+                .map(&filter_for_inst)
+                .collect();
+            callback.emit(filters);
         })
     };
-    let show_subtree = {
-        let callback = props.action.clone();
-        let selected_insts = props.selected_nodes.clone();
-        Callback::from(move |_| {
-            for inst in &selected_insts {
-                callback.emit(Filter::VisitSubTreeWithRoot(inst.node_index, true));
-            }
-        })
-    };
-    let show_children = {
-        let callback = props.action.clone();
-        let selected_insts = props.selected_nodes.clone();
-        Callback::from(move |_| {
-            for inst in &selected_insts {
-                callback.emit(Filter::ShowNeighbours(inst.node_index, Outgoing))
-            }
-        })
-    };
-    let show_parents = {
-        let callback = props.action.clone();
-        let selected_insts = props.selected_nodes.clone();
-        Callback::from(move |_| {
-            for inst in &selected_insts {
-                callback.emit(Filter::ShowNeighbours(inst.node_index, Incoming))
-            }
-        })
-    };
-    let show_source_tree = {
-        let callback = props.action.clone();
-        let selected_insts = props.selected_nodes.clone();
-        Callback::from(move |_| {
-            for inst in &selected_insts {
-                callback.emit(Filter::VisitSourceTree(inst.node_index, true))
-            }
-        })
-    };
-    let hide_source_tree = {
-        let callback = props.action.clone();
-        let selected_insts = props.selected_nodes.clone();
-        Callback::from(move |_| {
-            for inst in &selected_insts {
-                callback.emit(Filter::VisitSourceTree(inst.node_index, false))
-            }
-        })
-    };
-    let ignore_quantifier = {
-        let callback = props.action.clone();
-        let selected_insts = props.selected_nodes.clone();
-        Callback::from(move |_| {
-            for inst in &selected_insts {
-                callback.emit(Filter::IgnoreQuantifier(inst.quant))
-            }
-        })
-    };
+    let show_subtree = callback_from(Box::new(|inst: &InstInfo| Filter::VisitSubTreeWithRoot(inst.node_index, true)));
+    let hide_subtree = callback_from(Box::new(|inst: &InstInfo| Filter::VisitSubTreeWithRoot(inst.node_index, false)));
+    let show_children = callback_from(Box::new(|inst: &InstInfo| Filter::ShowNeighbours(inst.node_index, Outgoing)));
+    let show_parents = callback_from(Box::new(|inst: &InstInfo| Filter::ShowNeighbours(inst.node_index, Incoming)));
+    let show_source_tree = callback_from(Box::new(|inst: &InstInfo| Filter::VisitSourceTree(inst.node_index, true)));
+    let hide_source_tree = callback_from(Box::new(|inst: &InstInfo| Filter::VisitSourceTree(inst.node_index, false)));
+    let ignore_quantifier = callback_from(Box::new(|inst: &InstInfo| Filter::IgnoreQuantifier(inst.quant)));
     let mut selected_nodes = props
         .selected_nodes
         .iter()

@@ -1,4 +1,4 @@
-use super::selected_node::SelectedNode;
+use super::selected_node::SelectedNodes;
 use crate::utils::input_state::{InputValue, UsizeInput};
 use petgraph::{stable_graph::NodeIndex, Direction};
 use smt_log_parser::{
@@ -65,7 +65,7 @@ impl Filter {
 
 #[derive(Properties, PartialEq)]
 pub struct GraphFilterProps {
-    pub add_filter: Callback<Filter>,
+    pub add_filters: Callback<Vec<Filter>>,
     pub dependency: AttrValue,
 }
 
@@ -77,17 +77,17 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
 
     let add_max_line_nr_filter = {
         let max_node_idx = max_node_idx.clone();
-        let callback = props.add_filter.clone();
-        Callback::from(move |_| callback.emit(Filter::MaxNodeIdx(max_node_idx.value)))
+        let callback = props.add_filters.clone();
+        Callback::from(move |_| callback.emit(vec![Filter::MaxNodeIdx(max_node_idx.value)]))
     };
     let add_theory_filter = {
-        let callback = props.add_filter.clone();
-        Callback::from(move |_| callback.emit(Filter::IgnoreTheorySolving))
+        let callback = props.add_filters.clone();
+        Callback::from(move |_| callback.emit(vec![Filter::IgnoreTheorySolving]))
     };
     let add_max_insts_filter = {
         let max_instantiations = max_instantiations.clone();
-        let callback = props.add_filter.clone();
-        Callback::from(move |_| callback.emit(Filter::MaxInsts(max_instantiations.value)))
+        let callback = props.add_filters.clone();
+        Callback::from(move |_| callback.emit(vec![Filter::MaxInsts(max_instantiations.value)]))
     };
     html! {
         <div>
@@ -118,7 +118,7 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
             </div>
             {if selected_inst.len() > 0 {
                 html! {
-                    <SelectedNode selected_nodes={selected_inst} action={props.add_filter.clone()} />
+                    <SelectedNodes selected_nodes={selected_inst} action={props.add_filters.clone()} />
                 }
             } else {
                 html! {}

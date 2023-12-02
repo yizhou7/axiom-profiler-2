@@ -6,7 +6,7 @@ use yew::prelude::*;
 use material_yew::WeakComponentLink;
 
 pub enum Msg {
-    AddFilter(Filter),
+    AddFilters(Vec<Filter>),
     RemoveNthFilter(usize),
     ResetFilters,
     SetToPrevious,
@@ -54,11 +54,13 @@ impl yew::html::Component for FilterChain {
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
-            Msg::AddFilter(filter) => {
-                log!("Adding filter ", filter.to_string());
+            Msg::AddFilters(filters) => {
                 self.prev_filter_chain = self.filter_chain.clone();
-                self.filter_chain.push(filter);
-                ctx.props().apply_filter.emit(filter);
+                for filter in filters {
+                    log!("Adding filter ", filter.to_string());
+                    self.filter_chain.push(filter);
+                    ctx.props().apply_filter.emit(filter);
+                }
                 ctx.props().render_graph.emit(UserPermission::default());
                 true
             }
@@ -109,11 +111,11 @@ impl yew::html::Component for FilterChain {
             .collect();
         let reset_filters = ctx.link().callback(|_| Msg::ResetFilters);
 
-        let add_filter = ctx.link().callback(Msg::AddFilter);
+        let add_filters = ctx.link().callback(Msg::AddFilters);
         html!(
             <>
                 <GraphFilter
-                    add_filter={add_filter.clone()}
+                    add_filters={add_filters.clone()}
                     dependency={ctx.props().dependency.clone()}
                 />
                 <h2>{"Filter chain:"}</h2>
