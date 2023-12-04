@@ -56,16 +56,33 @@ impl fmt::Display for Term {
     }
 }
 impl Term {
-    pub fn pretty_text(&self, map: &TiVec<TermIdx, Term>) -> String {
+    pub fn pretty_text(&self, ignore_ids: bool, map: &TiVec<TermIdx, Term>) -> String {
         let child_text: Vec<String> = self
             .child_ids
             .iter()
-            .map(|c| map[*c].pretty_text(map))
+            .map(|c| map[*c].pretty_text(ignore_ids, map))
             .collect();
         if child_text.is_empty() {
-            format!("{}[{}]", self.kind, self.id)
+            if !ignore_ids {
+                format!("{}[{}]", self.kind, self.id)
+            } else {
+                if let Some(meaning) = &self.meaning {
+                    format!("{}", meaning.value)
+                } else {
+                    format!("{}", self.kind)
+                }
+            }
         } else {
-            format!("{}[{}]({})", self.kind, self.id, child_text.join(", "))
+            if !ignore_ids {
+                format!("{}[{}]({})", self.kind, self.id, child_text.join(", "))
+            } else {
+                let value = if let Some(ref meaning) = &self.meaning {
+                    meaning.value.clone()
+                } else {
+                    format!("{}", self.kind)
+                };
+                format!("{}({})", value, child_text.join(", "))
+            }
         }
     }
 }
@@ -189,7 +206,7 @@ impl fmt::Display for Quantifier {
     }
 }
 impl Quantifier {
-    pub fn pretty_text(&self, map: &TiVec<TermIdx, Term>) -> String {
+    pub fn pretty_text(&self, ignore_ids: bool, map: &TiVec<TermIdx, Term>) -> String {
         if let Some(term) = &self.term {
             let var_text: Vec<String> = (0..self.num_vars)
                 .map(|idx| {
@@ -201,7 +218,7 @@ impl Quantifier {
             format!(
                 "FORALL {}({})",
                 var_text.join(", "),
-                map[*term].pretty_text(map)
+                map[*term].pretty_text(ignore_ids, map)
             )
         } else {
             self.kind.to_string()

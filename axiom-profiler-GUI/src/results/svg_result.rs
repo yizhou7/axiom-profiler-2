@@ -1,10 +1,9 @@
-use self::colors::HSVColour;
+use self::colours::HSVColour;
 use super::{filters::{
     filter_chain::{FilterChain, Msg as FilterChainMsg},
     graph_filters::Filter,
 }, worker::Worker};
 use super::graph::graph_container::GraphContainer;
-use fxhash::FxHashMap;
 use material_yew::WeakComponentLink;
 use num_format::{Locale, ToFormattedString};
 use petgraph::dot::{Config, Dot};
@@ -36,6 +35,7 @@ pub enum Msg {
     ResetGraph,
     GetUserPermission,
     WorkerOutput(super::worker::WorkerOutput),
+    ToggleTermExpander,
 }
 
 pub struct UserPermission {
@@ -70,6 +70,7 @@ pub struct SVGResult {
     on_node_select: Callback<usize>,
     graph_dim: GraphDimensions,
     worker: Option<Box<dyn yew_agent::Bridge<Worker>>>,
+    ignore_term_ids: bool,
 }
 
 #[derive(Properties, PartialEq)]
@@ -101,6 +102,7 @@ impl Component for SVGResult {
                 prev_edge_count: None,
             },
             worker: Some(Self::create_worker(ctx.link().clone())),
+            ignore_term_ids: true,
         }
     }
 
@@ -238,13 +240,22 @@ impl Component for SVGResult {
                 log::debug!("Updating selected node");
                 let selected_inst = self
                     .inst_graph
-                    .get_instantiation_info(index, &self.parser)
+                    .get_instantiation_info(index, &self.parser, self.ignore_term_ids)
                     .unwrap();
                 let selected_inst_node_index = selected_inst.node_index;
                 if let Some (_) = self.selected_insts.get(&selected_inst_node_index) {
                     self.selected_insts.remove(&selected_inst_node_index);
                 } else {
                     self.selected_insts.insert(selected_inst_node_index, selected_inst);
+                }
+                true
+            }
+            Msg::ToggleTermExpander => {
+                self.ignore_term_ids = !self.ignore_term_ids;
+                for inst in self.selected_insts.values_mut() {
+                    let iidx = inst.node_index.index();
+                    let updated_inst = self.inst_graph.get_instantiation_info(iidx, &self.parser, self.ignore_term_ids).unwrap();
+                    *inst = updated_inst;
                 }
                 true
             }
@@ -259,6 +270,7 @@ impl Component for SVGResult {
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
         let render_graph = ctx.link().callback(Msg::RenderGraph);
+        let toggle = ctx.link().callback(|_| Msg::ToggleTermExpander);
         html! {
             <>
                 <div style="flex: 30%; height: 85vh; overflow-y: auto; ">
@@ -271,6 +283,10 @@ impl Component for SVGResult {
                         dependency={ctx.props().trace_file_text.clone()}
                     />
                 </ContextProvider<Vec<InstInfo>>>
+                <div>
+                    <label for="term_expander">{"Ignore term IDs "}</label>
+                    <input type="checkbox" checked={self.ignore_term_ids} onclick={toggle} id="term_expander" />
+                </div>
                 {node_and_edge_count_preview}
                 </div>
                 <GraphContainer
@@ -359,7 +375,7 @@ impl QuantIdxToColourMap {
 }
 
 /// Private module for generating colors
-mod colors {
+mod colours {
     use std::fmt;
 
     #[derive(Clone, Copy)]

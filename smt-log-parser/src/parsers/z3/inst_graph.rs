@@ -249,7 +249,7 @@ impl InstGraph {
         }
     }
 
-    pub fn get_instantiation_info(&self, node_index: usize, parser: &Z3Parser) -> Option<InstInfo> {
+    pub fn get_instantiation_info(&self, node_index: usize, parser: &Z3Parser, expand: bool) -> Option<InstInfo> {
         let NodeData { inst_idx, .. } = self
             .orig_graph
             .node_weight(NodeIndex::new(node_index))
@@ -260,13 +260,13 @@ impl InstGraph {
             let term_map = &parser.terms;
             let prettify = |tidx: &TermIdx| {
                 let term = parser.terms.get(*tidx).unwrap();
-                term.pretty_text(term_map)
+                term.pretty_text(expand, term_map)
             };
             let prettify_all = |tidxs: &Vec<TermIdx>| {
                 tidxs
                     .iter()
                     .map(|tidx| term_map.get(*tidx).unwrap())
-                    .map(|term| term.pretty_text(term_map))
+                    .map(|term| term.pretty_text(expand, term_map))
                     .collect::<Vec<String>>()
             };
             let pretty_blamed_terms = inst
@@ -290,7 +290,7 @@ impl InstGraph {
                 cost: inst.cost,
                 quant: inst.quant,
                 quant_discovered: inst.quant_discovered,
-                formula: quant.pretty_text(term_map),
+                formula: quant.pretty_text(expand, term_map),
                 pattern: if let Some(t) = inst.pattern {
                     Some(prettify(&t))
                 } else {
