@@ -17,6 +17,7 @@ pub enum Filter {
     ShowNeighbours(NodeIndex, Direction),
     VisitSourceTree(NodeIndex, bool),
     VisitSubTreeWithRoot(NodeIndex, bool),
+    MaxDepth(usize),
 }
 
 impl Display for Filter {
@@ -40,6 +41,7 @@ impl Display for Filter {
                 Direction::Incoming => write!(f, "Show the parents of node {}", nidx.index()),
                 Direction::Outgoing => write!(f, "Show the children of node {}", nidx.index()),
             },
+            Self::MaxDepth(depth) => write!(f, "Show nodes up to depth {}", depth),
         }
     }
 }
@@ -59,6 +61,7 @@ impl Filter {
             Filter::ShowNeighbours(nidx, direction) => graph.show_neighbours(nidx, direction),
             Filter::VisitSubTreeWithRoot(nidx, retain) => graph.visit_descendants(nidx, retain),
             Filter::VisitSourceTree(nidx, retain) => graph.visit_ancestors(nidx, retain),
+            Filter::MaxDepth(depth) => graph.retain_nodes(|node: &NodeData| node.depth.unwrap() <= depth),
         }
     }
 }
@@ -73,6 +76,7 @@ pub struct GraphFilterProps {
 pub fn graph_filter(props: &GraphFilterProps) -> Html {
     let max_node_idx = use_reducer(InputValue::default);
     let max_instantiations = use_reducer(InputValue::default);
+    let max_depth = use_reducer(InputValue::default);
     let selected_insts = use_context::<Vec<InstInfo>>().expect("no ctx found");
 
     let add_max_line_nr_filter = {
@@ -88,6 +92,11 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
         let max_instantiations = max_instantiations.clone();
         let callback = props.add_filters.clone();
         Callback::from(move |_| callback.emit(vec![Filter::MaxInsts(max_instantiations.value)]))
+    };
+    let add_max_depth_filter = {
+        let max_depth = max_depth.clone();
+        let callback = props.add_filters.clone();
+        Callback::from(move |_| callback.emit(vec![Filter::MaxDepth(max_depth.value)]))
     };
     html! {
         <div>
@@ -115,6 +124,16 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
                     placeholder={""}
                 />
                 <button onclick={add_max_insts_filter}>{"Add"}</button>
+            </div>
+            <div>
+                <UsizeInput
+                    label={"Render up to depth "}
+                    dependency={props.dependency.clone()}
+                    input_value={max_depth}
+                    default_value={usize::MAX}
+                    placeholder={""}
+                />
+                <button onclick={add_max_depth_filter}>{"Add"}</button>
             </div>
             {if selected_insts.len() > 0 {
                 html! {

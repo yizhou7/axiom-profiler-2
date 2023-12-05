@@ -1,7 +1,7 @@
 use fxhash::FxHashMap;
 use gloo_console::log;
 use petgraph::graph::{Edge, NodeIndex};
-use petgraph::visit::IntoEdgeReferences;
+use petgraph::visit::{IntoEdgeReferences, Bfs};
 use petgraph::{
     stable_graph::EdgeIndex,
     visit::{Dfs, EdgeRef},
@@ -26,6 +26,7 @@ pub struct NodeData {
     parent_count: usize,
     pub orig_graph_idx: NodeIndex,
     cost_rank: usize,
+    pub depth: Option<usize>,
 }
 
 impl fmt::Debug for NodeData {
@@ -374,6 +375,7 @@ impl InstGraph {
                     parent_count: 0,
                     orig_graph_idx: NodeIndex::default(),
                     cost_rank: 0,
+                    depth: None,
                 });
             }
         }
@@ -424,6 +426,27 @@ impl InstGraph {
         }
         self.cost_ranked_node_indices = cost_ranked_node_indices;
         self.visible_graph = self.orig_graph.clone();
+        // precompute BFS depth such that we can filter the graph up to some specified depth
+        let roots: Vec<NodeIndex> = self
+            .orig_graph
+            .node_indices()
+            .filter(|nx| self.orig_graph.node_weight(*nx).unwrap().parent_count == 0)
+            .collect();
+        for root in roots {
+            let mut bfs = Bfs::new(&self.orig_graph, root);
+            while let Some(nx) = bfs.next(&self.orig_graph) {
+                let parents = self.orig_graph.neighbors_directed(nx, Incoming);
+                let min_parent_depth = parents
+                    .filter_map(|parent| self.orig_graph.node_weight(parent).unwrap().depth)
+                    .min();
+                if let Some(depth) = min_parent_depth {
+                    self.orig_graph[nx].depth = Some(depth + 1);
+                } else {
+                    // the min_depth is None iff the node at nx has no parents, hence we set the depth to 0
+                    self.orig_graph[nx].depth = Some(0);
+                }
+            } 
+        }
     }
 
     fn add_node(&mut self, node_data: NodeData) {
