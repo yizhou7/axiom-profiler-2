@@ -5,13 +5,13 @@ use yew::{prelude::*, virtual_dom::VNode};
 use super::graph_filters::Filter;
 
 #[derive(Properties, PartialEq)]
-pub struct SelectedNodesProps {
+pub struct NodeActionsProps {
     pub selected_nodes: Vec<InstInfo>,
     pub action: Callback<Vec<Filter>>,
 }
 
-#[function_component(SelectedNodes)]
-pub fn selected_node(props: &SelectedNodesProps) -> Html {
+#[function_component(NodeActions)]
+pub fn node_actions(props: &NodeActionsProps) -> Html {
     let callback_from = |filter_for_inst: Box<dyn Fn(&InstInfo) -> Filter>| {
         let callback = props.action.clone();
         let selected_insts = props.selected_nodes.clone();
@@ -41,34 +41,7 @@ pub fn selected_node(props: &SelectedNodesProps) -> Html {
         "You selected node(s) {} Here are available actions: ",
         selected_nodes
     );
-    let selected_nodes_info: Vec<VNode> = props
-        .selected_nodes 
-        .iter()
-        .map(|selected_inst| { 
-            let get_ul = |label: &str, items: &Vec<String>| html! {
-                <>
-                    <h4>{label}</h4>
-                    <ul>{for items.iter().map(|item| html!{<li>{item}</li>})}</ul>
-                </>
-            };
-            html! {
-            <details>
-            <summary>{format!("Node {}", selected_inst.node_index.index())}</summary>
-            <ul>
-                <li><h4>{"Instantiation happens at line number: "}</h4><p>{if let Some(val) = selected_inst.line_no {format!("{val}")} else { String::new() }}</p></li>
-                <li><h4>{"Cost: "}</h4><p>{selected_inst.cost}</p></li>
-                <li><h4>{"Instantiated formula: "}</h4><p>{&selected_inst.formula}</p></li>
-                <li>{get_ul("Blamed terms: ", &selected_inst.blamed_terms)}</li>
-                <li>{get_ul("Bound terms: ", &selected_inst.bound_terms)}</li>
-                <li>{get_ul("Yield terms: ", &selected_inst.yields_terms)}</li>
-                <li>{get_ul("Equality explanations: ", &selected_inst.equality_expls)}</li>
-                <li><h4>{"Resulting term: "}</h4><p>{if let Some(ref val) = selected_inst.resulting_term {format!("{val}")} else { String::new() }}</p></li>
-            </ul>
-        </details>
-        }})
-        .collect();
     html! {
-    // <div>
     <>
         <h4>{selected_nodes_text}</h4>
         <div>
@@ -84,10 +57,6 @@ pub fn selected_node(props: &SelectedNodesProps) -> Html {
             <button onclick={hide_source_tree}>{"Hide ancestors"}</button>
         </div>
         <button onclick={ignore_quantifier}>{"Ignore all nodes of this quantifier"}</button>
-        <h2>{"Information about selected nodes:"}</h2>
-        { for selected_nodes_info }
-
-    // </div>
     </>
     }
 }

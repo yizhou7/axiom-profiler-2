@@ -7,7 +7,8 @@ use yew::{function_component, html, use_node_ref, Html};
 #[derive(Properties, PartialEq, Default)]
 pub struct GraphProps {
     pub svg_text: AttrValue,
-    pub update_selected_node: Callback<usize>,
+    pub update_selected_nodes: Callback<usize>,
+    pub update_selected_edges: Callback<usize>,
     pub zoom_factor: f32,
 }
 
@@ -47,7 +48,8 @@ pub fn graph(props: &GraphProps) -> Html {
         // Whenever SVG text changes, need to attach event listeners to new nodes
         let div_ref = div_ref.clone();
         let svg_text = props.svg_text.clone();
-        let callback = props.update_selected_node.clone();
+        let nodes_callback = props.update_selected_nodes.clone();
+        let edges_callback = props.update_selected_edges.clone();
 
         use_effect_with_deps(
             move |_| {
@@ -58,7 +60,7 @@ pub fn graph(props: &GraphProps) -> Html {
 
                 // construct event_listeners that emit node indices (contained in title tags)
                 let descendant_nodes = div.get_elements_by_class_name("node");
-                let closures: Vec<Closure<dyn Fn(Event)>> = (0..descendant_nodes.length())
+                let node_closures: Vec<Closure<dyn Fn(Event)>> = (0..descendant_nodes.length())
                     .map(|i| {
                         // extract node_index from node to construct callback that emits it
                         let node = descendant_nodes.item(i).unwrap();
@@ -72,7 +74,7 @@ pub fn graph(props: &GraphProps) -> Html {
                             .expect("Failed to select title element")
                             .unwrap();
                         let node_index = text_content.parse::<usize>().unwrap();
-                        let callback = callback.clone();
+                        let callback = nodes_callback.clone();
                         let closure: Closure<dyn Fn(Event)> = Closure::new(move |_: Event| {
                             // the selected node should become bold whenever it's clicked on the first time
                             // after that it should also toggle between bold and normal when the user repeatedly
@@ -103,15 +105,44 @@ pub fn graph(props: &GraphProps) -> Html {
                         closure
                     })
                     .collect();
-
+                let direct_edges = div.get_elements_by_class_name("edge direct");
+                let edge_closures: Vec<Closure<dyn Fn(Event)>> = (0..direct_edges.length())
+                    .map(|i| {
+                        // extract node_index from node to construct callback that emits it
+                        let node = direct_edges.item(i).unwrap();
+                        let edge_index = node.id().strip_prefix("edge").unwrap().parse::<usize>().unwrap();
+                        let callback = edges_callback.clone();
+                        let closure: Closure<dyn Fn(Event)> = Closure::new(move |_: Event| {
+                            log::debug!("Clicked on edge {}", edge_index); 
+                            callback.emit(edge_index);
+                        });
+                        // attach event listener to node
+                        node.add_event_listener_with_callback(
+                            "click",
+                            closure.as_ref().unchecked_ref(),
+                        )
+                        .unwrap();
+                        closure
+                    })
+                    .collect();
                 move || {
                     // Remove event listeners when the component is unmounted
-                    for i in 0..closures.len() {
+                    for i in 0..node_closures.len() {
                         if let Some(node) = descendant_nodes.item(i as u32) {
-                            let closure = closures.as_slice()[i as usize].as_ref();
+                            let closure = node_closures.as_slice()[i as usize].as_ref();
                             node.remove_event_listener_with_callback(
                                 "click",
                                 closure.unchecked_ref(),
+                            )
+                            .unwrap();
+                        }
+                    }
+                    for i in 0..edge_closures.len() {
+                        if let Some(edge) = direct_edges.item(i as u32) {
+                            let closure = edge_closures.as_slice()[i as usize].as_ref();
+                            edge.remove_event_listener_with_callback(
+                                "click", 
+                                closure.unchecked_ref()
                             )
                             .unwrap();
                         }

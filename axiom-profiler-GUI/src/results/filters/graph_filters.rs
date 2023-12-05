@@ -1,4 +1,4 @@
-use super::selected_node::SelectedNodes;
+use super::node_actions::NodeActions;
 use crate::utils::input_state::{InputValue, UsizeInput};
 use petgraph::{stable_graph::NodeIndex, Direction};
 use smt_log_parser::{
@@ -73,7 +73,7 @@ pub struct GraphFilterProps {
 pub fn graph_filter(props: &GraphFilterProps) -> Html {
     let max_node_idx = use_reducer(InputValue::default);
     let max_instantiations = use_reducer(InputValue::default);
-    let selected_inst = use_context::<Vec<InstInfo>>().expect("no ctx found");
+    let selected_insts = use_context::<Vec<InstInfo>>().expect("no ctx found");
 
     let add_max_line_nr_filter = {
         let max_node_idx = max_node_idx.clone();
@@ -116,9 +116,9 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
                 />
                 <button onclick={add_max_insts_filter}>{"Add"}</button>
             </div>
-            {if selected_inst.len() > 0 {
+            {if selected_insts.len() > 0 {
                 html! {
-                    <SelectedNodes selected_nodes={selected_inst} action={props.add_filters.clone()} />
+                    <NodeActions selected_nodes={selected_insts} action={props.add_filters.clone()} />
                 }
             } else {
                 html! {}

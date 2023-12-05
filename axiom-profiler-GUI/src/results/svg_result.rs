@@ -1,3 +1,5 @@
+use crate::results::insts_info::InstsInfo;
+
 use self::colours::HSVColour;
 use super::{filters::{
     filter_chain::{FilterChain, Msg as FilterChainMsg},
@@ -7,12 +9,12 @@ use super::graph::graph_container::GraphContainer;
 use material_yew::WeakComponentLink;
 use num_format::{Locale, ToFormattedString};
 use petgraph::dot::{Config, Dot};
-use petgraph::graph::NodeIndex;
+use petgraph::graph::{NodeIndex, EdgeIndex};
 use smt_log_parser::{
     items::QuantIdx,
     parsers::{
         z3::{
-            inst_graph::{EdgeType, InstGraph, InstInfo},
+            inst_graph::{EdgeType, InstGraph, InstInfo, EdgeData, EdgeInfo},
             z3parser::Z3Parser,
         },
         LogParser,
@@ -30,6 +32,7 @@ pub const DEFAULT_NODE_COUNT: usize = 125;
 pub enum Msg {
     UpdateSvgText(AttrValue),
     UpdateSelectedNodes(usize),
+    UpdateSelectedEdges(usize),
     RenderGraph(UserPermission),
     ApplyFilter(Filter),
     ResetGraph,
@@ -66,8 +69,10 @@ pub struct SVGResult {
     inst_graph: InstGraph,
     svg_text: AttrValue,
     selected_insts: IndexMap<NodeIndex, InstInfo>,
+    selected_deps: IndexMap<EdgeIndex, (NodeIndex, NodeIndex, EdgeInfo)>,
     filter_chain_link: WeakComponentLink<FilterChain>,
     on_node_select: Callback<usize>,
+    on_edge_select: Callback<usize>,
     graph_dim: GraphDimensions,
     worker: Option<Box<dyn yew_agent::Bridge<Worker>>>,
     ignore_term_ids: bool,
@@ -94,8 +99,10 @@ impl Component for SVGResult {
             inst_graph,
             svg_text: AttrValue::default(),
             selected_insts: IndexMap::new(),
+            selected_deps: IndexMap::new(),
             filter_chain_link: WeakComponentLink::default(),
             on_node_select: ctx.link().callback(Msg::UpdateSelectedNodes),
+            on_edge_select: ctx.link().callback(Msg::UpdateSelectedEdges),
             graph_dim: GraphDimensions {
                 node_count: 0,
                 edge_count: 0,
@@ -153,10 +160,18 @@ impl Component for SVGResult {
                             filtered_graph,
                             &[Config::EdgeNoLabel, Config::NodeNoLabel, Config::GraphContentOnly],
                             &|_, edge_data| format!(
-                                "style={}",
+                                "id={} style={} class={}",
+                                match edge_data.weight().orig_graph_idx {
+                                    Some(idx) => format!("edge{}", idx.index()),
+                                    None => "indirect".to_string() 
+                                },
                                 match edge_data.weight().edge_type {
                                     EdgeType::Direct => "solid",
                                     EdgeType::Indirect => "dashed",
+                                },
+                                match edge_data.weight().edge_type {
+                                    EdgeType::Direct => "direct",
+                                    EdgeType::Indirect => "indirect",
                                 }
                             ),
                             &|_, (_, node_data)| {
@@ -243,11 +258,22 @@ impl Component for SVGResult {
                     .get_instantiation_info(index, &self.parser, self.ignore_term_ids)
                     .unwrap();
                 let selected_inst_node_index = selected_inst.node_index;
-                if let Some (_) = self.selected_insts.get(&selected_inst_node_index) {
+                if let Some(_) = self.selected_insts.get(&selected_inst_node_index) {
                     self.selected_insts.remove(&selected_inst_node_index);
                 } else {
                     self.selected_insts.insert(selected_inst_node_index, selected_inst);
                 }
+                true
+            }
+            Msg::UpdateSelectedEdges(index) => {
+                let selected_edge_idx = EdgeIndex::from(index as u32);
+                let selected_edge = self.inst_graph.get_edge_info(selected_edge_idx, &self.parser, self.ignore_term_ids).unwrap();
+                let (from, to) = self.inst_graph.edge_endpoints(selected_edge_idx).unwrap();
+                if let Some(_) = self.selected_deps.get(&selected_edge_idx) {
+                    self.selected_deps.remove(&selected_edge_idx);
+                } else {
+                    self.selected_deps.insert(selected_edge_idx, (from, to, selected_edge));
+                } 
                 true
             }
             Msg::ToggleTermExpander => {
@@ -256,6 +282,11 @@ impl Component for SVGResult {
                     let iidx = inst.node_index.index();
                     let updated_inst = self.inst_graph.get_instantiation_info(iidx, &self.parser, self.ignore_term_ids).unwrap();
                     *inst = updated_inst;
+                }
+                for (_, _, edge) in self.selected_deps.values_mut() {
+                    let edge_idx = edge.edge_data.orig_graph_idx.unwrap();
+                    let updated_edge = self.inst_graph.get_edge_info(edge_idx, &self.parser, self.ignore_term_ids).unwrap();
+                    *edge = updated_edge;
                 }
                 true
             }
@@ -283,15 +314,20 @@ impl Component for SVGResult {
                         dependency={ctx.props().trace_file_text.clone()}
                     />
                 </ContextProvider<Vec<InstInfo>>>
+                {node_and_edge_count_preview}
+                <InstsInfo 
+                    selected_nodes={self.selected_insts.values().cloned().collect::<Vec<InstInfo>>()}
+                    selected_edges={self.selected_deps.values().cloned().collect::<Vec<(NodeIndex, NodeIndex, EdgeInfo)>>()}
+                />
                 <div>
                     <label for="term_expander">{"Ignore term IDs "}</label>
                     <input type="checkbox" checked={self.ignore_term_ids} onclick={toggle} id="term_expander" />
                 </div>
-                {node_and_edge_count_preview}
                 </div>
                 <GraphContainer
                     svg_text={&self.svg_text}
-                    update_selected_node={&self.on_node_select}
+                    update_selected_nodes={&self.on_node_select}
+                    update_selected_edges={&self.on_edge_select}
                 />
             </>
         }

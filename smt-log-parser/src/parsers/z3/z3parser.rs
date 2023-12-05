@@ -644,4 +644,30 @@ impl Z3Parser {
     pub fn total_nr_of_quants(&self) -> usize {
         self.quantifiers.len()
     }
+
+    pub fn prettify(&self, terms: impl AsTermIdxVec, ignore_ids: bool) -> Vec<String> {
+        let term_map = &self.terms;
+        terms
+            .as_vec()
+            .iter()
+            .map(|tidx| term_map.get(*tidx).unwrap())
+            .map(|term| term.pretty_text(ignore_ids, term_map))
+            .collect()
+    }
+}
+
+pub trait AsTermIdxVec {
+    fn as_vec(&self) -> Vec<TermIdx>;
+}
+
+impl AsTermIdxVec for TermIdx {
+    fn as_vec(&self) -> Vec<TermIdx> {
+        vec![*self]
+    }
+}
+
+impl AsTermIdxVec for &Vec<TermIdx> {
+    fn as_vec(&self) -> Vec<TermIdx> {
+        self.to_vec()
+    }
 }

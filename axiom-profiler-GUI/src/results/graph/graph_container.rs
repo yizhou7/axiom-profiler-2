@@ -17,7 +17,8 @@ pub struct GraphContainer {
 #[derive(Properties, PartialEq)]
 pub struct GraphContainerProps {
     pub svg_text: AttrValue,
-    pub update_selected_node: Callback<usize>,
+    pub update_selected_nodes: Callback<usize>,
+    pub update_selected_edges: Callback<usize>,
 }
 
 impl Component for GraphContainer {
@@ -76,7 +77,8 @@ impl Component for GraphContainer {
             </div>
             <Graph
                 svg_text={&ctx.props().svg_text}
-                update_selected_node={&ctx.props().update_selected_node}
+                update_selected_nodes={&ctx.props().update_selected_nodes}
+                update_selected_edges={&ctx.props().update_selected_edges}
                 zoom_factor={self.zoom_factor}
             />
         </div>

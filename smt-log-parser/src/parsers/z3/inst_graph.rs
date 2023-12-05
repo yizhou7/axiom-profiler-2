@@ -10,7 +10,7 @@ use petgraph::{
 use petgraph::{Direction, Graph};
 use std::fmt;
 
-use crate::items::{BlamedTermItem, InstIdx, QuantIdx, TermIdx};
+use crate::items::{BlamedTermItem, InstIdx, QuantIdx, TermIdx, DepType, Dependency};
 
 use super::z3parser::Z3Parser;
 
@@ -44,6 +44,15 @@ pub enum EdgeType {
 #[derive(Clone, Copy, PartialEq, Default)]
 pub struct EdgeData {
     pub edge_type: EdgeType,
+    pub orig_graph_idx: Option<EdgeIndex>,
+    pub blame_term_idx: Option<TermIdx>,
+    pub dep_type: DepType,
+}
+
+#[derive(PartialEq, Clone)]
+pub struct EdgeInfo {
+    pub edge_data: EdgeData,
+    pub blame_term: String,
 }
 
 impl fmt::Debug for EdgeData {
@@ -149,6 +158,9 @@ impl InstGraph {
                         v,
                         EdgeData {
                             edge_type: EdgeType::Indirect,
+                            orig_graph_idx: None,
+                            blame_term_idx: None,
+                            dep_type: DepType::default(),
                         },
                     );
                 }
@@ -184,6 +196,9 @@ impl InstGraph {
                     target,
                     EdgeData {
                         edge_type: EdgeType::Indirect,
+                        orig_graph_idx: None,
+                        blame_term_idx: None,
+                        dep_type: DepType::default(),
                     },
                 );
             }
@@ -249,7 +264,20 @@ impl InstGraph {
         }
     }
 
-    pub fn get_instantiation_info(&self, node_index: usize, parser: &Z3Parser, expand: bool) -> Option<InstInfo> {
+    pub fn get_edge_info(&self, edge_index: EdgeIndex, parser: &Z3Parser, ignore_ids: bool) -> Option<EdgeInfo> {
+        if let Some(edge_data) = self.orig_graph.edge_weight(edge_index) {
+            let blame_term = parser.prettify(edge_data.blame_term_idx.unwrap(), ignore_ids)[0].clone();
+            Some(EdgeInfo { edge_data: *edge_data, blame_term })
+        } else {
+            None
+        }
+    }
+
+    pub fn edge_endpoints(&self, edge_index: EdgeIndex) -> Option<(NodeIndex, NodeIndex)> {
+        self.orig_graph.edge_endpoints(edge_index)
+    }
+
+    pub fn get_instantiation_info(&self, node_index: usize, parser: &Z3Parser, ignore_ids: bool) -> Option<InstInfo> {
         let NodeData { inst_idx, .. } = self
             .orig_graph
             .node_weight(NodeIndex::new(node_index))
@@ -258,23 +286,12 @@ impl InstGraph {
             let inst = parser.instantiations.get(*iidx).unwrap();
             let quant = parser.quantifiers.get(inst.quant).unwrap();
             let term_map = &parser.terms;
-            let prettify = |tidx: &TermIdx| {
-                let term = parser.terms.get(*tidx).unwrap();
-                term.pretty_text(expand, term_map)
-            };
-            let prettify_all = |tidxs: &Vec<TermIdx>| {
-                tidxs
-                    .iter()
-                    .map(|tidx| term_map.get(*tidx).unwrap())
-                    .map(|term| term.pretty_text(expand, term_map))
-                    .collect::<Vec<String>>()
-            };
             let pretty_blamed_terms = inst
                 .blamed_terms
                 .iter()
                 .map(|term| match term {
-                    BlamedTermItem::Single(t) => prettify(t),
-                    BlamedTermItem::Pair(t1, t2) => format!("{} = {}", prettify(t1), prettify(t2)),
+                    BlamedTermItem::Single(t) => parser.prettify(*t, ignore_ids)[0].clone(),
+                    BlamedTermItem::Pair(t1, t2) => format!("{} = {}", parser.prettify(*t1, ignore_ids)[0], parser.prettify(*t2, ignore_ids)[0]),
                 })
                 .collect::<Vec<String>>();
             let inst_info = InstInfo {
@@ -282,7 +299,7 @@ impl InstGraph {
                 line_no: inst.line_no,
                 fingerprint: *inst.fingerprint,
                 resulting_term: if let Some(t) = inst.resulting_term {
-                    Some(prettify(&t))
+                    Some(parser.prettify(t, ignore_ids)[0].clone())
                 } else {
                     None
                 },
@@ -290,16 +307,16 @@ impl InstGraph {
                 cost: inst.cost,
                 quant: inst.quant,
                 quant_discovered: inst.quant_discovered,
-                formula: quant.pretty_text(expand, term_map),
+                formula: quant.pretty_text(ignore_ids, term_map),
                 pattern: if let Some(t) = inst.pattern {
-                    Some(prettify(&t))
+                    Some(parser.prettify(t, ignore_ids)[0].clone())
                 } else {
                     None
                 },
-                yields_terms: prettify_all(&inst.yields_terms),
-                bound_terms: prettify_all(&inst.bound_terms),
+                yields_terms: parser.prettify(&inst.yields_terms, ignore_ids),
+                bound_terms: parser.prettify(&inst.bound_terms, ignore_ids),
                 blamed_terms: pretty_blamed_terms,
-                equality_expls: prettify_all(&inst.equality_expls),
+                equality_expls: parser.prettify(&inst.equality_expls, ignore_ids),
                 dep_instantiations: Vec::new(),
                 node_index: NodeIndex::new(node_index),
             };
@@ -365,7 +382,7 @@ impl InstGraph {
             let from = dep.from;
             if let Some(to) = dep.to {
                 if from > 0 {
-                    self.add_edge(from, to);
+                    self.add_edge(from, to, dep);
                 }
             }
         }
@@ -422,25 +439,26 @@ impl InstGraph {
             // Also, using StableGraph where node-indices stay stable across removals
             // is not viable here since StableGraph does not implement NodeCompactIndexable
             // which is needed for petgraph::algo::tred::dag_to_toposorted_adjacency_list
-            self.orig_graph
-                .node_weight_mut(node)
-                .unwrap()
-                .orig_graph_idx = node;
+            self.orig_graph.node_weight_mut(node).unwrap().orig_graph_idx = node;
         }
     }
 
-    fn add_edge(&mut self, from: usize, to: usize) {
+    fn add_edge(&mut self, from: usize, to: usize, dep: &Dependency) {
         if let (Some(&from_node_idx), Some(&to_node_idx)) = (
             self.node_of_line_nr.get(&from),
             self.node_of_line_nr.get(&to),
         ) {
-            self.orig_graph.add_edge(
+            let edge = self.orig_graph.add_edge(
                 from_node_idx,
                 to_node_idx,
                 EdgeData {
                     edge_type: EdgeType::Direct,
+                    orig_graph_idx: None,
+                    blame_term_idx: dep.blamed,  
+                    dep_type: dep.dep_type,
                 },
             );
+            self.orig_graph.edge_weight_mut(edge).unwrap().orig_graph_idx = Some(edge);
         }
     }
 }

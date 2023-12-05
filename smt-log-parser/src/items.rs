@@ -429,9 +429,9 @@ impl TermIdToIdxMap {
 /// - None: no dependency, because an instantiation is not dependent on any others.
 /// - Term: dependency based on a match without equalities.
 /// - Equality: dependency based on an equality.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Copy, PartialEq, Default)]
 pub enum DepType {
-    None,
+    #[default] None,
     Term,
     Equality,
 }
