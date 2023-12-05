@@ -393,6 +393,7 @@ impl Z3LogParser for Z3Parser {
                                         .push(dep);
                                     dep_instantiations.push(inst);
                                 }
+                                equality_expls.push(*eq);
                             }
                             EqualityExpl::Congruence { .. } => (), // TODO: need to implement this?
                             EqualityExpl::Theory { .. } => (),
@@ -400,7 +401,7 @@ impl Z3LogParser for Z3Parser {
                             EqualityExpl::Unknown { .. } => (),
                         }
                     }
-                    equality_expls.push(fidx);
+                    // equality_expls.push(fidx);
                 }
                 blamed_terms.push(BlamedTermItem::Pair(fidx, sidx));
             } else {
