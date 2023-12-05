@@ -14,6 +14,7 @@ pub enum Filter {
     IgnoreTheorySolving,
     IgnoreQuantifier(QuantIdx),
     MaxInsts(usize),
+    MaxBranching(usize),
     ShowNeighbours(NodeIndex, Direction),
     VisitSourceTree(NodeIndex, bool),
     VisitSubTreeWithRoot(NodeIndex, bool),
@@ -29,6 +30,7 @@ impl Display for Filter {
                 write!(f, "Ignore instantiations of quantifier {}", qidx)
             }
             Self::MaxInsts(max) => write!(f, "Show the {} most expensive instantiations", max),
+            Self::MaxBranching(max) => write!(f, "Show the {} instantiations with the most children", max),
             Self::VisitSubTreeWithRoot(nidx, retain) => match retain {
                 true => write!(f, "Show node {} and its descendants", nidx.index()),
                 false => write!(f, "Hide node {} and its descendants", nidx.index()),
@@ -58,6 +60,7 @@ impl Filter {
                 graph.retain_nodes(|node: &NodeData| node.quant_idx != qidx)
             }
             Filter::MaxInsts(n) => graph.keep_n_most_costly(n),
+            Filter::MaxBranching(n) => graph.keep_n_most_branching(n),
             Filter::ShowNeighbours(nidx, direction) => graph.show_neighbours(nidx, direction),
             Filter::VisitSubTreeWithRoot(nidx, retain) => graph.visit_descendants(nidx, retain),
             Filter::VisitSourceTree(nidx, retain) => graph.visit_ancestors(nidx, retain),
@@ -76,6 +79,7 @@ pub struct GraphFilterProps {
 pub fn graph_filter(props: &GraphFilterProps) -> Html {
     let max_node_idx = use_reducer(InputValue::default);
     let max_instantiations = use_reducer(InputValue::default);
+    let max_branching = use_reducer(InputValue::default);
     let max_depth = use_reducer(InputValue::default);
     let selected_insts = use_context::<Vec<InstInfo>>().expect("no ctx found");
 
@@ -92,6 +96,11 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
         let max_instantiations = max_instantiations.clone();
         let callback = props.add_filters.clone();
         Callback::from(move |_| callback.emit(vec![Filter::MaxInsts(max_instantiations.value)]))
+    };
+    let add_max_branching_filter = {
+        let max_branching = max_branching.clone();
+        let callback = props.add_filters.clone();
+        Callback::from(move |_| callback.emit(vec![Filter::MaxBranching(max_branching.value)]))
     };
     let add_max_depth_filter = {
         let max_depth = max_depth.clone();
@@ -124,6 +133,16 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
                     placeholder={""}
                 />
                 <button onclick={add_max_insts_filter}>{"Add"}</button>
+            </div>
+            <div>
+                <UsizeInput
+                    label={"Render the n instantiations with most children where n = "}
+                    dependency={props.dependency.clone()}
+                    input_value={max_branching}
+                    default_value={usize::MAX}
+                    placeholder={""}
+                />
+                <button onclick={add_max_branching_filter}>{"Add"}</button>
             </div>
             <div>
                 <UsizeInput

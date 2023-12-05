@@ -1,6 +1,6 @@
 use petgraph::Direction::{Incoming, Outgoing};
 use smt_log_parser::parsers::z3::inst_graph::InstInfo;
-use yew::{prelude::*, virtual_dom::VNode};
+use yew::prelude::*;
 
 use super::graph_filters::Filter;
 

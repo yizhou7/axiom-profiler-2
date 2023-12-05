@@ -1,5 +1,5 @@
 use fxhash::FxHashMap;
-use gloo_console::log;
+// use gloo_console::log;
 use petgraph::graph::{Edge, NodeIndex};
 use petgraph::visit::{IntoEdgeReferences, Bfs};
 use petgraph::{
@@ -26,6 +26,7 @@ pub struct NodeData {
     parent_count: usize,
     pub orig_graph_idx: NodeIndex,
     cost_rank: usize,
+    branching_rank: usize,
     pub depth: Option<usize>,
 }
 
@@ -91,6 +92,12 @@ pub struct InstGraph {
     pub visible_graph: Graph<NodeData, EdgeData>,
     node_of_line_nr: FxHashMap<usize, NodeIndex>, // line number => node-index
     cost_ranked_node_indices: Vec<NodeIndex>,
+    branching_ranked_node_indices: Vec<NodeIndex>,
+}
+
+enum InstOrder {
+    Branching,
+    Cost
 }
 
 impl InstGraph {
@@ -212,26 +219,40 @@ impl InstGraph {
     }
 
     pub fn keep_n_most_costly(&mut self, n: usize) {
+        self.keep_n_highest_ranked(n, InstOrder::Cost)
+    } 
+
+    pub fn keep_n_most_branching(&mut self, n: usize) {
+        self.keep_n_highest_ranked(n, InstOrder::Branching)
+    } 
+
+    fn keep_n_highest_ranked(&mut self, n: usize, order: InstOrder) {
+        let ranked_node_indices = match order {
+            InstOrder::Branching => &self.branching_ranked_node_indices,
+            InstOrder::Cost => &self.cost_ranked_node_indices,
+        };
         let visible_nodes: Vec<NodeIndex> = self
             .orig_graph
             .node_indices()
             .filter(|n| self.orig_graph.node_weight(*n).unwrap().visible)
             .collect();
-        let nth_costliest_visible_node = self
-            .cost_ranked_node_indices
+        let nth_highest_ranked_visible_node = ranked_node_indices 
             .iter()
             .filter(|nidx| visible_nodes.contains(nidx))
             .take(n)
             .last()
             .unwrap();
-        let nth_largest_cost_rank = self
+        let nth_largest_rank = self
             .orig_graph
-            .node_weight(*nth_costliest_visible_node)
+            .node_weight(*nth_highest_ranked_visible_node)
             .unwrap()
-            .cost_rank;
+            .clone();
         // among the visible nodes keep those whose cost-rank
         // is larger than the cost rank of the n-th costliest
-        self.retain_nodes(|node| node.visible && node.cost_rank <= nth_largest_cost_rank);
+        match order {
+            InstOrder::Branching => self.retain_nodes(|node| node.visible && node.branching_rank <= nth_largest_rank.branching_rank),
+            InstOrder::Cost => self.retain_nodes(|node| node.visible && node.cost_rank <= nth_largest_rank.cost_rank),
+        }
     }
 
     pub fn visit_descendants(&mut self, root: NodeIndex, retain: bool) {
@@ -375,6 +396,7 @@ impl InstGraph {
                     parent_count: 0,
                     orig_graph_idx: NodeIndex::default(),
                     cost_rank: 0,
+                    branching_rank: 0,
                     depth: None,
                 });
             }
@@ -425,7 +447,6 @@ impl InstGraph {
             self.orig_graph.node_weight_mut(*nidx).unwrap().cost_rank = i;
         }
         self.cost_ranked_node_indices = cost_ranked_node_indices;
-        self.visible_graph = self.orig_graph.clone();
         // precompute BFS depth such that we can filter the graph up to some specified depth
         let roots: Vec<NodeIndex> = self
             .orig_graph
@@ -447,6 +468,32 @@ impl InstGraph {
                 }
             } 
         }
+        // precompute the branching-rank of all nodes by sorting the node_indices by our branching-order
+        // in descending order and then assigning the rank to each node
+        // Our branching-order is defined as follows:
+        // inst_b > inst_a iff (child_count(b) > child_count(a) or (child_count(b) = child_count(a) and line_nr_b < line_nr_a))
+        // This is a total order since the line numbers are always guaranteed to be distinct
+        // integers.
+        let mut branching_ranked_node_indices: Vec<NodeIndex> = self.orig_graph.node_indices().collect();
+        let branching_order = |node_a: &NodeIndex, node_b: &NodeIndex| {
+            let node_a_data = self.orig_graph.node_weight(*node_a).unwrap();
+            let node_b_data = self.orig_graph.node_weight(*node_b).unwrap();
+            if node_a_data.child_count < node_b_data.child_count {
+                std::cmp::Ordering::Greater
+            } else if node_a_data.child_count == node_b_data.child_count
+                && node_b_data.line_nr < node_a_data.line_nr
+            {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Less
+            }
+        };
+        branching_ranked_node_indices.sort_unstable_by(branching_order);
+        for (i, nidx) in branching_ranked_node_indices.iter().enumerate() {
+            self.orig_graph.node_weight_mut(*nidx).unwrap().branching_rank = i;
+        }
+        self.branching_ranked_node_indices = branching_ranked_node_indices;
+        self.visible_graph = self.orig_graph.clone();
     }
 
     fn add_node(&mut self, node_data: NodeData) {

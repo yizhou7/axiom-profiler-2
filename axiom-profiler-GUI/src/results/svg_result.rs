@@ -14,7 +14,7 @@ use smt_log_parser::{
     items::QuantIdx,
     parsers::{
         z3::{
-            inst_graph::{EdgeType, InstGraph, InstInfo, EdgeData, EdgeInfo},
+            inst_graph::{EdgeType, InstGraph, InstInfo, EdgeInfo},
             z3parser::Z3Parser,
         },
         LogParser,
@@ -115,7 +115,7 @@ impl Component for SVGResult {
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
-            Msg::WorkerOutput(out) => {
+            Msg::WorkerOutput(_out) => {
                 false
             }
             Msg::ApplyFilter(filter) => {
