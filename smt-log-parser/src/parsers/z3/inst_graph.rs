@@ -37,19 +37,17 @@ impl fmt::Debug for NodeData {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Default)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum EdgeType {
-    #[default]
-    Direct,
+    Direct(DepType),
     Indirect,
 }
 
-#[derive(Clone, Copy, PartialEq, Default)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct EdgeData {
     pub edge_type: EdgeType,
     pub orig_graph_idx: Option<EdgeIndex>,
     pub blame_term_idx: Option<TermIdx>,
-    pub dep_type: DepType,
 }
 
 #[derive(PartialEq, Clone)]
@@ -61,7 +59,7 @@ pub struct EdgeInfo {
 impl fmt::Debug for EdgeData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.edge_type {
-            EdgeType::Direct => write!(f, "direct edge"),
+            EdgeType::Direct(_) => write!(f, "direct edge"),
             EdgeType::Indirect => write!(f, "indirect edge"),
         }
     }
@@ -169,7 +167,6 @@ impl InstGraph {
                             edge_type: EdgeType::Indirect,
                             orig_graph_idx: None,
                             blame_term_idx: None,
-                            dep_type: DepType::default(),
                         },
                     );
                 }
@@ -207,7 +204,6 @@ impl InstGraph {
                         edge_type: EdgeType::Indirect,
                         orig_graph_idx: None,
                         blame_term_idx: None,
-                        dep_type: DepType::default(),
                     },
                 );
             }
@@ -410,7 +406,7 @@ impl InstGraph {
         let neighbours = self
             .orig_graph
             .edges_directed(node_idx, direction)
-            .filter(|e| e.weight().edge_type == EdgeType::Direct)
+            .filter(|e| if let EdgeType::Direct(_) = e.weight().edge_type { true } else { false })
             .map(|e| match direction {
                 Outgoing => e.target(),
                 Incoming => e.source(),
@@ -568,10 +564,9 @@ impl InstGraph {
                 from_node_idx,
                 to_node_idx,
                 EdgeData {
-                    edge_type: EdgeType::Direct,
+                    edge_type: EdgeType::Direct(dep.dep_type),
                     orig_graph_idx: None,
                     blame_term_idx: dep.blamed,  
-                    dep_type: dep.dep_type,
                 },
             );
             self.orig_graph.edge_weight_mut(edge).unwrap().orig_graph_idx = Some(edge);

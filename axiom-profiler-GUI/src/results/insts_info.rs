@@ -1,6 +1,7 @@
 use yew::{prelude::*, virtual_dom::VNode};
 use smt_log_parser::{parsers::z3::inst_graph::{InstInfo, EdgeInfo}, items::DepType};
 use petgraph::graph::NodeIndex;
+use smt_log_parser::parsers::z3::inst_graph::EdgeType;
 
 #[derive(Properties, PartialEq)]
 pub struct InstsInfoProps {
@@ -43,13 +44,13 @@ pub fn inst_info(props: &InstsInfoProps) -> Html {
             html! {
             <details>
                 <summary>{format!("Dependency from {} to {}", from.index(), to.index())}</summary>
-                {match data.edge_data.dep_type {
-                    DepType::Term => html! {
+                {match data.edge_data.edge_type {
+                    EdgeType::Direct(DepType::Term) => html! {
                         <div>
                         <h4>{"Blame term: "}</h4><p>{data.blame_term.clone()}</p>
                         </div>
                     }, 
-                    DepType::Equality => html! {
+                    EdgeType::Direct(DepType::Equality) => html! {
                         <div>
                         <h4>{"Equality: "}</h4><p>{data.blame_term.clone()}</p>
                         </div>

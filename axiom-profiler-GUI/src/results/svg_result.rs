@@ -166,11 +166,11 @@ impl Component for SVGResult {
                                     None => "indirect".to_string() 
                                 },
                                 match edge_data.weight().edge_type {
-                                    EdgeType::Direct => "solid",
+                                    EdgeType::Direct(_) => "solid",
                                     EdgeType::Indirect => "dashed",
                                 },
                                 match edge_data.weight().edge_type {
-                                    EdgeType::Direct => "direct",
+                                    EdgeType::Direct(_) => "direct",
                                     EdgeType::Indirect => "indirect",
                                 }
                             ),
