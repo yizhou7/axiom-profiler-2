@@ -66,7 +66,7 @@ impl Filter {
             Filter::ShowNeighbours(nidx, direction) => graph.show_neighbours(nidx, direction),
             Filter::VisitSubTreeWithRoot(nidx, retain) => graph.visit_descendants(nidx, retain),
             Filter::VisitSourceTree(nidx, retain) => graph.visit_ancestors(nidx, retain),
-            Filter::MaxDepth(depth) => graph.retain_nodes(|node: &NodeData| node.depth.unwrap() <= depth),
+            Filter::MaxDepth(depth) => graph.retain_nodes(|node: &NodeData| node.min_depth.unwrap() <= depth),
             Filter::ShowLongestPath(nidx) => graph.show_longest_path_through(nidx),
         }
     }

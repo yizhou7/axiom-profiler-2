@@ -1,8 +1,9 @@
 use fxhash::FxHashMap;
-use petgraph::algo::dijkstra;
+use petgraph::algo::{dijkstra, toposort};
 use gloo_console::log;
 use petgraph::graph::{Edge, NodeIndex};
-use petgraph::visit::{IntoEdgeReferences, Bfs};
+use petgraph::stable_graph::StableGraph;
+use petgraph::visit::{IntoEdgeReferences, Bfs, Topo};
 use petgraph::{
     stable_graph::EdgeIndex,
     visit::{Dfs, EdgeRef},
@@ -28,7 +29,8 @@ pub struct NodeData {
     pub orig_graph_idx: NodeIndex,
     cost_rank: usize,
     branching_rank: usize,
-    pub depth: Option<usize>,
+    pub min_depth: Option<usize>,
+    max_depth: usize, 
 }
 
 impl fmt::Debug for NodeData {
@@ -267,47 +269,65 @@ impl InstGraph {
     }
 
     pub fn show_longest_path_through(&mut self, node: NodeIndex) {
-        let mut longest_distances = dijkstra(&self.orig_graph, node, None, |_| -1);
-        for (_, dist) in longest_distances.iter_mut() {
-            *dist = i32::abs(*dist);
+        let mut subtree_rooted_at_node: StableGraph<NodeData, EdgeData> = StableGraph::from(self.orig_graph.clone());
+        for node in subtree_rooted_at_node.node_weights_mut() {
+            node.visible = false;
         }
-        let (furthest_away_node, _edges_between) = longest_distances 
-            .iter()
-            .max_by(|a, b| a.1.cmp(&b.1))
-            .map(|(node, dist)| (node, i32::abs(*dist) as usize))
-            // TODO: is this safe?
-            .unwrap();
-        // log!(format!("Node {} is furthest away. It is seperated by {} edges from {}", furthest_away_node.index(), edges_between, node.index()));
-        // backtrack from furthest away node to get the longest path
-        let mut longest_path: Vec<NodeIndex> = Vec::new();
-        let mut visitor: Vec<NodeIndex> = Vec::new();
-        visitor.push(*furthest_away_node);
-        while let Some(nx) = visitor.pop() {
-            // log!(format!("Visiting node {}", nx.index()));
-            let pred = self
-                .orig_graph
-                .neighbors_directed(nx, Incoming)
-                .filter(|pred| {
-                    if let Some(&dist) = longest_distances.get(pred) {
-                        // log!(format!("Node {} is a predecessor of node {} and has distance {} from the root node", pred.index(), nx.index(), dist));
-                        dist == longest_distances.get(&nx).unwrap() - 1
-                    } else {
-                        false
-                    }
-                })
-                .last()
-                .unwrap();
-            if pred.index() != node.index() {
-                // log!(format!("Pushing node {} onto the visitor queue", pred.index()));
-                visitor.push(pred);
-                longest_path.push(pred)
+        let mut dfs = Dfs::new(&subtree_rooted_at_node, node);
+        while let Some(nx) = dfs.next(&subtree_rooted_at_node) {
+            subtree_rooted_at_node[nx].visible = true;
+        }
+        subtree_rooted_at_node = subtree_rooted_at_node.filter_map(
+            |_, node_data| if node_data.visible { Some(*node_data) } else { None },
+            |_, edge| Some(*edge)
+        );
+        let mut topo = Topo::new(&subtree_rooted_at_node);
+        while let Some(nx) = topo.next(&subtree_rooted_at_node) {
+            let parents = subtree_rooted_at_node.neighbors_directed(nx, Incoming); 
+            let max_parent_depth = parents
+                .map(|nx| subtree_rooted_at_node.node_weight(nx).unwrap().max_depth)
+                .max(); 
+            if let Some(_) = max_parent_depth {
+                subtree_rooted_at_node[nx].max_depth += 1;
             }
         }
-        // log!(format!("longest path contains {} nodes", longest_path.len()));
-        // make all nodes on longest path visible
-        for nx in longest_path {
-            self.orig_graph[nx].visible = true;
-            // log!(format!("Making node {} visible", nx.index()));
+        let furthest_away_node_idx = subtree_rooted_at_node
+            .node_weights()
+            .max_by(|node_a, node_b| node_a.max_depth.cmp(&node_b.max_depth))
+            .unwrap()
+            .orig_graph_idx;
+        let mut visitor: Vec<NodeIndex>= Vec::new();
+        visitor.push(furthest_away_node_idx);
+        while let Some(curr) = visitor.pop() {
+            self.orig_graph[curr].visible = true;
+            let curr_distance = subtree_rooted_at_node.node_weight(curr).unwrap().max_depth;
+            // log!(format!("Node {} has distance {} from {}", curr.index(), curr_distance, ))
+            let pred = subtree_rooted_at_node
+                .neighbors_directed(curr, Incoming)
+                .filter(|pred| { 
+                    let pred_distance = subtree_rooted_at_node.node_weight(*pred).unwrap().max_depth; 
+                    pred_distance == curr_distance - 1 
+                })
+                .last();
+            if let Some(node) = pred {
+                visitor.push(node);
+            }
+        } 
+        visitor.push(node);
+        while let Some(curr) = visitor.pop() {
+            self.orig_graph[curr].visible = true;
+            let curr_distance = self.orig_graph.node_weight(curr).unwrap().max_depth;
+            // log!(format!("Node {} has distance {} from {}", curr.index(), curr_distance, ))
+            let pred = self.orig_graph 
+                .neighbors_directed(curr, Incoming)
+                .filter(|pred| { 
+                    let pred_distance = self.orig_graph.node_weight(*pred).unwrap().max_depth; 
+                    pred_distance == curr_distance - 1 
+                })
+                .last();
+            if let Some(node) = pred {
+                visitor.push(node);
+            }
         }
     }
 
@@ -439,7 +459,8 @@ impl InstGraph {
                     orig_graph_idx: NodeIndex::default(),
                     cost_rank: 0,
                     branching_rank: 0,
-                    depth: None,
+                    min_depth: None,
+                    max_depth: 0,
                 });
             }
         }
@@ -500,13 +521,13 @@ impl InstGraph {
             while let Some(nx) = bfs.next(&self.orig_graph) {
                 let parents = self.orig_graph.neighbors_directed(nx, Incoming);
                 let min_parent_depth = parents
-                    .filter_map(|parent| self.orig_graph.node_weight(parent).unwrap().depth)
+                    .filter_map(|parent| self.orig_graph.node_weight(parent).unwrap().min_depth)
                     .min();
                 if let Some(depth) = min_parent_depth {
-                    self.orig_graph[nx].depth = Some(depth + 1);
+                    self.orig_graph[nx].min_depth = Some(depth + 1);
                 } else {
                     // the min_depth is None iff the node at nx has no parents, hence we set the depth to 0
-                    self.orig_graph[nx].depth = Some(0);
+                    self.orig_graph[nx].min_depth = Some(0);
                 }
             } 
         }
@@ -535,6 +556,22 @@ impl InstGraph {
             self.orig_graph.node_weight_mut(*nidx).unwrap().branching_rank = i;
         }
         self.branching_ranked_node_indices = branching_ranked_node_indices;
+        // compute the longest distances from root nodes by traversing the graph in topological order
+        // and taking max distance among parents + 1. Needed to compute longest paths through selected
+        // nodes 
+        // root nodes (i.e., nodes without parents) have distance 0
+        let topological_order = toposort(&self.orig_graph, None).unwrap();
+        for node in topological_order {
+            let max_parent_depth = self
+                .orig_graph
+                .neighbors_directed(node, Incoming)
+                .map(|nx| self.orig_graph.node_weight(nx).unwrap().max_depth)
+                .max();
+            if let Some(depth) = max_parent_depth {
+                let node_weight = self.orig_graph.node_weight_mut(node).unwrap();
+                node_weight.max_depth = depth + 1; 
+            }
+        }
         self.visible_graph = self.orig_graph.clone();
     }
 
