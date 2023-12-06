@@ -19,6 +19,7 @@ pub enum Filter {
     VisitSourceTree(NodeIndex, bool),
     VisitSubTreeWithRoot(NodeIndex, bool),
     MaxDepth(usize),
+    ShowLongestPath(NodeIndex),
 }
 
 impl Display for Filter {
@@ -44,6 +45,7 @@ impl Display for Filter {
                 Direction::Outgoing => write!(f, "Show the children of node {}", nidx.index()),
             },
             Self::MaxDepth(depth) => write!(f, "Show nodes up to depth {}", depth),
+            Self::ShowLongestPath(node) => write!(f, "Showing longest path through node {}", node.index()),
         }
     }
 }
@@ -65,6 +67,7 @@ impl Filter {
             Filter::VisitSubTreeWithRoot(nidx, retain) => graph.visit_descendants(nidx, retain),
             Filter::VisitSourceTree(nidx, retain) => graph.visit_ancestors(nidx, retain),
             Filter::MaxDepth(depth) => graph.retain_nodes(|node: &NodeData| node.depth.unwrap() <= depth),
+            Filter::ShowLongestPath(nidx) => graph.show_longest_path_through(nidx),
         }
     }
 }
