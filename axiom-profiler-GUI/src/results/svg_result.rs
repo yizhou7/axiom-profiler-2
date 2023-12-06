@@ -11,7 +11,7 @@ use num_format::{Locale, ToFormattedString};
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::{NodeIndex, EdgeIndex};
 use smt_log_parser::{
-    items::QuantIdx,
+    items::{QuantIdx, DepType::{Term, Equality}},
     parsers::{
         z3::{
             inst_graph::{EdgeType, InstGraph, InstInfo, EdgeInfo},
@@ -160,7 +160,7 @@ impl Component for SVGResult {
                             filtered_graph,
                             &[Config::EdgeNoLabel, Config::NodeNoLabel, Config::GraphContentOnly],
                             &|_, edge_data| format!(
-                                "id={} style={} class={}",
+                                "id={} style={} class={} arrowhead={}",
                                 match edge_data.weight().orig_graph_idx {
                                     Some(idx) => format!("edge{}", idx.index()),
                                     None => "indirect".to_string() 
@@ -172,6 +172,11 @@ impl Component for SVGResult {
                                 match edge_data.weight().edge_type {
                                     EdgeType::Direct(_) => "direct",
                                     EdgeType::Indirect => "indirect",
+                                },
+                                match edge_data.weight().edge_type {
+                                    EdgeType::Direct(Equality) => "empty",
+                                    _ => "normal",
+
                                 }
                             ),
                             &|_, (_, node_data)| {
