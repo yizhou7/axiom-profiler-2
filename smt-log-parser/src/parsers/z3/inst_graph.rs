@@ -1,9 +1,10 @@
 use fxhash::FxHashMap;
 use petgraph::algo::{dijkstra, toposort};
 use gloo_console::log;
+use petgraph::data::DataMap;
 use petgraph::graph::{Edge, NodeIndex};
 use petgraph::stable_graph::StableGraph;
-use petgraph::visit::{IntoEdgeReferences, Bfs, Topo};
+use petgraph::visit::{IntoEdgeReferences, Bfs, Topo, NodeIndexable, IntoNeighborsDirected};
 use petgraph::{
     stable_graph::EdgeIndex,
     visit::{Dfs, EdgeRef},
@@ -269,6 +270,7 @@ impl InstGraph {
     }
 
     pub fn show_longest_path_through(&mut self, node: NodeIndex) {
+        // construct subtree rooted at selected node
         let mut subtree_rooted_at_node: StableGraph<NodeData, EdgeData> = StableGraph::from(self.orig_graph.clone());
         for node in subtree_rooted_at_node.node_weights_mut() {
             node.visible = false;
@@ -281,6 +283,7 @@ impl InstGraph {
             |_, node_data| if node_data.visible { Some(*node_data) } else { None },
             |_, edge| Some(*edge)
         );
+        // traverse this subtree in topological order to compute longest distances from node
         let mut topo = Topo::new(&subtree_rooted_at_node);
         while let Some(nx) = topo.next(&subtree_rooted_at_node) {
             let parents = subtree_rooted_at_node.neighbors_directed(nx, Incoming); 
@@ -296,6 +299,9 @@ impl InstGraph {
             .max_by(|node_a, node_b| node_a.max_depth.cmp(&node_b.max_depth))
             .unwrap()
             .orig_graph_idx;
+        // backtrack a longest path from furthest away node in subgraph until we reach the root
+        // with respect to the subgraph, i.e., node
+        // self.backtrack(Some(&subtree_rooted_at_node), furthest_away_node_idx);
         let mut visitor: Vec<NodeIndex>= Vec::new();
         visitor.push(furthest_away_node_idx);
         while let Some(curr) = visitor.pop() {
@@ -313,6 +319,7 @@ impl InstGraph {
                 visitor.push(node);
             }
         } 
+        // backtrack a longest path from node until we reach a root with respect to the original graph 
         visitor.push(node);
         while let Some(curr) = visitor.pop() {
             self.orig_graph[curr].visible = true;
@@ -330,6 +337,28 @@ impl InstGraph {
             }
         }
     }
+    
+    // fn backtrack<T>(&mut self, graph: Option<T>, node: NodeIndex) where 
+    // T: NodeIndexable<EdgeId = EdgeIndex, NodeId = NodeIndex> + DataMap<NodeWeight = NodeData> + IntoNeighborsDirected {
+    //     let mut visitor: Vec<NodeIndex> = Vec::new();
+    //     visitor.push(node);
+    //     while let Some(curr) = visitor.pop() {
+    //         self.orig_graph[curr].visible = true;
+    //         let curr_distance = graph.unwrap_or(self.orig_graph).node_weight(curr).unwrap().max_depth;
+    //         // log!(format!("Node {} has distance {} from {}", curr.index(), curr_distance, ))
+    //         let pred = graph 
+    //             .unwrap_or_default(self.orig_graph)
+    //             .neighbors_directed(curr, Incoming)
+    //             .filter(|pred| { 
+    //                 let pred_distance = graph.unwrap_or(self.orig_graph).node_weight(*pred).unwrap().max_depth; 
+    //                 pred_distance == curr_distance - 1 
+    //             })
+    //             .last();
+    //         if let Some(node) = pred {
+    //             visitor.push(node);
+    //         }
+    //     }
+    // }
 
     pub fn reset(&mut self) {
         for node in self.orig_graph.node_weights_mut() {
@@ -560,8 +589,8 @@ impl InstGraph {
         // and taking max distance among parents + 1. Needed to compute longest paths through selected
         // nodes 
         // root nodes (i.e., nodes without parents) have distance 0
-        let topological_order = toposort(&self.orig_graph, None).unwrap();
-        for node in topological_order {
+        let mut topo = Topo::new(&self.orig_graph);
+        while let Some(node) = topo.next(&self.orig_graph)  {
             let max_parent_depth = self
                 .orig_graph
                 .neighbors_directed(node, Incoming)
