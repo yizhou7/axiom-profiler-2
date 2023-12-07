@@ -236,22 +236,22 @@ impl InstGraph {
             .node_indices()
             .filter(|n| self.orig_graph.node_weight(*n).unwrap().visible)
             .collect();
-        let nth_highest_ranked_visible_node = ranked_node_indices 
+        if let Some(nth_highest_ranked_visible_node) = ranked_node_indices  
             .iter()
             .filter(|nidx| visible_nodes.contains(nidx))
             .take(n)
-            .last()
-            .unwrap();
-        let nth_largest_rank = self
-            .orig_graph
-            .node_weight(*nth_highest_ranked_visible_node)
-            .unwrap()
-            .clone();
-        // among the visible nodes keep those whose cost-rank
-        // is larger than the cost rank of the n-th costliest
-        match order {
-            InstOrder::Branching => self.retain_nodes(|node| node.visible && node.branching_rank <= nth_largest_rank.branching_rank),
-            InstOrder::Cost => self.retain_nodes(|node| node.visible && node.cost_rank <= nth_largest_rank.cost_rank),
+            .last() {
+            let nth_largest_rank = self
+                .orig_graph
+                .node_weight(*nth_highest_ranked_visible_node)
+                .unwrap()
+                .clone();
+            // among the visible nodes keep those whose cost-rank
+            // is larger than the cost rank of the n-th costliest
+            match order {
+                InstOrder::Branching => self.retain_nodes(|node| node.visible && node.branching_rank <= nth_largest_rank.branching_rank),
+                InstOrder::Cost => self.retain_nodes(|node| node.visible && node.cost_rank <= nth_largest_rank.cost_rank),
+            }
         }
     }
 

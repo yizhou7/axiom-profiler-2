@@ -57,8 +57,12 @@ pub fn node_actions(props: &NodeActionsProps) -> Html {
             <button onclick={show_source_tree}>{"Show ancestors"}</button>
             <button onclick={hide_source_tree}>{"Hide ancestors"}</button>
         </div>
-        <button onclick={ignore_quantifier}>{"Ignore all nodes of this quantifier"}</button>
-        <button onclick={show_longest_path}>{"Show longest path through this node"}</button>
+        <div>
+            <button onclick={ignore_quantifier}>{"Ignore all nodes of this quantifier"}</button>
+        </div>
+        <div>
+            <button onclick={show_longest_path}>{"Show longest path through this node"}</button>
+        </div>
     </>
     }
 }
