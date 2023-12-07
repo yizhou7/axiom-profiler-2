@@ -120,11 +120,15 @@ impl Component for FileDataComponent {
         let version_info = format!("{} ({})", env!("VERGEN_GIT_DESCRIBE"), timestamp.format("%-d %b %y %H:%M"));
         html! {
             <div>
-                <div style="height: 15vh;">
-                    <h1>{"Axiom Profiler"}</h1>
-                    <p style="margin-top: -25px"><small>{version_info}</small></p>
-                    <h2>{"Choose a log file:"}</h2>
-                    <input type="file" accept=".log" onchange={on_change} multiple=false/>
+                <div style="height: 13vh;">
+                    <div style="display: flex; justify-content: space-between; padding: 0;">
+                        <h1>{"Axiom Profiler"}</h1>
+                        
+                        <p><small>{version_info}</small></p>
+                    </div>
+                    <div>
+                        <input type="file" accept=".log" onchange={on_change} multiple=false/>
+                    </div>
                 </div>
                 <div style="display: flex; ">
                     { for self.files.iter().map(|f| Self::view_file(f))}

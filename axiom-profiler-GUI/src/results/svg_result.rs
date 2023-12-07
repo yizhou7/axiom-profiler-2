@@ -309,7 +309,7 @@ impl Component for SVGResult {
         let toggle = ctx.link().callback(|_| Msg::ToggleTermExpander);
         html! {
             <>
-                <div style="flex: 30%; height: 85vh; overflow-y: auto; ">
+                <div style="flex: 30%; height: 87vh; overflow-y: auto; ">
                 <ContextProvider<Vec<InstInfo>> context={self.selected_insts.values().cloned().collect::<Vec<InstInfo>>()} >
                     <FilterChain
                         apply_filter={apply_filter.clone()}
