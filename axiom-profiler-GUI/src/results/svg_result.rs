@@ -11,7 +11,7 @@ use num_format::{Locale, ToFormattedString};
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::{NodeIndex, EdgeIndex};
 use smt_log_parser::{
-    items::{QuantIdx, DepType::{Term, Equality}},
+    items::{QuantIdx, DepType::Equality},
     parsers::{
         z3::{
             inst_graph::{EdgeType, InstGraph, InstInfo, EdgeInfo},
@@ -75,7 +75,8 @@ pub struct SVGResult {
     on_edge_select: Callback<usize>,
     graph_dim: GraphDimensions,
     worker: Option<Box<dyn yew_agent::Bridge<Worker>>>,
-    ignore_term_ids: bool,
+    ignore_term_ids: bool, 
+    async_graph_and_filter_chain: bool,
 }
 
 #[derive(Properties, PartialEq)]
@@ -110,6 +111,7 @@ impl Component for SVGResult {
             },
             worker: Some(Self::create_worker(ctx.link().clone())),
             ignore_term_ids: true,
+            async_graph_and_filter_chain: false,
         }
     }
 
@@ -142,6 +144,7 @@ impl Component for SVGResult {
                 };
                 if safe_to_render || permission {
                     self.graph_dim.prev_edge_count = Some(edge_count);
+                    self.async_graph_and_filter_chain = false;
                     log::debug!("Rendering graph");
                     let filtered_graph = &self.inst_graph.visible_graph;
 
@@ -233,12 +236,23 @@ impl Component for SVGResult {
                         // this resets the filter chain to the filter chain that we had
                         // right before adding the filter that caused too many nodes
                         // to be added to the graph
-                        self.filter_chain_link
-                            .borrow()
-                            .clone()
-                            .unwrap()
-                            .send_message(FilterChainMsg::SetToPrevious);
-                        false
+                        let message = "Would you like to apply the filter without rendering?";
+                        let result = window.confirm_with_message(&message);
+                        match result {
+                            Ok(true) => {
+                                self.async_graph_and_filter_chain = true;
+                                true
+                            }
+                            Ok(false) => {
+                                self.filter_chain_link
+                                    .borrow()
+                                    .clone()
+                                    .unwrap()
+                                    .send_message(FilterChainMsg::SetToPrevious);
+                                false
+                            }
+                            Err(_) => false
+                        }
                     }
                     Err(_) => {
                         // Handle the case where an error occurred
@@ -303,6 +317,11 @@ impl Component for SVGResult {
         let node_and_edge_count_preview = html! {
             <h4>{format!{"The filtered graph contains {} nodes and {} edges", self.graph_dim.node_count, self.graph_dim.edge_count}}</h4>
         };
+        let async_graph_and_filter_chain_warning = if self.async_graph_and_filter_chain {
+            html! {<h4 style="color: red;">{"Warning: The filter chain and node/edge count do not correspond to the rendered graph."}</h4>} 
+        } else {
+            html! {}
+        };
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
         let render_graph = ctx.link().callback(Msg::RenderGraph);
@@ -319,6 +338,7 @@ impl Component for SVGResult {
                         dependency={ctx.props().trace_file_text.clone()}
                     />
                 </ContextProvider<Vec<InstInfo>>>
+                {async_graph_and_filter_chain_warning}
                 {node_and_edge_count_preview}
                 <InstsInfo 
                     selected_nodes={self.selected_insts.values().cloned().collect::<Vec<InstInfo>>()}
@@ -327,6 +347,10 @@ impl Component for SVGResult {
                 <div>
                     <label for="term_expander">{"Ignore term IDs "}</label>
                     <input type="checkbox" checked={self.ignore_term_ids} onclick={toggle} id="term_expander" />
+                    // <dialog open=true>
+                    //     <p>{"Greetings, one and all!"}</p>
+                    //     <button>{"Ok"}</button><button>{"Maybe"}</button><button>{"Cancel"}</button>
+                    // </dialog>
                 </div>
                 </div>
                 <GraphContainer

@@ -70,7 +70,7 @@ impl Component for GraphContainer {
         });
 
         html! {
-        <div style="flex: 70%; height: 87vh; overflow: auto; position: relative;">
+        <div style="flex: 70%; height: 87vh; overflow: auto; position: relative; background: red;">
             <div style="position: sticky; top: 0px; left: 0px; z-index: 1">
                 <label for="input">{"Zoom factor: "}</label>
                 <input onkeypress={set_value_on_enter} onblur={set_value_on_blur} id="input" placeholder="1"/>
