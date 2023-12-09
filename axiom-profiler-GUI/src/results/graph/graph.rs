@@ -67,13 +67,22 @@ pub fn graph(props: &GraphProps) -> Html {
                     let div = div.clone();
                     let closure: Closure<dyn Fn(Event)> = Closure::new(move |_: Event| {
                         let nodes = div.get_elements_by_class_name("node");
-                        for i in (0..nodes.length()) {
+                        for i in 0..nodes.length() {
                             let node = nodes.item(i).unwrap();
                             let ellipse = node
                                 .query_selector("ellipse")
                                 .expect("Failed to select ellipse")
                                 .unwrap();
                             let _ = ellipse.set_attribute("stroke-width", "1");
+                        }
+                        let edges = div.get_elements_by_class_name("edge direct");
+                        for i in 0..edges.length() {
+                            let edge = edges.item(i).unwrap();
+                            let path = edge 
+                                .query_selector("path")
+                                .expect("Failed to select path")
+                                .unwrap();
+                            let _ = path.set_attribute("stroke-width", "1");
                         }
                         callback.emit(());
                     });
@@ -139,10 +148,29 @@ pub fn graph(props: &GraphProps) -> Html {
                     .map(|i| {
                         // extract node_index from node to construct callback that emits it
                         let node = direct_edges.item(i).unwrap();
+                        let path = node
+                            .query_selector("path")
+                            .expect("Failed to select title element")
+                            .unwrap();
                         let edge_index = node.id().strip_prefix("edge").unwrap().parse::<usize>().unwrap();
                         let callback = edges_callback.clone();
                         let closure: Closure<dyn Fn(Event)> = Closure::new(move |_: Event| {
                             log::debug!("Clicked on edge {}", edge_index); 
+                            let current_stroke_width = path.get_attribute("stroke-width");
+                            match current_stroke_width {
+                                None => {
+                                    let _ = path.set_attribute("stroke-width", "3");
+                                }
+                                Some(ref width) => match width.parse::<usize>() {
+                                    Ok(1) => {
+                                        let _ = path.set_attribute("stroke-width", "3");
+                                    }
+                                    Ok(3) => {
+                                        let _ = path.set_attribute("stroke-width", "1");
+                                    }
+                                    _ => (),
+                                },
+                            };
                             callback.emit(edge_index);
                         });
                         // attach event listener to node
@@ -191,13 +219,22 @@ pub fn graph(props: &GraphProps) -> Html {
         Callback::from(move |_| {
             if let Some(div_el) = div_ref.cast::<HtmlElement>() {
                 let nodes = div_el.get_elements_by_class_name("node");
-                for i in (0..nodes.length()) {
+                let edges = div_el.get_elements_by_class_name("edge direct");
+                for i in 0..nodes.length() {
                     let node = nodes.item(i).unwrap();
                     let ellipse = node
                         .query_selector("ellipse")
                         .expect("Failed to select ellipse")
                         .unwrap();
                     let _ = ellipse.set_attribute("stroke-width", "1");
+                }
+                for i in 0..edges.length() {
+                    let edge = edges.item(i).unwrap();
+                    let path = edge 
+                        .query_selector("path")
+                        .expect("Failed to select path")
+                        .unwrap();
+                    let _ = path.set_attribute("stroke-width", "1");
                 }
             } 
             callback.emit(())
