@@ -55,21 +55,36 @@ impl fmt::Display for Term {
         write!(f, "{self:?}\n")
     }
 }
+
+struct PrettyTextContext {
+    ignore_ids: bool,
+    quant: Option<Quantifier>,
+} 
+
 impl Term {
-    pub fn pretty_text(&self, ignore_ids: bool, map: &TiVec<TermIdx, Term>) -> String {
+    pub fn pretty_text(&self, ignore_ids: bool, map: &TiVec<TermIdx, Term>, quant: Option<&Quantifier>) -> String {
         let child_text: Vec<String> = self
             .child_ids
             .iter()
-            .map(|c| map[*c].pretty_text(ignore_ids, map))
+            .map(|c| map[*c].pretty_text(ignore_ids, map, quant))
             .collect();
         if child_text.is_empty() {
+            let kind = match self.kind {
+                TermKind::Var(qvar) if quant.is_some() => {
+                    match quant.unwrap().vars.as_ref().unwrap() {
+                        VarNames::NameAndType(vars) => vars[qvar].0.clone(),
+                        _ => format!("{}", self.kind),
+                    }
+                }, 
+                _ => format!("{}", self.kind)
+            };
             if !ignore_ids {
-                format!("{}[{}]", self.kind, self.id)
+                format!("{}[{}]", kind, self.id)
             } else {
                 if let Some(meaning) = &self.meaning {
                     format!("{}", meaning.value)
                 } else {
-                    format!("{}", self.kind)
+                    format!("{}", kind)
                 }
             }
         } else {
@@ -218,7 +233,7 @@ impl Quantifier {
             format!(
                 "FORALL {}({})",
                 var_text.join(", "),
-                map[*term].pretty_text(ignore_ids, map)
+                map[*term].pretty_text(ignore_ids, map, Some(self))
             )
         } else {
             self.kind.to_string()

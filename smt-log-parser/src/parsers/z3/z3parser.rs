@@ -652,7 +652,7 @@ impl Z3Parser {
             .as_vec()
             .iter()
             .map(|tidx| term_map.get(*tidx).unwrap())
-            .map(|term| term.pretty_text(ignore_ids, term_map))
+            .map(|term| term.pretty_text(ignore_ids, term_map, None))
             .collect()
     }
 }
