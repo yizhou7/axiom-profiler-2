@@ -186,8 +186,8 @@ impl Component for SVGResult {
                                 }
                             ),
                             &|_, (_, node_data)| {
-                                format!("label=\"{}\" style=filled shape=oval fillcolor=\"{}\" fontcolor=black gradientangle=90",
-                                        // node_idx.index(),
+                                format!("id={} label=\"{}\" style=filled shape=oval fillcolor=\"{}\" fontcolor=black gradientangle=90",
+                                        format!("node{}", node_data.orig_graph_idx.index()),
                                         node_data.orig_graph_idx.index(),
                                         match (self.inst_graph.node_has_filtered_children(node_data.orig_graph_idx), 
                                                self.inst_graph.node_has_filtered_parents(node_data.orig_graph_idx)) {
