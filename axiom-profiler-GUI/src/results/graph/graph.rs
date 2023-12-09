@@ -9,6 +9,7 @@ pub struct GraphProps {
     pub svg_text: AttrValue,
     pub update_selected_nodes: Callback<usize>,
     pub update_selected_edges: Callback<usize>,
+    pub deselect_all: Callback<()>,
     pub zoom_factor: f32,
 }
 
@@ -50,6 +51,7 @@ pub fn graph(props: &GraphProps) -> Html {
         let svg_text = props.svg_text.clone();
         let nodes_callback = props.update_selected_nodes.clone();
         let edges_callback = props.update_selected_edges.clone();
+        let background_callback = props.deselect_all.clone();
 
         use_effect_with_deps(
             move |_| {
@@ -58,6 +60,33 @@ pub fn graph(props: &GraphProps) -> Html {
                     .cast::<HtmlElement>()
                     .expect("div_ref not attached to div element");
 
+                // attach event listener to surrounding polygon that makes all nodes unselected when clicked on it
+                let background = div.query_selector("svg > g > polygon").expect("Failed to select svg > g > polygon");
+                let background_closure: Vec<Closure<dyn Fn(Event)>> = if let Some(ref background_el) = background {
+                    let callback = background_callback.clone();
+                    let div = div.clone();
+                    let closure: Closure<dyn Fn(Event)> = Closure::new(move |_: Event| {
+                        let nodes = div.get_elements_by_class_name("node");
+                        for i in (0..nodes.length()) {
+                            let node = nodes.item(i).unwrap();
+                            let ellipse = node
+                                .query_selector("ellipse")
+                                .expect("Failed to select ellipse")
+                                .unwrap();
+                            let _ = ellipse.set_attribute("stroke-width", "1");
+                        }
+                        callback.emit(());
+                    });
+                    background_el
+                        .add_event_listener_with_callback(
+                            "click",
+                            closure.as_ref().unchecked_ref(),
+                        )
+                        .unwrap();
+                    vec![closure]
+                } else {
+                    vec![]
+                };
                 // construct event_listeners that emit node indices (contained in title tags)
                 let descendant_nodes = div.get_elements_by_class_name("node");
                 let node_closures: Vec<Closure<dyn Fn(Event)>> = (0..descendant_nodes.length())
@@ -127,6 +156,10 @@ pub fn graph(props: &GraphProps) -> Html {
                     .collect();
                 move || {
                     // Remove event listeners when the component is unmounted
+                    if let Some(background_el) = background {
+                        let closure = background_closure[0].as_ref();
+                        background_el.remove_event_listener_with_callback("click", closure.unchecked_ref()).unwrap();
+                    }
                     for i in 0..node_closures.len() {
                         if let Some(node) = descendant_nodes.item(i as u32) {
                             let closure = node_closures.as_slice()[i as usize].as_ref();
@@ -152,9 +185,30 @@ pub fn graph(props: &GraphProps) -> Html {
             svg_text,
         );
     }
+    let deselect_all = {
+        let callback = props.deselect_all.clone();
+        let div_ref = div_ref.clone();
+        Callback::from(move |_| {
+            if let Some(div_el) = div_ref.cast::<HtmlElement>() {
+                let nodes = div_el.get_elements_by_class_name("node");
+                for i in (0..nodes.length()) {
+                    let node = nodes.item(i).unwrap();
+                    let ellipse = node
+                        .query_selector("ellipse")
+                        .expect("Failed to select ellipse")
+                        .unwrap();
+                    let _ = ellipse.set_attribute("stroke-width", "1");
+                }
+            } 
+            callback.emit(())
+        })
+    };
     html! {
-        <div ref={div_ref}>
-            {svg_result}
-        </div>
+        <>
+            <div onclick={deselect_all} style="position: sticky; top: 0; left: 0; height: 87vh;"></div>
+            <div ref={div_ref} style="position: absolute; top: 19px; left: 0; overflow: visible; width: 0; height: 0;">
+                {svg_result}
+            </div>
+        </>
     }
 }

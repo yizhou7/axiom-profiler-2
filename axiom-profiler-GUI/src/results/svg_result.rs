@@ -33,6 +33,7 @@ pub enum Msg {
     UpdateSvgText(AttrValue),
     UpdateSelectedNodes(usize),
     UpdateSelectedEdges(usize),
+    DeselectAll,
     RenderGraph(UserPermission),
     ApplyFilter(Filter),
     ResetGraph,
@@ -73,6 +74,7 @@ pub struct SVGResult {
     filter_chain_link: WeakComponentLink<FilterChain>,
     on_node_select: Callback<usize>,
     on_edge_select: Callback<usize>,
+    deselect_all: Callback<()>,
     graph_dim: GraphDimensions,
     worker: Option<Box<dyn yew_agent::Bridge<Worker>>>,
     ignore_term_ids: bool, 
@@ -104,6 +106,7 @@ impl Component for SVGResult {
             filter_chain_link: WeakComponentLink::default(),
             on_node_select: ctx.link().callback(Msg::UpdateSelectedNodes),
             on_edge_select: ctx.link().callback(Msg::UpdateSelectedEdges),
+            deselect_all: ctx.link().callback(|_| Msg::DeselectAll),
             graph_dim: GraphDimensions {
                 node_count: 0,
                 edge_count: 0,
@@ -295,6 +298,11 @@ impl Component for SVGResult {
                 } 
                 true
             }
+            Msg::DeselectAll => {
+                self.selected_insts.clear();
+                self.selected_deps.clear();
+                true
+            }
             Msg::ToggleTermExpander => {
                 self.ignore_term_ids = !self.ignore_term_ids;
                 for inst in self.selected_insts.values_mut() {
@@ -357,6 +365,7 @@ impl Component for SVGResult {
                     svg_text={&self.svg_text}
                     update_selected_nodes={&self.on_node_select}
                     update_selected_edges={&self.on_edge_select}
+                    deselect_all={&self.deselect_all}
                 />
             </>
         }
