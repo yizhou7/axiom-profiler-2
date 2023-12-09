@@ -648,11 +648,12 @@ impl Z3Parser {
 
     pub fn prettify(&self, terms: impl AsTermIdxVec, ignore_ids: bool) -> Vec<String> {
         let term_map = &self.terms;
+        let quant_map = &self.quantifiers;
         terms
             .as_vec()
             .iter()
             .map(|tidx| term_map.get(*tidx).unwrap())
-            .map(|term| term.pretty_text(ignore_ids, term_map, None))
+            .map(|term| term.pretty_text(ignore_ids, term_map, quant_map, None))
             .collect()
     }
 }

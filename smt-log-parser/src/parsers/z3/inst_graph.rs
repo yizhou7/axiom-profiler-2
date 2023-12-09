@@ -399,6 +399,7 @@ impl InstGraph {
             let inst = parser.instantiations.get(*iidx).unwrap();
             let quant = parser.quantifiers.get(inst.quant).unwrap();
             let term_map = &parser.terms;
+            let quant_map = &parser.quantifiers;
             let pretty_blamed_terms = inst
                 .blamed_terms
                 .iter()
@@ -420,7 +421,7 @@ impl InstGraph {
                 cost: inst.cost,
                 quant: inst.quant,
                 quant_discovered: inst.quant_discovered,
-                formula: quant.pretty_text(ignore_ids, term_map),
+                formula: quant.pretty_text(ignore_ids, term_map, quant_map),
                 pattern: if let Some(t) = inst.pattern {
                     Some(parser.prettify(t, ignore_ids)[0].clone())
                 } else {
