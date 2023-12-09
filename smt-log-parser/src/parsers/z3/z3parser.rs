@@ -645,31 +645,50 @@ impl Z3Parser {
     pub fn total_nr_of_quants(&self) -> usize {
         self.quantifiers.len()
     }
+}
 
-    pub fn prettify(&self, terms: impl AsTermIdxVec, ignore_ids: bool) -> Vec<String> {
-        let term_map = &self.terms;
-        let quant_map = &self.quantifiers;
-        terms
-            .as_vec()
+pub struct PrettyTextCtxt<'a> {
+    pub terms: &'a TiVec<TermIdx, Term>, 
+    pub quantifiers: &'a TiVec<QuantIdx, Quantifier>,
+    pub ignore_ids: bool,
+    pub quant: Option<&'a Quantifier>,
+}
+
+pub trait Prettify<T> {
+    fn prettify(self, parser: &Z3Parser, ignore_ids: bool) -> T; 
+} 
+
+impl Prettify<String> for TermIdx {
+    fn prettify(self, parser: &Z3Parser, ignore_ids: bool) -> String {
+        let mut ctxt = PrettyTextCtxt {
+            terms: &parser.terms,
+            quantifiers: &parser.quantifiers,
+            ignore_ids,
+            quant: None,
+        };
+        let term = parser.terms.get(self).unwrap();
+        term.pretty_text(&mut ctxt)
+    }
+}
+
+impl Prettify<Vec<String>> for Vec<TermIdx> {
+    fn prettify(self, parser: &Z3Parser, ignore_ids: bool) -> Vec<String> {
+        self
             .iter()
-            .map(|tidx| term_map.get(*tidx).unwrap())
-            .map(|term| term.pretty_text(ignore_ids, term_map, quant_map, None))
+            .map(|tidx| tidx.prettify(parser, ignore_ids))
             .collect()
     }
 }
 
-pub trait AsTermIdxVec {
-    fn as_vec(&self) -> Vec<TermIdx>;
-}
-
-impl AsTermIdxVec for TermIdx {
-    fn as_vec(&self) -> Vec<TermIdx> {
-        vec![*self]
-    }
-}
-
-impl AsTermIdxVec for &Vec<TermIdx> {
-    fn as_vec(&self) -> Vec<TermIdx> {
-        self.to_vec()
+impl Prettify<String> for QuantIdx {
+    fn prettify(self, parser: &Z3Parser, ignore_ids: bool) -> String {
+        let mut ctxt = PrettyTextCtxt {
+            terms: &parser.terms,
+            quantifiers: &parser.quantifiers,
+            ignore_ids,
+            quant: None,
+        };
+        let quant = parser.quantifiers.get(self).unwrap();
+        quant.pretty_text(&mut ctxt)
     }
 }

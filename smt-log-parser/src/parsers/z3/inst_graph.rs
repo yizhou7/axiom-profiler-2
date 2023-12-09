@@ -15,7 +15,7 @@ use std::fmt;
 
 use crate::items::{BlamedTermItem, InstIdx, QuantIdx, TermIdx, DepType, Dependency};
 
-use super::z3parser::Z3Parser;
+use super::z3parser::{Z3Parser, Prettify};
 
 #[derive(Clone, Copy, Default)]
 pub struct NodeData {
@@ -379,7 +379,8 @@ impl InstGraph {
 
     pub fn get_edge_info(&self, edge_index: EdgeIndex, parser: &Z3Parser, ignore_ids: bool) -> Option<EdgeInfo> {
         if let Some(edge_data) = self.orig_graph.edge_weight(edge_index) {
-            let blame_term = parser.prettify(edge_data.blame_term_idx.unwrap(), ignore_ids)[0].clone();
+            let blame_term_idx = edge_data.blame_term_idx.unwrap();
+            let blame_term = blame_term_idx.prettify(parser, ignore_ids);
             Some(EdgeInfo { edge_data: *edge_data, blame_term })
         } else {
             None
@@ -397,15 +398,12 @@ impl InstGraph {
             .unwrap();
         if let Some(iidx) = inst_idx {
             let inst = parser.instantiations.get(*iidx).unwrap();
-            let quant = parser.quantifiers.get(inst.quant).unwrap();
-            let term_map = &parser.terms;
-            let quant_map = &parser.quantifiers;
             let pretty_blamed_terms = inst
                 .blamed_terms
                 .iter()
                 .map(|term| match term {
-                    BlamedTermItem::Single(t) => parser.prettify(*t, ignore_ids)[0].clone(),
-                    BlamedTermItem::Pair(t1, t2) => format!("{} = {}", parser.prettify(*t1, ignore_ids)[0], parser.prettify(*t2, ignore_ids)[0]),
+                    BlamedTermItem::Single(t) => t.prettify(parser, ignore_ids),
+                    BlamedTermItem::Pair(t1, t2) => format!("{} = {}", t1.prettify(parser, ignore_ids), t2.prettify(parser, ignore_ids)),
                 })
                 .collect::<Vec<String>>();
             let inst_info = InstInfo {
@@ -413,7 +411,7 @@ impl InstGraph {
                 line_no: inst.line_no,
                 fingerprint: *inst.fingerprint,
                 resulting_term: if let Some(t) = inst.resulting_term {
-                    Some(parser.prettify(t, ignore_ids)[0].clone())
+                    Some(t.prettify(parser, ignore_ids))
                 } else {
                     None
                 },
@@ -421,16 +419,16 @@ impl InstGraph {
                 cost: inst.cost,
                 quant: inst.quant,
                 quant_discovered: inst.quant_discovered,
-                formula: quant.pretty_text(ignore_ids, term_map, quant_map),
+                formula: inst.quant.prettify(parser, ignore_ids),
                 pattern: if let Some(t) = inst.pattern {
-                    Some(parser.prettify(t, ignore_ids)[0].clone())
+                    Some(t.prettify(parser, ignore_ids))
                 } else {
                     None
                 },
-                yields_terms: parser.prettify(&inst.yields_terms, ignore_ids),
-                bound_terms: parser.prettify(&inst.bound_terms, ignore_ids),
+                yields_terms: inst.yields_terms.clone().prettify(parser, ignore_ids),
+                bound_terms: inst.bound_terms.clone().prettify(parser, ignore_ids),
                 blamed_terms: pretty_blamed_terms,
-                equality_expls: parser.prettify(&inst.equality_expls, ignore_ids),
+                equality_expls: inst.equality_expls.clone().prettify(parser, ignore_ids),
                 dep_instantiations: Vec::new(),
                 node_index: NodeIndex::new(node_index),
             };

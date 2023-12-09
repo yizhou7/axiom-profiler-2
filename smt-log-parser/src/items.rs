@@ -4,6 +4,8 @@ use std::borrow::Cow;
 use std::fmt;
 use typed_index_collections::TiVec;
 
+use crate::parsers::z3::z3parser::PrettyTextCtxt;
+
 #[macro_export]
 macro_rules! idx {
     ($struct:ident, $prefix:tt) => {
@@ -56,33 +58,28 @@ impl fmt::Display for Term {
     }
 }
 
-struct PrettyTextContext {
-    ignore_ids: bool,
-    quant: Option<Quantifier>,
-} 
-
 impl Term {
-    pub fn pretty_text(&self, ignore_ids: bool, term_map: &TiVec<TermIdx, Term>, quant_map: &TiVec<QuantIdx, Quantifier>, quant: Option<&Quantifier>) -> String {
-        let quant = match self.kind {
-            TermKind::Quant(qidx) => quant_map.get(qidx),
-            _ => quant,
-        };
+    pub fn pretty_text(&self, ctxt: &mut PrettyTextCtxt) -> String {
+        if let TermKind::Quant(qidx) = self.kind { 
+            let quant = ctxt.quantifiers.get(qidx);
+            ctxt.quant = quant;
+        }
         let child_text: Vec<String> = self
             .child_ids
             .iter()
-            .map(|c| term_map[*c].pretty_text(ignore_ids, term_map, quant_map, quant))
+            .map(|c| ctxt.terms[*c].pretty_text(ctxt))
             .collect();
         if child_text.is_empty() {
             let kind = match self.kind {
-                TermKind::Var(qvar) if quant.is_some() => {
-                    match quant.unwrap().vars.as_ref().unwrap() {
+                TermKind::Var(qvar) if ctxt.quant.is_some() => {
+                    match ctxt.quant.unwrap().vars.as_ref().unwrap() {
                         VarNames::NameAndType(vars) => vars[qvar].0.clone(),
                         _ => format!("{}", self.kind),
                     }
                 }, 
                 _ => format!("{}", self.kind)
             };
-            if !ignore_ids {
+            if !ctxt.ignore_ids {
                 format!("{}[{}]", kind, self.id)
             } else {
                 if let Some(meaning) = &self.meaning {
@@ -92,7 +89,7 @@ impl Term {
                 }
             }
         } else {
-            if !ignore_ids {
+            if !ctxt.ignore_ids {
                 format!("{}[{}]({})", self.kind, self.id, child_text.join(", "))
             } else {
                 let value = if let Some(ref meaning) = &self.meaning {
@@ -225,7 +222,7 @@ impl fmt::Display for Quantifier {
     }
 }
 impl Quantifier {
-pub fn pretty_text(&self, ignore_ids: bool, term_map: &TiVec<TermIdx, Term>, quant_map: &TiVec<QuantIdx, Quantifier>) -> String {
+pub fn pretty_text(&self, ctxt: &mut PrettyTextCtxt) -> String {
         if let Some(term) = &self.term {
             let var_text: Vec<String> = (0..self.num_vars)
                 .map(|idx| {
@@ -237,7 +234,7 @@ pub fn pretty_text(&self, ignore_ids: bool, term_map: &TiVec<TermIdx, Term>, qua
             format!(
                 "FORALL {}({})",
                 var_text.join(", "),
-                term_map[*term].pretty_text(ignore_ids, term_map, quant_map, Some(self))
+                ctxt.terms[*term].pretty_text(ctxt)
             )
         } else {
             self.kind.to_string()
