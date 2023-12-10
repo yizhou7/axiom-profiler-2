@@ -70,7 +70,7 @@ pub struct SVGResult {
     inst_graph: InstGraph,
     svg_text: AttrValue,
     selected_insts: IndexMap<NodeIndex, InstInfo>,
-    selected_deps: IndexMap<EdgeIndex, (NodeIndex, NodeIndex, EdgeInfo)>,
+    selected_deps: IndexMap<EdgeIndex, EdgeInfo>,
     filter_chain_link: WeakComponentLink<FilterChain>,
     insts_info_link: WeakComponentLink<InstsInfo>,
     on_node_select: Callback<usize>,
@@ -307,11 +307,20 @@ impl Component for SVGResult {
             Msg::UpdateSelectedEdges(index) => {
                 let selected_edge_idx = EdgeIndex::from(index as u32);
                 let selected_edge = self.inst_graph.get_edge_info(selected_edge_idx, &self.parser, self.ignore_term_ids).unwrap();
-                let (from, to) = self.inst_graph.edge_endpoints(selected_edge_idx).unwrap();
                 if let Some(_) = self.selected_deps.get(&selected_edge_idx) {
                     self.selected_deps.remove(&selected_edge_idx);
+                    self.insts_info_link
+                        .borrow()
+                        .clone()
+                        .unwrap()
+                        .send_message(InstsInfoMsg::RemoveEdge(selected_edge_idx));
                 } else {
-                    self.selected_deps.insert(selected_edge_idx, (from, to, selected_edge));
+                    self.selected_deps.insert(selected_edge_idx, selected_edge);
+                    self.insts_info_link
+                        .borrow()
+                        .clone()
+                        .unwrap()
+                        .send_message(InstsInfoMsg::AddEdge(selected_edge_idx));
                 } 
                 true
             }
@@ -332,10 +341,10 @@ impl Component for SVGResult {
                     let updated_inst = self.inst_graph.get_instantiation_info(iidx, &self.parser, self.ignore_term_ids).unwrap();
                     *inst = updated_inst;
                 }
-                for (_, _, edge) in self.selected_deps.values_mut() {
-                    let edge_idx = edge.edge_data.orig_graph_idx.unwrap();
-                    let updated_edge = self.inst_graph.get_edge_info(edge_idx, &self.parser, self.ignore_term_ids).unwrap();
-                    *edge = updated_edge;
+                for dep in self.selected_deps.values_mut() {
+                    let edge_idx = dep.edge_data.orig_graph_idx.unwrap();
+                    let updated_dep = self.inst_graph.get_edge_info(edge_idx, &self.parser, self.ignore_term_ids).unwrap();
+                    *dep = updated_dep;
                 }
                 true
             }
@@ -372,7 +381,7 @@ impl Component for SVGResult {
                 {node_and_edge_count_preview}
                 <InstsInfo 
                     selected_nodes={self.selected_insts.values().cloned().collect::<Vec<InstInfo>>()}
-                    selected_edges={self.selected_deps.values().cloned().collect::<Vec<(NodeIndex, NodeIndex, EdgeInfo)>>()}
+                    selected_edges={self.selected_deps.values().cloned().collect::<Vec<EdgeInfo>>()}
                     weak_link={self.insts_info_link.clone()}
                 />
                 <div>

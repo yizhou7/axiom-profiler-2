@@ -55,6 +55,8 @@ pub struct EdgeData {
 pub struct EdgeInfo {
     pub edge_data: EdgeData,
     pub blame_term: String,
+    pub from: NodeIndex,
+    pub to: NodeIndex,
 }
 
 impl fmt::Debug for EdgeData {
@@ -379,14 +381,11 @@ impl InstGraph {
         if let Some(edge_data) = self.orig_graph.edge_weight(edge_index) {
             let blame_term_idx = edge_data.blame_term_idx.unwrap();
             let blame_term = blame_term_idx.prettify(parser, ignore_ids);
-            Some(EdgeInfo { edge_data: *edge_data, blame_term })
+            let (from, to) = self.orig_graph.edge_endpoints(edge_index).unwrap();
+            Some(EdgeInfo { edge_data: *edge_data, blame_term, from, to, })
         } else {
             None
         }
-    }
-
-    pub fn edge_endpoints(&self, edge_index: EdgeIndex) -> Option<(NodeIndex, NodeIndex)> {
-        self.orig_graph.edge_endpoints(edge_index)
     }
 
     pub fn get_instantiation_info(&self, node_index: usize, parser: &Z3Parser, ignore_ids: bool) -> Option<InstInfo> {
