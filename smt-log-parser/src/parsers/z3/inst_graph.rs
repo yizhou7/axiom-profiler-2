@@ -1,10 +1,8 @@
 use fxhash::FxHashMap;
-use petgraph::algo::{dijkstra, toposort};
-use gloo_console::log;
-use petgraph::data::DataMap;
+// use gloo_console::log;
 use petgraph::graph::{Edge, NodeIndex};
 use petgraph::stable_graph::StableGraph;
-use petgraph::visit::{IntoEdgeReferences, Bfs, Topo, NodeIndexable, IntoNeighborsDirected};
+use petgraph::visit::{IntoEdgeReferences, Bfs, Topo};
 use petgraph::{
     stable_graph::EdgeIndex,
     visit::{Dfs, EdgeRef},

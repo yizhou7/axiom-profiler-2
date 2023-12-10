@@ -7,10 +7,11 @@ use smt_log_parser::parsers::z3::inst_graph::EdgeType;
 pub struct InstsInfoProps {
     pub selected_nodes: Vec<InstInfo>,
     pub selected_edges: Vec<(NodeIndex, NodeIndex, EdgeInfo)>,
+    pub last_selected_node: Option<NodeIndex>,
 }
 
 #[function_component(InstsInfo)]
-pub fn inst_info(props: &InstsInfoProps) -> Html {
+pub fn insts_info(props: &InstsInfoProps) -> Html {
     let selected_nodes_info: Vec<VNode> = props
         .selected_nodes 
         .iter()
@@ -21,8 +22,13 @@ pub fn inst_info(props: &InstsInfoProps) -> Html {
                     <ul>{for items.iter().map(|item| html!{<li>{item}</li>})}</ul>
                 </>
             };
+            let open = if let Some(node) = props.last_selected_node {
+                node == selected_inst.node_index
+            } else {
+                false
+            };
             html! {
-            <details>
+            <details {open}>
                 <summary>{format!("Node {}", selected_inst.node_index.index())}</summary>
                 <ul>
                     <li><h4>{"Instantiation happens at line number: "}</h4><p>{if let Some(val) = selected_inst.line_no {format!("{val}")} else { String::new() }}</p></li>

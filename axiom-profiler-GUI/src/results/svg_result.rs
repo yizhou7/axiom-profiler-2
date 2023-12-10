@@ -1,4 +1,4 @@
-use crate::results::insts_info::InstsInfo;
+use crate::results::insts_info_struct::{InstsInfo, Msg as InstsInfoMsg};
 
 use self::colours::HSVColour;
 use super::{filters::{
@@ -39,7 +39,7 @@ pub enum Msg {
     ResetGraph,
     GetUserPermission,
     WorkerOutput(super::worker::WorkerOutput),
-    ToggleTermExpander,
+    ToggleIgnoreTermIds,
 }
 
 pub struct UserPermission {
@@ -72,6 +72,7 @@ pub struct SVGResult {
     selected_insts: IndexMap<NodeIndex, InstInfo>,
     selected_deps: IndexMap<EdgeIndex, (NodeIndex, NodeIndex, EdgeInfo)>,
     filter_chain_link: WeakComponentLink<FilterChain>,
+    insts_info_link: WeakComponentLink<InstsInfo>,
     on_node_select: Callback<usize>,
     on_edge_select: Callback<usize>,
     deselect_all: Callback<()>,
@@ -104,6 +105,7 @@ impl Component for SVGResult {
             selected_insts: IndexMap::new(),
             selected_deps: IndexMap::new(),
             filter_chain_link: WeakComponentLink::default(),
+            insts_info_link: WeakComponentLink::default(),
             on_node_select: ctx.link().callback(Msg::UpdateSelectedNodes),
             on_edge_select: ctx.link().callback(Msg::UpdateSelectedEdges),
             deselect_all: ctx.link().callback(|_| Msg::DeselectAll),
@@ -268,6 +270,11 @@ impl Component for SVGResult {
                 if svg_text != self.svg_text {
                     self.svg_text = svg_text;
                     self.selected_insts.clear();
+                    self.insts_info_link
+                        .borrow()
+                        .clone()
+                        .unwrap()
+                        .send_message(InstsInfoMsg::RemoveAll);
                     true
                 } else {
                     false
@@ -281,9 +288,19 @@ impl Component for SVGResult {
                     .unwrap();
                 let selected_inst_node_index = selected_inst.node_index;
                 if let Some(_) = self.selected_insts.get(&selected_inst_node_index) {
-                    self.selected_insts.remove(&selected_inst_node_index);
+                    self.selected_insts.shift_remove(&selected_inst_node_index);
+                    self.insts_info_link
+                        .borrow()
+                        .clone()
+                        .unwrap()
+                        .send_message(InstsInfoMsg::RemoveNode(selected_inst_node_index));
                 } else {
-                    self.selected_insts.insert(selected_inst_node_index, selected_inst);
+                    self.selected_insts.insert(selected_inst_node_index, selected_inst.clone());
+                    self.insts_info_link
+                        .borrow()
+                        .clone()
+                        .unwrap()
+                        .send_message(InstsInfoMsg::AddNode(selected_inst_node_index));
                 }
                 true
             }
@@ -301,9 +318,14 @@ impl Component for SVGResult {
             Msg::DeselectAll => {
                 self.selected_insts.clear();
                 self.selected_deps.clear();
+                self.insts_info_link
+                    .borrow()
+                    .clone()
+                    .unwrap()
+                    .send_message(InstsInfoMsg::RemoveAll);
                 true
             }
-            Msg::ToggleTermExpander => {
+            Msg::ToggleIgnoreTermIds => {
                 self.ignore_term_ids = !self.ignore_term_ids;
                 for inst in self.selected_insts.values_mut() {
                     let iidx = inst.node_index.index();
@@ -333,7 +355,7 @@ impl Component for SVGResult {
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
         let render_graph = ctx.link().callback(Msg::RenderGraph);
-        let toggle = ctx.link().callback(|_| Msg::ToggleTermExpander);
+        let toggle = ctx.link().callback(|_| Msg::ToggleIgnoreTermIds);
         html! {
             <>
                 <div style="flex: 30%; height: 87vh; overflow-y: auto; ">
@@ -351,6 +373,7 @@ impl Component for SVGResult {
                 <InstsInfo 
                     selected_nodes={self.selected_insts.values().cloned().collect::<Vec<InstInfo>>()}
                     selected_edges={self.selected_deps.values().cloned().collect::<Vec<(NodeIndex, NodeIndex, EdgeInfo)>>()}
+                    weak_link={self.insts_info_link.clone()}
                 />
                 <div>
                     <label for="term_expander">{"Ignore term IDs "}</label>

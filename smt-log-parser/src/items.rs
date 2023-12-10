@@ -2,7 +2,6 @@ use fxhash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt;
-use typed_index_collections::TiVec;
 
 use crate::parsers::z3::z3parser::PrettyTextCtxt;
 
@@ -60,6 +59,9 @@ impl fmt::Display for Term {
 
 impl Term {
     pub fn pretty_text(&self, ctxt: &mut PrettyTextCtxt) -> String {
+        // Within the body of the term of a quantified formula, we 
+        // want to replace the quantified variables by their names
+        // for this, we need to store the quantifier in the context
         if let TermKind::Quant(qidx) = self.kind { 
             let quant = ctxt.quantifiers.get(qidx);
             ctxt.quant = quant;
