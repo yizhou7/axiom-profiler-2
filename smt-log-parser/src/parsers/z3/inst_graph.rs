@@ -10,7 +10,7 @@ use petgraph::{
 };
 use petgraph::{Direction, Graph};
 use std::fmt;
-use fixedbitset::FixedBitSet;
+use roaring::bitmap::RoaringBitmap;
 
 use crate::items::{BlamedTermItem, InstIdx, QuantIdx, TermIdx, DepType, Dependency};
 
@@ -95,7 +95,7 @@ pub struct InstGraph {
     node_of_line_nr: FxHashMap<usize, NodeIndex>, // line number => node-index
     cost_ranked_node_indices: Vec<NodeIndex>,
     branching_ranked_node_indices: Vec<NodeIndex>,
-    tr_closure: Vec<FixedBitSet>,
+    tr_closure: Vec<RoaringBitmap>,
 }
 
 enum InstOrder {
@@ -225,7 +225,7 @@ impl InstGraph {
     fn tr_closure_contains_edge(&self, from: NodeIndex, to: NodeIndex) -> bool {
         let topo_ord_from = self.orig_graph.node_weight(from).unwrap().topo_ord;
         let from_bitset = &self.tr_closure[topo_ord_from];
-        from_bitset.contains(to.index())
+        from_bitset.contains(to.index() as u32)
     }
 
     pub fn keep_n_most_costly(&mut self, n: usize) {
@@ -625,7 +625,7 @@ impl InstGraph {
             }
         }
         log!("Building fixedbitsets");
-        self.tr_closure = vec![FixedBitSet::with_capacity(self.orig_graph.node_count()); self.orig_graph.node_count()];
+        self.tr_closure = vec![RoaringBitmap::new(); self.orig_graph.node_count()];
         // note that we are storing the FixedBitSet's of each node index in topological order!
         log!("Computing transitive closure");
         let mut topo = Topo::new(petgraph::visit::Reversed(&self.orig_graph));
@@ -634,12 +634,12 @@ impl InstGraph {
         while let Some((last, others)) = bitsets.split_last_mut() {
             if let Some(nx) = topo.next(petgraph::visit::Reversed(&self.orig_graph)) {
                 // log!(format!("Visiting node {} with topo ord {} to compute bitset", nx.index(), ord));
-                last.set(nx.index(), true);
+                last.insert(nx.index() as u32);
                 for pred in self.orig_graph.neighbors_directed(nx, Incoming) {
                     // log!(format!("Visiting predecessor {} of node {} to compute bitset", pred.index(), nx.index()));
                     let pred_topo_ord = self.orig_graph.node_weight(pred).unwrap().topo_ord;
                     let pred_bitset = others.get_mut(pred_topo_ord).unwrap();
-                    pred_bitset.union_with(last);
+                    *pred_bitset |= &*last;
                     // log!(format!("The bitset of pred {} with topo ord {} is {}", pred.index(), pred_topo_ord, pred_bitset));
                 }
                 // log!(format!("After for loop of node {}", nx.index()));
