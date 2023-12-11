@@ -2,6 +2,7 @@ use wasm_bindgen::{JsCast, UnwrapThrowExt};
 use web_sys::Event;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
+use petgraph::graph::NodeIndex;
 
 use super::graph::Graph;
 
@@ -20,6 +21,7 @@ pub struct GraphContainerProps {
     pub update_selected_nodes: Callback<usize>,
     pub update_selected_edges: Callback<usize>,
     pub deselect_all: Callback<()>,
+    pub selected_nodes: Vec<NodeIndex>,
 }
 
 impl Component for GraphContainer {
@@ -90,6 +92,7 @@ impl Component for GraphContainer {
                 update_selected_edges={&ctx.props().update_selected_edges}
                 deselect_all={&ctx.props().deselect_all}
                 zoom_factor={self.zoom_factor}
+                selected_nodes={ctx.props().selected_nodes.clone()}
             />
 
         </div>

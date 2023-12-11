@@ -3,6 +3,7 @@ use wasm_bindgen::JsCast;
 use web_sys::{Event, HtmlElement, SvgsvgElement};
 use yew::prelude::*;
 use yew::{function_component, html, use_node_ref, Html};
+use petgraph::graph::NodeIndex;
 
 #[derive(Properties, PartialEq, Default)]
 pub struct GraphProps {
@@ -11,6 +12,7 @@ pub struct GraphProps {
     pub update_selected_edges: Callback<usize>,
     pub deselect_all: Callback<()>,
     pub zoom_factor: f32,
+    pub selected_nodes: Vec<NodeIndex>,
 }
 
 #[function_component(Graph)]
@@ -52,6 +54,7 @@ pub fn graph(props: &GraphProps) -> Html {
         let nodes_callback = props.update_selected_nodes.clone();
         let edges_callback = props.update_selected_edges.clone();
         let background_callback = props.deselect_all.clone();
+        let selected_nodes: Vec<usize> = props.selected_nodes.iter().map(|nidx| nidx.index()).collect();
 
         use_effect_with_deps(
             move |_| {
@@ -107,6 +110,9 @@ pub fn graph(props: &GraphProps) -> Html {
                             .expect("Failed to select title element")
                             .unwrap();
                         let node_index = node.id().strip_prefix("node").unwrap().parse::<usize>().unwrap();
+                        if selected_nodes.contains(&node_index) {
+                            let _ = ellipse.set_attribute("stroke-width", "3");
+                        }
                         let callback = nodes_callback.clone();
                         let closure: Closure<dyn Fn(Event)> = Closure::new(move |_: Event| {
                             // the selected node should become bold whenever it's clicked on the first time
@@ -207,6 +213,33 @@ pub fn graph(props: &GraphProps) -> Html {
             },
             svg_text,
         );
+    }
+    {
+        let selected_nodes = props.selected_nodes.clone();
+        let svg_text = props.svg_text.clone();
+        // let selected_nodes: Vec<usize> = props.selected_nodes.iter().map(|nidx| nidx.index()).collect();
+        let div_ref = div_ref.clone();
+        use_effect_with_deps({
+            web_sys::console::log_1(&"Using effect due to changed selected nodes".into());
+            let selected_nodes = selected_nodes.clone();
+            move |_| {
+                let div = div_ref
+                    .cast::<HtmlElement>()
+                    .expect("div_ref not attached to div element");
+                let nodes = div.get_elements_by_class_name("node");
+                for i in 0..nodes.length() {
+                    let node = nodes.item(i).unwrap();
+                    let node_index = NodeIndex::new(node.id().strip_prefix("node").unwrap().parse::<usize>().unwrap());
+                    if selected_nodes.contains(&node_index) {
+                        let ellipse = node
+                            .query_selector("ellipse")
+                            .expect("Failed to select ellipse")
+                            .unwrap();
+                        let _ = ellipse.set_attribute("stroke-width", "3");
+                    }
+                }
+            }
+        }, (selected_nodes, svg_text));
     }
     let deselect_all = {
         let callback = props.deselect_all.clone();

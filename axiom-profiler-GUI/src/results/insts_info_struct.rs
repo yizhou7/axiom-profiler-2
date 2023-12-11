@@ -22,6 +22,7 @@ pub enum Msg {
     AddEdge(EdgeIndex),
     RemoveEdge(EdgeIndex),
     ToggleOpenEdge(EdgeIndex),
+    AddNodes(Vec<NodeIndex>),
     RemoveAll,
 }
 
@@ -30,7 +31,6 @@ pub struct InstsInfoProps {
     pub selected_nodes: Vec<InstInfo>,
     // pub selected_edges: Vec<(NodeIndex, NodeIndex, EdgeInfo)>,
     pub selected_edges: Vec<EdgeInfo>,
-    pub last_selected_node: Option<NodeIndex>,
     pub weak_link: WeakComponentLink<InstsInfo>,
 }
 
@@ -94,15 +94,26 @@ impl Component for InstsInfo {
                 self.is_expanded_edge.clear();
                 true
             },
+            Msg::AddNodes(nodes) => {
+                self.is_expanded_node.clear();
+                for node in nodes {
+                    self.is_expanded_node.insert(node, false);
+                    log!(format!("Inserting node {} into is_expanded_node", node.index()));
+                }
+                true
+            }
         }
     }
 
     fn rendered(&mut self, _ctx: &Context<Self>, _first_render: bool) {
+        log!("Rendered details");
         let selected_nodes_details = self.selected_nodes_ref.cast::<HtmlElement>().expect("not attached to div element");
         let node_details = selected_nodes_details.get_elements_by_tag_name("details");
         for i in 0..node_details.length() {
+            log!(format!("There are {} nodes", node_details.length()));
             let node_detail = node_details.item(i).unwrap();
             let node_id = node_detail.id().parse::<usize>().unwrap();
+            log!(format!("node_details contains node {}", node_id));
             if *self.is_expanded_node.get(&NodeIndex::new(node_id)).unwrap() {
                 let _ = node_detail.set_attribute("open", "true");
             } else {

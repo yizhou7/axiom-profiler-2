@@ -20,7 +20,7 @@ use smt_log_parser::{
         LogParser,
     },
 };
-use std::num::NonZeroUsize;
+use std::{num::NonZeroUsize, iter::zip};
 use viz_js::VizInstance;
 use web_sys::window;
 use yew::prelude::*;
@@ -40,6 +40,7 @@ pub enum Msg {
     GetUserPermission,
     WorkerOutput(super::worker::WorkerOutput),
     ToggleIgnoreTermIds,
+    UpdateDisplayedNodes(Vec<NodeIndex>),
 }
 
 pub struct UserPermission {
@@ -80,6 +81,7 @@ pub struct SVGResult {
     worker: Option<Box<dyn yew_agent::Bridge<Worker>>>,
     ignore_term_ids: bool, 
     async_graph_and_filter_chain: bool,
+    displayed_path: IndexMap<NodeIndex, InstInfo>,
 }
 
 #[derive(Properties, PartialEq)]
@@ -117,8 +119,13 @@ impl Component for SVGResult {
             worker: Some(Self::create_worker(ctx.link().clone())),
             ignore_term_ids: true,
             async_graph_and_filter_chain: false,
+            displayed_path: IndexMap::new(),
         }
     }
+
+    // fn rendered(&mut self, _ctx: &Context<Self>, _first_render: bool) {
+    //     self.displayed_path.clear();
+    // }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
@@ -127,8 +134,12 @@ impl Component for SVGResult {
             }
             Msg::ApplyFilter(filter) => {
                 log::debug!("Applying filter {}", filter);
-                filter.apply(&mut self.inst_graph);
-                false
+                if let Some(ref path) = filter.apply(&mut self.inst_graph) {
+                    ctx.link().send_message(Msg::UpdateDisplayedNodes(path.to_vec()));
+                    false
+                } else {
+                    false
+                }
             }
             Msg::ResetGraph => {
                 log::debug!("Resetting graph");
@@ -270,11 +281,11 @@ impl Component for SVGResult {
                 if svg_text != self.svg_text {
                     self.svg_text = svg_text;
                     self.selected_insts.clear();
-                    self.insts_info_link
-                        .borrow()
-                        .clone()
-                        .unwrap()
-                        .send_message(InstsInfoMsg::RemoveAll);
+                    // self.insts_info_link
+                    //     .borrow()
+                    //     .clone()
+                    //     .unwrap()
+                    //     .send_message(InstsInfoMsg::RemoveAll);
                     true
                 } else {
                     false
@@ -289,6 +300,7 @@ impl Component for SVGResult {
                 let selected_inst_node_index = selected_inst.node_index;
                 if let Some(_) = self.selected_insts.get(&selected_inst_node_index) {
                     self.selected_insts.shift_remove(&selected_inst_node_index);
+                    self.displayed_path.shift_remove(&selected_inst_node_index);
                     self.insts_info_link
                         .borrow()
                         .clone()
@@ -332,6 +344,7 @@ impl Component for SVGResult {
                     .clone()
                     .unwrap()
                     .send_message(InstsInfoMsg::RemoveAll);
+                self.displayed_path.clear();
                 true
             }
             Msg::ToggleIgnoreTermIds => {
@@ -346,6 +359,26 @@ impl Component for SVGResult {
                     let updated_dep = self.inst_graph.get_edge_info(edge_idx, &self.parser, self.ignore_term_ids).unwrap();
                     *dep = updated_dep;
                 }
+                true
+            }
+            Msg::UpdateDisplayedNodes(nodes) => {
+                // set the selected_insts to the displayed_path if available
+                let displayed_path_info: Vec<InstInfo> = nodes 
+                    .iter()
+                    .map(|node|{
+                        self.inst_graph.get_instantiation_info(node.index(), &self.parser, self.ignore_term_ids).unwrap() 
+                    }) 
+                    .collect();
+                for (nidx, ninfo) in zip(&nodes, displayed_path_info) {
+                    self.displayed_path.insert(*nidx, ninfo);
+                    log::debug!("Inserting node {} into displayed path", nidx.index());
+                }
+                self.selected_insts.clear();
+                self.insts_info_link
+                    .borrow()
+                    .clone()
+                    .unwrap()
+                    .send_message(InstsInfoMsg::AddNodes(nodes.clone()));
                 true
             }
         }
@@ -380,7 +413,7 @@ impl Component for SVGResult {
                 {async_graph_and_filter_chain_warning}
                 {node_and_edge_count_preview}
                 <InstsInfo 
-                    selected_nodes={self.selected_insts.values().cloned().collect::<Vec<InstInfo>>()}
+                    selected_nodes={self.selected_insts.values().chain(self.displayed_path.values()).cloned().collect::<Vec<InstInfo>>()}
                     selected_edges={self.selected_deps.values().cloned().collect::<Vec<EdgeInfo>>()}
                     weak_link={self.insts_info_link.clone()}
                 />
@@ -398,6 +431,7 @@ impl Component for SVGResult {
                     update_selected_nodes={&self.on_node_select}
                     update_selected_edges={&self.on_edge_select}
                     deselect_all={&self.deselect_all}
+                    selected_nodes={self.displayed_path.keys().cloned().collect::<Vec<NodeIndex>>()}
                 />
             </>
         }

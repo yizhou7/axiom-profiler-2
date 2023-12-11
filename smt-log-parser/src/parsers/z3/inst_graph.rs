@@ -1,5 +1,5 @@
 use fxhash::FxHashMap;
-// use gloo_console::log;
+use gloo_console::log;
 use petgraph::graph::{Edge, NodeIndex};
 use petgraph::stable_graph::StableGraph;
 use petgraph::visit::{IntoEdgeReferences, Bfs, Topo};
@@ -269,7 +269,7 @@ impl InstGraph {
         }
     }
 
-    pub fn show_longest_path_through(&mut self, node: NodeIndex) {
+    pub fn show_longest_path_through(&mut self, node: NodeIndex) -> Vec<NodeIndex> {
         // construct subtree rooted at selected node
         let mut subtree_rooted_at_node: StableGraph<NodeData, EdgeData> = StableGraph::from(self.orig_graph.clone());
         for node in subtree_rooted_at_node.node_weights_mut() {
@@ -302,9 +302,14 @@ impl InstGraph {
         // backtrack a longest path from furthest away node in subgraph until we reach the root
         // with respect to the subgraph, i.e., node
         // self.backtrack(Some(&subtree_rooted_at_node), furthest_away_node_idx);
+        let mut longest_path: Vec<NodeIndex> = Vec::new();
         let mut visitor: Vec<NodeIndex>= Vec::new();
-        visitor.push(furthest_away_node_idx);
+        if furthest_away_node_idx != node {
+            visitor.push(furthest_away_node_idx);
+        }
         while let Some(curr) = visitor.pop() {
+            log!(format!("Visiting node {} on longest path", curr.index()));
+            longest_path.push(curr);
             self.orig_graph[curr].visible = true;
             let curr_distance = subtree_rooted_at_node.node_weight(curr).unwrap().max_depth;
             // log!(format!("Node {} has distance {} from {}", curr.index(), curr_distance, ))
@@ -322,6 +327,7 @@ impl InstGraph {
         // backtrack a longest path from node until we reach a root with respect to the original graph 
         visitor.push(node);
         while let Some(curr) = visitor.pop() {
+            longest_path.push(curr);
             self.orig_graph[curr].visible = true;
             let curr_distance = self.orig_graph.node_weight(curr).unwrap().max_depth;
             // log!(format!("Node {} has distance {} from {}", curr.index(), curr_distance, ))
@@ -336,6 +342,11 @@ impl InstGraph {
                 visitor.push(node);
             }
         }
+        longest_path
+            .iter()
+            .cloned()
+            .rev()
+            .collect::<Vec<NodeIndex>>()
     }
     
     // fn backtrack<T>(&mut self, graph: Option<T>, node: NodeIndex) where 

@@ -51,7 +51,7 @@ impl Display for Filter {
 }
 
 impl Filter {
-    pub fn apply(self: Filter, graph: &mut InstGraph) {
+    pub fn apply(self: Filter, graph: &mut InstGraph) -> Option<Vec<NodeIndex>> {
         match self {
             Filter::MaxNodeIdx(max) => graph
                 .retain_nodes(|node: &NodeData| usize::from(node.orig_graph_idx.index()) <= max),
@@ -67,8 +67,9 @@ impl Filter {
             Filter::VisitSubTreeWithRoot(nidx, retain) => graph.visit_descendants(nidx, retain),
             Filter::VisitSourceTree(nidx, retain) => graph.visit_ancestors(nidx, retain),
             Filter::MaxDepth(depth) => graph.retain_nodes(|node: &NodeData| node.min_depth.unwrap() <= depth),
-            Filter::ShowLongestPath(nidx) => graph.show_longest_path_through(nidx),
+            Filter::ShowLongestPath(nidx) => return Some(graph.show_longest_path_through(nidx)),
         }
+        None
     }
 }
 
