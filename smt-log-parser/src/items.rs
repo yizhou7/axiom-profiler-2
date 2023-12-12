@@ -75,7 +75,13 @@ impl Term {
             let kind = match self.kind {
                 TermKind::Var(qvar) if ctxt.quant.is_some() => {
                     match ctxt.quant.unwrap().vars.as_ref().unwrap() {
-                        VarNames::NameAndType(vars) => vars[qvar].0.clone(),
+                        VarNames::NameAndType(vars) => {
+                            if let Some(var_name) = vars.get(qvar) {
+                                var_name.0.clone()
+                            } else {
+                                format!("{}", self.kind)
+                            }
+                        },
                         _ => format!("{}", self.kind),
                     }
                 }, 

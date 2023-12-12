@@ -188,16 +188,24 @@ impl Component for SVGResult {
                                 }
                             ),
                             &|_, (_, node_data)| {
-                                format!("id={} label=\"{}\" style=filled shape=oval fillcolor=\"{}\" fontcolor=black gradientangle=90",
+                                format!("id={} label=\"{}\" style=filled shape={} fillcolor=\"{}\" fontcolor=black gradientangle=90",
                                         format!("node{}", node_data.orig_graph_idx.index()),
                                         node_data.orig_graph_idx.index(),
+                                        // match (self.inst_graph.node_has_filtered_children(node_data.orig_graph_idx), 
+                                        //        self.inst_graph.node_has_filtered_parents(node_data.orig_graph_idx)) {
+                                        //     (false, false) => format!("{}", self.colour_map.get(&node_data.quant_idx, 0.7)),
+                                        //     (false, true) => format!("{}:{}", self.colour_map.get(&node_data.quant_idx, 1.0), self.colour_map.get(&node_data.quant_idx, 0.1)),
+                                        //     (true, false) => format!("{}:{}", self.colour_map.get(&node_data.quant_idx, 0.1), self.colour_map.get(&node_data.quant_idx, 1.0)),
+                                        //     (true, true) => format!("{}", self.colour_map.get(&node_data.quant_idx, 0.3)),
+                                        // },
                                         match (self.inst_graph.node_has_filtered_children(node_data.orig_graph_idx), 
                                                self.inst_graph.node_has_filtered_parents(node_data.orig_graph_idx)) {
-                                            (false, false) => format!("{}", self.colour_map.get(&node_data.quant_idx, 0.7)),
-                                            (false, true) => format!("{}:{}", self.colour_map.get(&node_data.quant_idx, 1.0), self.colour_map.get(&node_data.quant_idx, 0.1)),
-                                            (true, false) => format!("{}:{}", self.colour_map.get(&node_data.quant_idx, 0.1), self.colour_map.get(&node_data.quant_idx, 1.0)),
-                                            (true, true) => format!("{}", self.colour_map.get(&node_data.quant_idx, 0.3)),
+                                            (false, false) => "box",
+                                            (false, true) => "house",
+                                            (true, false) => "invhouse",
+                                            (true, true) => "diamond",
                                         },
+                                        self.colour_map.get(&node_data.quant_idx, 0.4),
                                     )
                             },
                         )
