@@ -110,6 +110,7 @@ impl Component for InstsInfo {
                 false
             }
             Msg::DeselectAll => {
+                log!(format!("Deselecting all selected nodes"));
                 self.selected_nodes.clear();
                 self.is_expanded_node.clear();
                 self.selected_edges.clear();

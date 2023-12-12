@@ -29,7 +29,7 @@ pub const EDGE_LIMIT: usize = 500;
 pub const DEFAULT_NODE_COUNT: usize = 125;
 
 pub enum Msg {
-    UpdateSvgText(AttrValue),
+    UpdateSvgText(AttrValue, bool),
     RenderGraph(UserPermission),
     ApplyFilter(Filter),
     ResetGraph,
@@ -57,7 +57,6 @@ impl From<bool> for UserPermission {
 struct GraphDimensions {
     node_count: usize,
     edge_count: usize,
-    prev_edge_count: Option<usize>,
 }
 
 pub struct SVGResult {
@@ -111,7 +110,6 @@ impl Component for SVGResult {
             graph_dim: GraphDimensions {
                 node_count: 0,
                 edge_count: 0,
-                prev_edge_count: None,
             },
             worker: Some(Self::create_worker(ctx.link().clone())),
             async_graph_and_filter_chain: false,
@@ -145,19 +143,21 @@ impl Component for SVGResult {
                 false
             }
             Msg::RenderGraph(UserPermission { permission }) => {
-                let (node_count, edge_count) = self.inst_graph.retain_visible_nodes_and_reconnect();
+                let (node_count, edge_count, node_count_decreased, edge_count_decreased) = self.inst_graph.retain_visible_nodes_and_reconnect();
+                log::debug!("The current node count is {}", node_count);
                 self.graph_dim.node_count = node_count;
                 self.graph_dim.edge_count = edge_count;
-                let safe_to_render = if let Some(prev_edge_count) = self.graph_dim.prev_edge_count {
-                    edge_count <= prev_edge_count || edge_count <= EDGE_LIMIT
-                } else {
-                    // initially the node-count is 125 so it should be safe to render regardless of the
-                    // number of edges
-                    // we are using the fact that only initially the self.prev_edge_count is None
-                    true
-                };
+                let safe_to_render = edge_count <= EDGE_LIMIT || node_count <= DEFAULT_NODE_COUNT || edge_count_decreased;
+                // let safe_to_render = if let Some(prev_edge_count) = self.graph_dim.prev_edge_count {
+                //     edge_count <= prev_edge_count || edge_count <= EDGE_LIMIT
+                // } else {
+                //     // initially the node-count is 125 so it should be safe to render regardless of the
+                //     // number of edges
+                //     // we are using the fact that only initially the self.prev_edge_count is None
+                //     true
+                // };
                 if safe_to_render || permission {
-                    self.graph_dim.prev_edge_count = Some(edge_count);
+
                     self.async_graph_and_filter_chain = false;
                     log::debug!("Rendering graph");
                     let filtered_graph = &self.inst_graph.visible_graph;
@@ -221,7 +221,7 @@ impl Component for SVGResult {
                             .render_svg_element(dot_output, options)
                             .expect("Could not render graphviz");
                         let svg_text = svg.outer_html();
-                        link.send_message(Msg::UpdateSvgText(AttrValue::from(svg_text)));
+                        link.send_message(Msg::UpdateSvgText(AttrValue::from(svg_text), node_count_decreased));
                     });
                     // only need to re-render once the new SVG has been set
                     false
@@ -274,10 +274,18 @@ impl Component for SVGResult {
                     }
                 }
             }
-            Msg::UpdateSvgText(svg_text) => {
+            Msg::UpdateSvgText(svg_text, node_count_decreased) => {
                 log::debug!("Updating svg text");
                 if svg_text != self.svg_text {
                     self.svg_text = svg_text;
+                    // only if some nodes were deleted, do we deselect all previously selected nodes
+                    if node_count_decreased {
+                        self.insts_info_link
+                            .borrow()
+                            .clone()
+                            .unwrap()
+                            .send_message(InstsInfoMsg::DeselectAll);
+                    }
                     true
                 } else {
                     false

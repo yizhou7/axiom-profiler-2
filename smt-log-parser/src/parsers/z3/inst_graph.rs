@@ -117,7 +117,9 @@ impl InstGraph {
         }
     }
 
-    pub fn retain_visible_nodes_and_reconnect(&mut self) -> (usize, usize) {
+    pub fn retain_visible_nodes_and_reconnect(&mut self) -> (usize, usize, bool, bool) {
+        let prev_node_count = self.visible_graph.node_count();
+        let prev_edge_count = self.visible_graph.edge_count();
         // retain all visible nodes
         let mut new_inst_graph = self.orig_graph.filter_map(
             |_, &node| {
@@ -212,9 +214,13 @@ impl InstGraph {
             }
         }
         self.visible_graph = new_inst_graph;
+        let curr_node_count = self.visible_graph.node_count();
+        let curr_edge_count = self.visible_graph.edge_count();
         (
             self.visible_graph.node_count(),
             self.visible_graph.edge_count(),
+            prev_node_count > curr_node_count,
+            prev_edge_count > curr_edge_count
         )
     }
 
