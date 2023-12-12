@@ -230,12 +230,14 @@ pub fn graph(props: &GraphProps) -> Html {
                 for i in 0..nodes.length() {
                     let node = nodes.item(i).unwrap();
                     let node_index = NodeIndex::new(node.id().strip_prefix("node").unwrap().parse::<usize>().unwrap());
+                    let ellipse = node
+                        .query_selector("ellipse")
+                        .expect("Failed to select ellipse")
+                        .unwrap();
                     if selected_nodes.contains(&node_index) {
-                        let ellipse = node
-                            .query_selector("ellipse")
-                            .expect("Failed to select ellipse")
-                            .unwrap();
                         let _ = ellipse.set_attribute("stroke-width", "3");
+                    } else {
+                        let _ = ellipse.set_attribute("stroke-width", "1");
                     }
                 }
             }

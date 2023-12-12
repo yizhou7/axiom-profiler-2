@@ -50,7 +50,7 @@ pub fn node_actions(props: &NodeActionsProps) -> Html {
             <button onclick={ignore_quantifier}>{"Ignore all nodes of this quantifier"}</button>
         </div>
         <div>
-            <button onclick={show_longest_path}>{"Show longest path through this node"}</button>
+            <button onclick={show_longest_path}>{"Show longest path through last selected node"}</button>
         </div>
     </>
     }
