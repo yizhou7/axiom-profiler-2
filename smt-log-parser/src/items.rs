@@ -276,7 +276,7 @@ impl VarNames {
 }
 
 /// A Z3 instantiation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Instantiation {
     pub match_line_no: usize,
     pub line_no: Option<usize>,
@@ -340,7 +340,7 @@ impl std::ops::Deref for Fingerprint {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// An entry in the blamed term part of a `[new-match]` Z3 trace line.
 /// - Single: standalone identifier.
 /// - Pair: a pair of identifiers grouped in parentheses. (#A #B)
@@ -398,7 +398,7 @@ pub type DiscoveredId = DiscoveredIdCow<'static>;
 /// of terms but `TermId`s don't map to this nicely, additionally the `TermId`s
 /// may repeat and so we want to map to the latest current `TermIdx`. Has a
 /// special fast path for the common empty namespace case.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct TermIdToIdxMap {
     empty_namespace: Vec<Option<TermIdx>>,
     namespace_map: FxHashMap<String, Vec<Option<TermIdx>>>,
@@ -456,7 +456,7 @@ pub enum DepType {
 
 /// A dependency between two quantifier instantiations.
 /// `from` can be 0 to represent instatiations with no dependent instantiations.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Dependency {
     pub from: usize,
     pub to: Option<usize>,

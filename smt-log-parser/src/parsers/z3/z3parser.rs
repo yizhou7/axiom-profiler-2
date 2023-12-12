@@ -8,7 +8,7 @@ use crate::{
 
 /// A parser for Z3 log files. Use one of the various `Z3Parser::from_*` methods
 /// to construct this parser.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Z3Parser {
     pub(super) version_info: Option<VersionInfo>,
     pub(super) term_id_map: TermIdToIdxMap,
@@ -22,7 +22,7 @@ pub struct Z3Parser {
     pub(super) dependencies: Vec<Dependency>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct DiscoveredQuantToIdxMap {
     discovered_map: FxHashMap<DiscoveredId, QuantIdx>,
 }

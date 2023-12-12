@@ -116,7 +116,7 @@ pub trait Z3LogParser: Debug {
 }
 
 /// Type of solver and version number
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct VersionInfo {
     solver: String,
     version: semver::Version,

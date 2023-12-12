@@ -270,6 +270,8 @@ pub fn graph(props: &GraphProps) -> Html {
     };
     html! {
         <>
+            // this is a "background" div
+            // when the user clicks on it, it deselect all previously selected nodes
             <div onclick={deselect_all} style="position: sticky; top: 0; left: 0; height: 87vh;"></div>
             <div ref={div_ref} style="position: absolute; top: 19px; left: 0; overflow: visible; width: 0; height: 0;">
                 {svg_result}

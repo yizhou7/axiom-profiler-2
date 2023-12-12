@@ -31,20 +31,9 @@ pub fn node_actions(props: &NodeActionsProps) -> Html {
     let hide_source_tree = callback_from(Box::new(|inst: &InstInfo| Filter::VisitSourceTree(inst.node_index, false)));
     let ignore_quantifier = callback_from(Box::new(|inst: &InstInfo| Filter::IgnoreQuantifier(inst.quant)));
     let show_longest_path = callback_from(Box::new(|inst: &InstInfo| Filter::ShowLongestPath(inst.node_index)));
-    let mut selected_nodes = props
-        .selected_nodes
-        .iter()
-        .map(|inst| format!("{}", inst.node_index.index()))
-        .collect::<Vec<String>>()
-        .join(", ");
-    selected_nodes.push('.');
-    let selected_nodes_text = format!(
-        "You selected node(s) {} Here are available actions: ",
-        selected_nodes
-    );
     html! {
     <>
-        <h4>{selected_nodes_text}</h4>
+        <h4>{"You have selected some nodes. Here are possible actions (applied to all selected nodes):"}</h4>
         <div>
             <button onclick={show_subtree}>{"Show subtree with this root"}</button>
             <button onclick={hide_subtree}>{"Hide subtree with this root"}</button>

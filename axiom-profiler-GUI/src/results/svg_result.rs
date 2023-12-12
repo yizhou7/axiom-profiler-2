@@ -5,7 +5,7 @@ use super::{filters::{
     filter_chain::{FilterChain, Msg as FilterChainMsg},
     graph_filters::Filter,
 }, worker::Worker};
-use super::graph::graph_container::GraphContainer;
+// use super::graph::graph_container::GraphContainer;
 use material_yew::WeakComponentLink;
 use num_format::{Locale, ToFormattedString};
 use petgraph::dot::{Config, Dot};
@@ -20,27 +20,22 @@ use smt_log_parser::{
         LogParser,
     },
 };
-use std::{num::NonZeroUsize, iter::zip};
+use std::{num::NonZeroUsize, rc::Rc};
 use viz_js::VizInstance;
 use web_sys::window;
 use yew::prelude::*;
-use indexmap::map::IndexMap;
 
 pub const EDGE_LIMIT: usize = 500;
 pub const DEFAULT_NODE_COUNT: usize = 125;
 
 pub enum Msg {
     UpdateSvgText(AttrValue),
-    UpdateSelectedNodes(usize),
-    UpdateSelectedEdges(usize),
-    DeselectAll,
     RenderGraph(UserPermission),
     ApplyFilter(Filter),
     ResetGraph,
     GetUserPermission,
     WorkerOutput(super::worker::WorkerOutput),
-    ToggleIgnoreTermIds,
-    UpdateDisplayedNodes(Vec<NodeIndex>),
+    UpdateSelectedNodes(Vec<InstInfo>),
 }
 
 pub struct UserPermission {
@@ -66,22 +61,19 @@ struct GraphDimensions {
 }
 
 pub struct SVGResult {
-    parser: Z3Parser,
+    parser: Rc<Z3Parser>,
     colour_map: QuantIdxToColourMap,
     inst_graph: InstGraph,
     svg_text: AttrValue,
-    selected_insts: IndexMap<NodeIndex, InstInfo>,
-    selected_deps: IndexMap<EdgeIndex, EdgeInfo>,
     filter_chain_link: WeakComponentLink<FilterChain>,
     insts_info_link: WeakComponentLink<InstsInfo>,
-    on_node_select: Callback<usize>,
-    on_edge_select: Callback<usize>,
-    deselect_all: Callback<()>,
     graph_dim: GraphDimensions,
     worker: Option<Box<dyn yew_agent::Bridge<Worker>>>,
-    ignore_term_ids: bool, 
     async_graph_and_filter_chain: bool,
-    displayed_path: IndexMap<NodeIndex, InstInfo>,
+    get_node_info: Callback<(NodeIndex, bool, Rc<Z3Parser>), InstInfo>,
+    get_edge_info: Callback<(EdgeIndex, bool, Rc<Z3Parser>), EdgeInfo>,
+    selected_insts: Vec<InstInfo>,
+
 }
 
 #[derive(Properties, PartialEq)]
@@ -99,33 +91,35 @@ impl Component for SVGResult {
         let inst_graph = InstGraph::from(&parser);
         let total_nr_of_quants = parser.total_nr_of_quants();
         let colour_map = QuantIdxToColourMap::from(total_nr_of_quants);
+        let get_node_info = Callback::from({
+            let inst_graph = inst_graph.clone();
+            move |(node, ignore_ids, parser): (NodeIndex, bool, Rc<Z3Parser>)| {
+            inst_graph.get_instantiation_info(node.index(), parser, ignore_ids).unwrap()
+        }});
+        let get_edge_info = Callback::from({
+            let inst_graph = inst_graph.clone();
+            move |(edge, ignore_ids, parser): (EdgeIndex, bool, Rc<Z3Parser>)| {
+            inst_graph.get_edge_info(edge, parser, ignore_ids).unwrap()
+        }});
         Self {
-            parser,
+            parser: Rc::new(parser),
             colour_map,
             inst_graph,
             svg_text: AttrValue::default(),
-            selected_insts: IndexMap::new(),
-            selected_deps: IndexMap::new(),
             filter_chain_link: WeakComponentLink::default(),
             insts_info_link: WeakComponentLink::default(),
-            on_node_select: ctx.link().callback(Msg::UpdateSelectedNodes),
-            on_edge_select: ctx.link().callback(Msg::UpdateSelectedEdges),
-            deselect_all: ctx.link().callback(|_| Msg::DeselectAll),
             graph_dim: GraphDimensions {
                 node_count: 0,
                 edge_count: 0,
                 prev_edge_count: None,
             },
             worker: Some(Self::create_worker(ctx.link().clone())),
-            ignore_term_ids: true,
             async_graph_and_filter_chain: false,
-            displayed_path: IndexMap::new(),
+            get_node_info,
+            get_edge_info,
+            selected_insts: Vec::new(),
         }
     }
-
-    // fn rendered(&mut self, _ctx: &Context<Self>, _first_render: bool) {
-    //     self.displayed_path.clear();
-    // }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
@@ -135,7 +129,11 @@ impl Component for SVGResult {
             Msg::ApplyFilter(filter) => {
                 log::debug!("Applying filter {}", filter);
                 if let Some(ref path) = filter.apply(&mut self.inst_graph) {
-                    ctx.link().send_message(Msg::UpdateDisplayedNodes(path.to_vec()));
+                    self.insts_info_link
+                        .borrow()
+                        .clone()
+                        .unwrap()
+                        .send_message(InstsInfoMsg::SelectNodes(path.clone()));
                     false
                 } else {
                     false
@@ -280,112 +278,19 @@ impl Component for SVGResult {
                 log::debug!("Updating svg text");
                 if svg_text != self.svg_text {
                     self.svg_text = svg_text;
-                    self.selected_insts.clear();
-                    // self.insts_info_link
-                    //     .borrow()
-                    //     .clone()
-                    //     .unwrap()
-                    //     .send_message(InstsInfoMsg::RemoveAll);
                     true
                 } else {
                     false
                 }
             }
-            Msg::UpdateSelectedNodes(index) => {
-                log::debug!("Updating selected node");
-                let selected_inst = self
-                    .inst_graph
-                    .get_instantiation_info(index, &self.parser, self.ignore_term_ids)
-                    .unwrap();
-                let selected_inst_node_index = selected_inst.node_index;
-                if let Some(_) = self.selected_insts.get(&selected_inst_node_index) {
-                    self.selected_insts.shift_remove(&selected_inst_node_index);
-                    self.displayed_path.shift_remove(&selected_inst_node_index);
-                    self.insts_info_link
-                        .borrow()
-                        .clone()
-                        .unwrap()
-                        .send_message(InstsInfoMsg::RemoveNode(selected_inst_node_index));
-                } else {
-                    self.selected_insts.insert(selected_inst_node_index, selected_inst.clone());
-                    self.insts_info_link
-                        .borrow()
-                        .clone()
-                        .unwrap()
-                        .send_message(InstsInfoMsg::AddNode(selected_inst_node_index));
-                }
-                true
-            }
-            Msg::UpdateSelectedEdges(index) => {
-                let selected_edge_idx = EdgeIndex::from(index as u32);
-                let selected_edge = self.inst_graph.get_edge_info(selected_edge_idx, &self.parser, self.ignore_term_ids).unwrap();
-                if let Some(_) = self.selected_deps.get(&selected_edge_idx) {
-                    self.selected_deps.remove(&selected_edge_idx);
-                    self.insts_info_link
-                        .borrow()
-                        .clone()
-                        .unwrap()
-                        .send_message(InstsInfoMsg::RemoveEdge(selected_edge_idx));
-                } else {
-                    self.selected_deps.insert(selected_edge_idx, selected_edge);
-                    self.insts_info_link
-                        .borrow()
-                        .clone()
-                        .unwrap()
-                        .send_message(InstsInfoMsg::AddEdge(selected_edge_idx));
-                } 
-                true
-            }
-            Msg::DeselectAll => {
-                self.selected_insts.clear();
-                self.selected_deps.clear();
-                self.insts_info_link
-                    .borrow()
-                    .clone()
-                    .unwrap()
-                    .send_message(InstsInfoMsg::RemoveAll);
-                self.displayed_path.clear();
-                true
-            }
-            Msg::ToggleIgnoreTermIds => {
-                self.ignore_term_ids = !self.ignore_term_ids;
-                for inst in self.selected_insts.values_mut() {
-                    let iidx = inst.node_index.index();
-                    let updated_inst = self.inst_graph.get_instantiation_info(iidx, &self.parser, self.ignore_term_ids).unwrap();
-                    *inst = updated_inst;
-                }
-                for dep in self.selected_deps.values_mut() {
-                    let edge_idx = dep.edge_data.orig_graph_idx.unwrap();
-                    let updated_dep = self.inst_graph.get_edge_info(edge_idx, &self.parser, self.ignore_term_ids).unwrap();
-                    *dep = updated_dep;
-                }
-                true
-            }
-            Msg::UpdateDisplayedNodes(nodes) => {
-                // set the selected_insts to the displayed_path if available
-                let displayed_path_info: Vec<InstInfo> = nodes 
-                    .iter()
-                    .map(|node|{
-                        self.inst_graph.get_instantiation_info(node.index(), &self.parser, self.ignore_term_ids).unwrap() 
-                    }) 
-                    .collect();
-                for (nidx, ninfo) in zip(&nodes, displayed_path_info) {
-                    self.displayed_path.insert(*nidx, ninfo);
-                    log::debug!("Inserting node {} into displayed path", nidx.index());
-                }
-                self.selected_insts.clear();
-                self.insts_info_link
-                    .borrow()
-                    .clone()
-                    .unwrap()
-                    .send_message(InstsInfoMsg::AddNodes(nodes.clone()));
+            Msg::UpdateSelectedNodes(nodes) => {
+                self.selected_insts = nodes;
                 true
             }
         }
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {
-        // let on_node_select = ctx.link().callback(Msg::UpdateSelectedNode);
         let node_and_edge_count_preview = html! {
             <h4>{format!{"The filtered graph contains {} nodes and {} edges", self.graph_dim.node_count, self.graph_dim.edge_count}}</h4>
         };
@@ -397,11 +302,11 @@ impl Component for SVGResult {
         let apply_filter = ctx.link().callback(Msg::ApplyFilter);
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
         let render_graph = ctx.link().callback(Msg::RenderGraph);
-        let toggle = ctx.link().callback(|_| Msg::ToggleIgnoreTermIds);
+        let update_selected_nodes = ctx.link().callback(Msg::UpdateSelectedNodes);
         html! {
             <>
-                <div style="flex: 30%; height: 87vh; overflow-y: auto; ">
-                <ContextProvider<Vec<InstInfo>> context={self.selected_insts.values().cloned().collect::<Vec<InstInfo>>()} >
+                <div style="flex: 20%; height: 87vh; overflow-y: auto; ">
+                <ContextProvider<Vec<InstInfo>> context={self.selected_insts.clone()}>
                     <FilterChain
                         apply_filter={apply_filter.clone()}
                         reset_graph={reset_graph.clone()}
@@ -412,26 +317,14 @@ impl Component for SVGResult {
                 </ContextProvider<Vec<InstInfo>>>
                 {async_graph_and_filter_chain_warning}
                 {node_and_edge_count_preview}
+                </div>
                 <InstsInfo 
-                    selected_nodes={self.selected_insts.values().chain(self.displayed_path.values()).cloned().collect::<Vec<InstInfo>>()}
-                    selected_edges={self.selected_deps.values().cloned().collect::<Vec<EdgeInfo>>()}
-                    weak_link={self.insts_info_link.clone()}
-                />
-                <div>
-                    <label for="term_expander">{"Ignore term IDs "}</label>
-                    <input type="checkbox" checked={self.ignore_term_ids} onclick={toggle} id="term_expander" />
-                    // <dialog open=true>
-                    //     <p>{"Greetings, one and all!"}</p>
-                    //     <button>{"Ok"}</button><button>{"Maybe"}</button><button>{"Cancel"}</button>
-                    // </dialog>
-                </div>
-                </div>
-                <GraphContainer
+                    weak_link={self.insts_info_link.clone()} 
+                    node_info={self.get_node_info.clone()}
+                    edge_info={self.get_edge_info.clone()}
+                    parser={self.parser.clone()}
                     svg_text={&self.svg_text}
-                    update_selected_nodes={&self.on_node_select}
-                    update_selected_edges={&self.on_edge_select}
-                    deselect_all={&self.deselect_all}
-                    selected_nodes={self.displayed_path.keys().cloned().collect::<Vec<NodeIndex>>()}
+                    {update_selected_nodes}
                 />
             </>
         }
