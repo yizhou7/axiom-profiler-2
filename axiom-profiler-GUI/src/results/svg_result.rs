@@ -1,4 +1,4 @@
-use crate::results::insts_info_struct::{InstsInfo, Msg as InstsInfoMsg};
+use crate::results::graph_info::{GraphInfo, Msg as GraphInfoMsg};
 
 use self::colours::HSVColour;
 use super::{filters::{
@@ -65,7 +65,7 @@ pub struct SVGResult {
     inst_graph: InstGraph,
     svg_text: AttrValue,
     filter_chain_link: WeakComponentLink<FilterChain>,
-    insts_info_link: WeakComponentLink<InstsInfo>,
+    insts_info_link: WeakComponentLink<GraphInfo>,
     graph_dim: GraphDimensions,
     worker: Option<Box<dyn yew_agent::Bridge<Worker>>>,
     async_graph_and_filter_chain: bool,
@@ -131,7 +131,7 @@ impl Component for SVGResult {
                         .borrow()
                         .clone()
                         .unwrap()
-                        .send_message(InstsInfoMsg::SelectNodes(path.clone()));
+                        .send_message(GraphInfoMsg::SelectNodes(path.clone()));
                     false
                 } else {
                     false
@@ -147,17 +147,8 @@ impl Component for SVGResult {
                 log::debug!("The current node count is {}", node_count);
                 self.graph_dim.node_count = node_count;
                 self.graph_dim.edge_count = edge_count;
-                let safe_to_render = edge_count <= EDGE_LIMIT || node_count <= DEFAULT_NODE_COUNT || edge_count_decreased;
-                // let safe_to_render = if let Some(prev_edge_count) = self.graph_dim.prev_edge_count {
-                //     edge_count <= prev_edge_count || edge_count <= EDGE_LIMIT
-                // } else {
-                //     // initially the node-count is 125 so it should be safe to render regardless of the
-                //     // number of edges
-                //     // we are using the fact that only initially the self.prev_edge_count is None
-                //     true
-                // };
+                let safe_to_render = edge_count <= EDGE_LIMIT || node_count <= DEFAULT_NODE_COUNT || edge_count_decreased || node_count_decreased;
                 if safe_to_render || permission {
-
                     self.async_graph_and_filter_chain = false;
                     log::debug!("Rendering graph");
                     let filtered_graph = &self.inst_graph.visible_graph;
@@ -284,7 +275,7 @@ impl Component for SVGResult {
                             .borrow()
                             .clone()
                             .unwrap()
-                            .send_message(InstsInfoMsg::DeselectAll);
+                            .send_message(GraphInfoMsg::DeselectAll);
                     }
                     true
                 } else {
@@ -326,7 +317,7 @@ impl Component for SVGResult {
                 {async_graph_and_filter_chain_warning}
                 {node_and_edge_count_preview}
                 </div>
-                <InstsInfo 
+                <GraphInfo 
                     weak_link={self.insts_info_link.clone()} 
                     node_info={self.get_node_info.clone()}
                     edge_info={self.get_edge_info.clone()}

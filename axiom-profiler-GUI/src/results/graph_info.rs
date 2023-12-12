@@ -9,7 +9,7 @@ use smt_log_parser::parsers::z3::inst_graph::EdgeType;
 use material_yew::WeakComponentLink;
 use super::graph::graph_container::GraphContainer;
 
-pub struct InstsInfo {
+pub struct GraphInfo {
     is_expanded_node: IndexMap<NodeIndex, bool>,
     selected_nodes: IndexMap<NodeIndex, InstInfo>,
     selected_nodes_ref: NodeRef,
@@ -30,8 +30,8 @@ pub enum Msg {
 }
 
 #[derive(Properties, PartialEq)]
-pub struct InstsInfoProps {
-    pub weak_link: WeakComponentLink<InstsInfo>,
+pub struct GraphInfoProps {
+    pub weak_link: WeakComponentLink<GraphInfo>,
     pub node_info: Callback<(NodeIndex, bool, Rc<Z3Parser>), InstInfo>,
     pub edge_info: Callback<(EdgeIndex, bool, Rc<Z3Parser>), EdgeInfo>,
     pub parser: Rc<Z3Parser>,
@@ -39,10 +39,10 @@ pub struct InstsInfoProps {
     pub update_selected_nodes: Callback<Vec<InstInfo>>,
 }
 
-impl Component for InstsInfo {
+impl Component for GraphInfo {
     type Message = Msg;
 
-    type Properties = InstsInfoProps;
+    type Properties = GraphInfoProps;
 
     fn create(ctx: &Context<Self>) -> Self {
         ctx.props()

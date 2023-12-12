@@ -381,7 +381,6 @@ impl InstGraph {
         for node in self.orig_graph.node_weights_mut() {
             node.visible = true;
         }
-        self.visible_graph = self.orig_graph.clone();
     }
 
     pub fn show_neighbours(&mut self, node: NodeIndex, direction: petgraph::Direction) {
