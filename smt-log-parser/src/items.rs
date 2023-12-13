@@ -142,11 +142,10 @@ pub enum VarNames {
     NameAndType(Vec<(String, String)>),
 }
 impl VarNames {
-    pub fn get_name(this: &Option<Self>, idx: usize) -> String {
+    pub fn get_name<'a>(this: &'a Option<Self>, idx: usize) -> Cow<'a, str> {
         match this {
-            None | Some(Self::TypeOnly(_)) => format!("qvar_{idx}"),
-            Some(Self::NameAndType(names)) if idx < names.len() => names[idx].0.clone(),
-            _ => format!("E_qvar_{idx}"), // TODO: should be fixed with push/pop handling
+            Some(Self::NameAndType(names)) => Cow::Borrowed(&names[idx].0),
+            None | Some(Self::TypeOnly(_)) => Cow::Owned(format!("qvar_{idx}")),
         }
     }
     pub fn get_type(this: &Option<Self>, idx: usize) -> String {

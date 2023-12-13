@@ -6,25 +6,40 @@ use crate::{items::*, parsers::z3::z3parser::Z3Parser};
 // General
 ////////////
 
-pub trait DisplayWithCtxt<Ctxt, Data: Copy>: Sized {
-    fn fmt_with<'a>(&'a self, f: &mut fmt::Formatter<'_>, ctxt: &Ctxt, data: Data) -> fmt::Result;
-    fn with<'a, 'b>(&'a self, ctxt: &'b Ctxt) -> DisplayWrapper<'a, 'b, Ctxt, Data, Self> where Data: Default {
-        self.with_data(ctxt, Data::default())
+pub trait DisplayWithCtxt<Ctxt, Data>: Sized {
+    fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &Ctxt, data: &mut Data) -> fmt::Result;
+    fn with<'a>(self, ctxt: &'a Ctxt) -> DisplayWrapperEmpty<'a, Ctxt, Data, Self> where Self: Copy, Data: Default {
+        DisplayWrapperEmpty { inner: self, ctxt, data_marker: std::marker::PhantomData }
     }
-    fn with_data<'a, 'b>(&'a self, ctxt: &'b Ctxt, data: Data) -> DisplayWrapper<'a, 'b, Ctxt, Data, Self> {
-        DisplayWrapper { inner: self, ctxt, data }
+    fn with_data<'a, 'b>(self, ctxt: &'a Ctxt, data: &'b mut Data) -> DisplayWrapperData<'a, 'b, Ctxt, Data, Self> where Self: Copy {
+        DisplayWrapperData { inner: self, ctxt, data, data_marker: std::marker::PhantomData }
     }
 }
 
-pub struct DisplayWrapper<'a, 'b, Ctxt, Data: Copy, T: DisplayWithCtxt<Ctxt, Data>> {
-    pub inner: &'a T,
-    pub ctxt: &'b Ctxt,
-    pub data: Data,
+pub struct DisplayWrapperEmpty<'a, Ctxt, Data: Default, T: DisplayWithCtxt<Ctxt, Data> + Copy> {
+    inner: T,
+    ctxt: &'a Ctxt,
+    data_marker: std::marker::PhantomData<Data>,
 }
 
-impl<'a, 'b, Ctxt, Data: Copy, T: DisplayWithCtxt<Ctxt, Data>> fmt::Display for DisplayWrapper<'a, 'b, Ctxt, Data, T> {
+impl<'a, Ctxt, Data: Default, T: DisplayWithCtxt<Ctxt, Data> + Copy> fmt::Display for DisplayWrapperEmpty<'a, Ctxt, Data, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.inner.fmt_with(f, self.ctxt, self.data)
+        self.inner.fmt_with(f, self.ctxt, &mut Data::default())
+    }
+}
+
+pub struct DisplayWrapperData<'a, 'b, Ctxt, Data, T: DisplayWithCtxt<Ctxt, Data> + Copy> {
+    inner: T,
+    ctxt: &'a Ctxt,
+    data: *mut Data,
+    data_marker: std::marker::PhantomData<&'b mut Data>,
+}
+
+impl<'a, 'b, Ctxt, Data, T: DisplayWithCtxt<Ctxt, Data> + Copy> fmt::Display for DisplayWrapperData<'a, 'b, Ctxt, Data, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // SAFETY: DisplayWrapperData is only created in `with_data` where it blocks the input `data`.
+        let data = unsafe { &mut *self.data };
+        self.inner.fmt_with(f, self.ctxt, data)
     }
 }
 
@@ -41,12 +56,57 @@ pub struct DisplayCtxt<'a> {
     pub use_mathematical_symbols: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct DisplayData<'a> {
-    children: &'a [TermIdx],
-    quant: Option<&'a Quantifier>,
-    bind_power: u8,
+mod private {
+    use super::*;
+
+    #[derive(Debug, Clone)]
+    pub(super) struct DisplayData<'a> {
+        children: &'a [TermIdx],
+        quant: Vec<&'a Quantifier>,
+        bind_power: u8,
+    }
+    impl<'a> DisplayData<'a> {
+        pub(super) fn new() -> Self {
+            Self {
+                children: &[],
+                quant: Vec::new(),
+                bind_power: super::NO_BIND,
+            }
+        }
+        pub(super) fn with_children<T>(&mut self, children: &'a [TermIdx], f: impl FnOnce(&mut Self) -> T) -> T {
+            let old = std::mem::replace(&mut self.children, children);
+            let result = f(self);
+            self.children = old;
+            result
+        }
+        pub(super) fn with_quant<T>(&mut self, quant: &'a Quantifier, f: impl FnOnce(&mut Self) -> T) -> T {
+            self.quant.push(quant);
+            let result = f(self);
+            self.quant.pop();
+            result
+        }
+        pub(super) fn with_bind_power<T>(&mut self, bind_power: u8, f: impl FnOnce(&mut Self, u8) -> T) -> T {
+            let old = std::mem::replace(&mut self.bind_power, bind_power);
+            let result = f(self, old);
+            self.bind_power = old;
+            result
+        }
+
+        pub(super) fn children(&self) -> &'a [TermIdx] {
+            self.children
+        }
+        pub(super) fn find_quant(&self, idx: &mut usize) -> Option<&'a Quantifier> {
+            self.quant.iter().find(|q| {
+                let found = q.num_vars > *idx;
+                if !found {
+                    *idx -= q.num_vars;
+                }
+                found
+            }).copied()
+        }
+    }
 }
+use private::*;
 const NO_BIND: u8 = 0;
 const QUANT_BIND: u8 = 3;
 const INFIX_BIND: u8 = 15;
@@ -57,19 +117,15 @@ const PREFIX_BIND: u8 = 31;
 ////////////
 
 impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for TermIdx {
-    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'_>, _data: ()) -> fmt::Result {
-        let data = DisplayData {
-            children: &Vec::new(),
-            quant: None,
-            bind_power: NO_BIND,
-        };
-        write!(f, "{}", ctxt.parser[*self].with_data(ctxt, data))
+    fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'_>, _data: &mut ()) -> fmt::Result {
+        let mut data = DisplayData::new();
+        write!(f, "{}", ctxt.parser[self].with_data(ctxt, &mut data))
     }
 }
 
 impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for QuantIdx {
-    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'_>, data: ()) -> fmt::Result {
-        let quant = &ctxt.parser[*self];
+    fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'_>, data: &mut ()) -> fmt::Result {
+        let quant = &ctxt.parser[self];
         if let Some(term) = quant.term {
             term.fmt_with(f, ctxt, data)
         } else {
@@ -85,30 +141,28 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for QuantIdx {
 // Item defs
 ////////////
 
-impl DisplayWithCtxt<DisplayCtxt<'_>, DisplayData<'_>> for Term {
-    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'_>, data: DisplayData<'_>) -> fmt::Result {
-        let data = DisplayData {
-            children: &self.child_ids,
-            ..data
-        };
-
-        if ctxt.display_term_ids {
-            write!(f, "[{}]", self.id)?;
-        }
-        if let Some(meaning) = &self.meaning {
-            write!(f, "{}", meaning.with_data(ctxt, data))
-        } else {
-            write!(f, "{}", self.kind.with_data(ctxt, data))
-        }
+impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Term {
+    fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'a>, data: &mut DisplayData<'a>) -> fmt::Result {
+        data.with_children(&self.child_ids, |data| {
+            if ctxt.display_term_ids {
+                write!(f, "[{}]", self.id)?;
+            }
+            if let Some(meaning) = &self.meaning {
+                write!(f, "{}", meaning.with_data(ctxt, data))?;
+            } else {
+                write!(f, "{}", self.kind.with_data(ctxt, data))?;
+            }
+            Ok(())
+        })
     }
 }
 
-impl DisplayWithCtxt<DisplayCtxt<'_>, DisplayData<'_>> for TermKind {
-    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'_>, data: DisplayData<'_>) -> fmt::Result {
+impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a TermKind {
+    fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'a>, data: &mut DisplayData<'a>) -> fmt::Result {
         match self {
-            TermKind::Var(idx) => {
-                let this = data.quant.map(|q| &q.vars).unwrap_or(&None);
-                write!(f, "{}", VarNames::get_name(this, *idx))
+            &TermKind::Var(mut idx) => {
+                let vars = data.find_quant(&mut idx).map(|q| &q.vars).unwrap_or(&None);
+                write!(f, "{}", VarNames::get_name(vars, idx))
             }
             TermKind::ProofOrApp(poa) =>
                 write!(f, "{}", poa.with_data(ctxt, data)),
@@ -125,14 +179,14 @@ enum ProofOrAppKind {
     OtherApp,
     Proof,
 }
-impl DisplayWithCtxt<DisplayCtxt<'_>, DisplayData<'_>> for ProofOrApp {
-    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'_>, mut data: DisplayData<'_>) -> fmt::Result {
+impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a ProofOrApp {
+    fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'a>, data: &mut DisplayData<'a>) -> fmt::Result {
         let math = ctxt.use_mathematical_symbols;
         use ProofOrAppKind::*;
         let (name, kind) = match self.name.as_ref() {
             name if self.is_proof => (name, Proof),
             "not" => (if math { "¬" } else { "!" }, Unary),
-            "-" if data.children.len() == 1 => ("-", Unary),
+            "-" if data.children().len() == 1 => ("-", Unary),
 
             "and" => (if math { "∧" } else { "&&" }, Inline),
             "or" => (if math { "∨" } else { "||" }, Inline),
@@ -145,21 +199,18 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, DisplayData<'_>> for ProofOrApp {
             name => (name, OtherApp),
         };
         match kind {
-            Unary => {
-                assert!(data.bind_power <= PREFIX_BIND);
-                data.bind_power = PREFIX_BIND;
-                assert_eq!(data.children.len(), 1);
-                let child = data.children[0];
+            Unary => data.with_bind_power(PREFIX_BIND, |data, bind_power| {
+                assert!(bind_power <= PREFIX_BIND);
+                assert_eq!(data.children().len(), 1);
+                let child = data.children()[0];
                 write!(f, "{name}{}", ctxt.parser[child].with_data(ctxt, data))
-            }
-            Inline => {
-                let need_brackets = data.bind_power >= INFIX_BIND;
-                data.bind_power = INFIX_BIND;
-
+            }),
+            Inline => data.with_bind_power(INFIX_BIND, |data, bind_power| {
+                let need_brackets = bind_power >= INFIX_BIND;
                 if need_brackets {
                     write!(f, "(")?;
                 }
-                for (idx, child) in data.children.iter().enumerate() {
+                for (idx, child) in data.children().iter().enumerate() {
                     if idx != 0 {
                         write!(f, " {name} ")?;
                     }
@@ -169,40 +220,39 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, DisplayData<'_>> for ProofOrApp {
                     write!(f, ")")?;
                 }
                 Ok(())
-            }
-            Pattern => {
-                data.bind_power = NO_BIND;
+            }),
+            Pattern => data.with_bind_power(NO_BIND, |data, _| {
+                // BIND_POWER is highest
                 write!(f, "{{")?;
-                for (idx, child) in data.children.iter().enumerate() {
+                for (idx, child) in data.children().iter().enumerate() {
                     if idx != 0 {
                         write!(f, ", ")?;
                     }
                     write!(f, "{}", ctxt.parser[*child].with_data(ctxt, data))?;
                 }
                 write!(f, "}}")
-            }
-            OtherApp | Proof => {
+            }),
+            OtherApp | Proof => data.with_bind_power(NO_BIND, |data, _| {
+                // BIND_POWER is highest
                 write!(f, "{name}")?;
-                if data.children.is_empty() {
+                if data.children().is_empty() {
                     return Ok(());
                 }
-                // BIND_POWER is PREFIX_BIND (highest)
-                data.bind_power = NO_BIND;
                 write!(f, "(")?;
-                for (idx, child) in data.children.iter().enumerate() {
+                for (idx, child) in data.children().iter().enumerate() {
                     if idx != 0 {
                         write!(f, ", ")?;
                     }
                     write!(f, "{}", ctxt.parser[*child].with_data(ctxt, data))?;
                 }
                 write!(f, ")")
-            }
+            }),
         }
     }
 }
 
-impl DisplayWithCtxt<DisplayCtxt<'_>, DisplayData<'_>> for Meaning {
-    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, _ctxt: &DisplayCtxt<'_>, _data: DisplayData<'_>) -> fmt::Result {
+impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Meaning {
+    fn fmt_with(self, f: &mut fmt::Formatter<'_>, _ctxt: &DisplayCtxt<'a>, _data: &mut DisplayData<'a>) -> fmt::Result {
         match self.theory.as_ref() {
             "arith" | "bv" => write!(f, "{}", self.value),
             theory=> write!(f, "/{theory} {}\\", self.value),
@@ -210,48 +260,46 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, DisplayData<'_>> for Meaning {
     }
 }
 
-impl DisplayWithCtxt<DisplayCtxt<'_>, DisplayData<'_>> for Quantifier {
-    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'_>, data: DisplayData<'_>) -> fmt::Result {
-        let need_brackets = data.bind_power > QUANT_BIND;
+impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
+    fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'a>, data: &mut DisplayData<'a>) -> fmt::Result {
         // Within the body of the term of a quantified formula, we 
         // want to replace the quantified variables by their names
         // for this, we need to store the quantifier in the context
-        let data = DisplayData {
-            quant: Some(self),
-            bind_power: QUANT_BIND,
-            ..data
-        };
-
-        if need_brackets {
-            write!(f, "(")?;
-        }
-        write!(f, "{}", self.kind.with_data(ctxt, data))?;
-        for idx in 0..self.num_vars {
-            let name = VarNames::get_name(&self.vars, idx);
-            let ty = VarNames::get_type(&self.vars, idx);
-            if idx != 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{name}{ty}")?;
-        }
-        let sep = if ctxt.use_mathematical_symbols {
-            "."
-        } else {
-            " ::"
-        };
-        write!(f, "{sep}")?;
-        for child in data.children {
-            write!(f, " {}", ctxt.parser[*child].with_data(ctxt, data))?;
-        }
-        if need_brackets {
-            write!(f, ")")?;
-        }
-        Ok(())
+        data.with_quant(self, |data| {
+            data.with_bind_power(QUANT_BIND, |data, bind_power| {
+                let need_brackets = bind_power > QUANT_BIND;
+                if need_brackets {
+                    write!(f, "(")?;
+                }
+                write!(f, "{}", self.kind.with_data(ctxt, data))?;
+                for idx in 0..self.num_vars {
+                    let name = VarNames::get_name(&self.vars, idx);
+                    let ty = VarNames::get_type(&self.vars, idx);
+                    if idx != 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{name}{ty}")?;
+                }
+                let sep = if ctxt.use_mathematical_symbols {
+                    "."
+                } else {
+                    " ::"
+                };
+                write!(f, "{sep}")?;
+                for child in data.children() {
+                    write!(f, " {}", ctxt.parser[*child].with_data(ctxt, data))?;
+                }
+                if need_brackets {
+                    write!(f, ")")?;
+                }
+                Ok(())
+            })
+        })
     }
 }
 
-impl DisplayWithCtxt<DisplayCtxt<'_>, DisplayData<'_>> for QuantKind {
-    fn fmt_with(&self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'_>, _data: DisplayData<'_>) -> fmt::Result {
+impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a QuantKind {
+    fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'a>, _data: &mut DisplayData<'a>) -> fmt::Result {
         if ctxt.use_mathematical_symbols {
             write!(f, "∀ ")?;
         } else {
@@ -260,10 +308,10 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, DisplayData<'_>> for QuantKind {
         if ctxt.display_quantifier_name {
             write!(f, "\"")?;
             match self {
-                Self::Other(kind) => write!(f, "{kind}")?,
-                Self::Lambda => write!(f, "<null>")?,
-                Self::NamedQuant(name) => write!(f, "{name}")?,
-                Self::UnnamedQuant { name, id } => write!(f, "{name}!{id}")?,
+                QuantKind::Other(kind) => write!(f, "{kind}")?,
+                QuantKind::Lambda => write!(f, "<null>")?,
+                QuantKind::NamedQuant(name) => write!(f, "{name}")?,
+                QuantKind::UnnamedQuant { name, id } => write!(f, "{name}!{id}")?,
             };
             write!(f, "\" ")?;
         }
