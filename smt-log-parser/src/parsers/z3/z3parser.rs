@@ -647,48 +647,15 @@ impl Z3Parser {
     }
 }
 
-pub struct PrettyTextCtxt<'a> {
-    pub terms: &'a TiVec<TermIdx, Term>, 
-    pub quantifiers: &'a TiVec<QuantIdx, Quantifier>,
-    pub ignore_ids: bool,
-    pub quant: Option<&'a Quantifier>,
-}
-
-pub trait Prettify<T> {
-    fn prettify(self, parser: &Z3Parser, ignore_ids: bool) -> T; 
-} 
-
-impl Prettify<String> for TermIdx {
-    fn prettify(self, parser: &Z3Parser, ignore_ids: bool) -> String {
-        let mut ctxt = PrettyTextCtxt {
-            terms: &parser.terms,
-            quantifiers: &parser.quantifiers,
-            ignore_ids,
-            quant: None,
-        };
-        let term = parser.terms.get(self).unwrap();
-        term.pretty_text(&mut ctxt)
+impl std::ops::Index<TermIdx> for Z3Parser {
+    type Output = Term;
+    fn index(&self, idx: TermIdx) -> &Self::Output {
+        &self.terms[idx]
     }
 }
-
-impl Prettify<Vec<String>> for Vec<TermIdx> {
-    fn prettify(self, parser: &Z3Parser, ignore_ids: bool) -> Vec<String> {
-        self
-            .iter()
-            .map(|tidx| tidx.prettify(parser, ignore_ids))
-            .collect()
-    }
-}
-
-impl Prettify<String> for QuantIdx {
-    fn prettify(self, parser: &Z3Parser, ignore_ids: bool) -> String {
-        let mut ctxt = PrettyTextCtxt {
-            terms: &parser.terms,
-            quantifiers: &parser.quantifiers,
-            ignore_ids,
-            quant: None,
-        };
-        let quant = parser.quantifiers.get(self).unwrap();
-        quant.pretty_text(&mut ctxt)
+impl std::ops::Index<QuantIdx> for Z3Parser {
+    type Output = Quantifier;
+    fn index(&self, idx: QuantIdx) -> &Self::Output {
+        &self.quantifiers[idx]
     }
 }

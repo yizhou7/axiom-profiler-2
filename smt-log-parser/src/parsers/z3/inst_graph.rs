@@ -11,9 +11,10 @@ use petgraph::{
 use petgraph::{Direction, Graph};
 use std::fmt;
 
+use crate::display_with::{DisplayCtxt, DisplayWithCtxt};
 use crate::items::{BlamedTermItem, InstIdx, QuantIdx, TermIdx, DepType, Dependency};
 
-use super::z3parser::{Z3Parser, Prettify};
+use super::z3parser::Z3Parser;
 
 #[derive(Clone, Copy, Default)]
 pub struct NodeData {
@@ -394,8 +395,15 @@ impl InstGraph {
 
     pub fn get_edge_info(&self, edge_index: EdgeIndex, parser: std::rc::Rc<Z3Parser>, ignore_ids: bool) -> Option<EdgeInfo> {
         if let Some(edge_data) = self.orig_graph.edge_weight(edge_index) {
+            let ctxt = DisplayCtxt {
+                parser: &*parser,
+
+                display_term_ids: !ignore_ids,
+                display_quantifier_name: false,
+                use_mathematical_symbols: true,
+            };
             let blame_term_idx = edge_data.blame_term_idx.unwrap();
-            let blame_term = blame_term_idx.prettify(&parser, ignore_ids);
+            let blame_term = format!("{}", blame_term_idx.with(&ctxt));
             let (from, to) = self.orig_graph.edge_endpoints(edge_index).unwrap();
             Some(EdgeInfo { edge_data: *edge_data, blame_term, from, to, })
         } else {
@@ -409,13 +417,21 @@ impl InstGraph {
             .node_weight(NodeIndex::new(node_index))
             .unwrap();
         if let Some(iidx) = inst_idx {
+            let ctxt = DisplayCtxt {
+                parser: &*parser,
+
+                display_term_ids: !ignore_ids,
+                display_quantifier_name: false,
+                use_mathematical_symbols: true,
+            };
+
             let inst = parser.instantiations.get(*iidx).unwrap();
             let pretty_blamed_terms = inst
                 .blamed_terms
                 .iter()
                 .map(|term| match term {
-                    BlamedTermItem::Single(t) => t.prettify(&parser, ignore_ids),
-                    BlamedTermItem::Pair(t1, t2) => format!("{} = {}", t1.prettify(&parser, ignore_ids), t2.prettify(&parser, ignore_ids)),
+                    BlamedTermItem::Single(t) => format!("{}", t.with(&ctxt)),
+                    BlamedTermItem::Pair(t1, t2) => format!("{} = {}", t1.with(&ctxt), t2.with(&ctxt)),
                 })
                 .collect::<Vec<String>>();
             let inst_info = InstInfo {
@@ -423,7 +439,7 @@ impl InstGraph {
                 line_no: inst.line_no,
                 fingerprint: *inst.fingerprint,
                 resulting_term: if let Some(t) = inst.resulting_term {
-                    Some(t.prettify(&parser, ignore_ids))
+                    Some(format!("{}", t.with(&ctxt)))
                 } else {
                     None
                 },
@@ -431,16 +447,16 @@ impl InstGraph {
                 cost: inst.cost,
                 quant: inst.quant,
                 quant_discovered: inst.quant_discovered,
-                formula: inst.quant.prettify(&parser, ignore_ids),
+                formula: format!("{}", inst.quant.with(&ctxt)),
                 pattern: if let Some(t) = inst.pattern {
-                    Some(t.prettify(&parser, ignore_ids))
+                    Some(format!("{}", t.with(&ctxt)))
                 } else {
                     None
                 },
-                yields_terms: inst.yields_terms.clone().prettify(&parser, ignore_ids),
-                bound_terms: inst.bound_terms.clone().prettify(&parser, ignore_ids),
+                yields_terms: inst.yields_terms.iter().map(|&tidx| format!("{}", tidx.with(&ctxt))).collect(),
+                bound_terms: inst.bound_terms.iter().map(|&tidx| format!("{}", tidx.with(&ctxt))).collect(),
                 blamed_terms: pretty_blamed_terms,
-                equality_expls: inst.equality_expls.clone().prettify(&parser, ignore_ids),
+                equality_expls: inst.equality_expls.iter().map(|&tidx| format!("{}", tidx.with(&ctxt))).collect(),
                 dep_instantiations: Vec::new(),
                 node_index: NodeIndex::new(node_index),
             };

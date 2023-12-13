@@ -3,8 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt;
 
-use crate::parsers::z3::z3parser::PrettyTextCtxt;
-
 #[macro_export]
 macro_rules! idx {
     ($struct:ident, $prefix:tt) => {
@@ -51,80 +49,17 @@ pub struct Term {
     pub equality_expls: Vec<EqualityExpl>,
 }
 
-impl fmt::Display for Term {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{self:?}\n")
-    }
-}
-
-impl Term {
-    pub fn pretty_text(&self, ctxt: &mut PrettyTextCtxt) -> String {
-        // Within the body of the term of a quantified formula, we 
-        // want to replace the quantified variables by their names
-        // for this, we need to store the quantifier in the context
-        if let TermKind::Quant(qidx) = self.kind { 
-            let quant = ctxt.quantifiers.get(qidx);
-            ctxt.quant = quant;
-        }
-        let child_text: Vec<String> = self
-            .child_ids
-            .iter()
-            .map(|c| ctxt.terms[*c].pretty_text(ctxt))
-            .collect();
-        if child_text.is_empty() {
-            let kind = match self.kind {
-                TermKind::Var(qvar) if ctxt.quant.is_some() => {
-                    match ctxt.quant.unwrap().vars.as_ref().unwrap() {
-                        VarNames::NameAndType(vars) => {
-                            if let Some(var_name) = vars.get(qvar) {
-                                var_name.0.clone()
-                            } else {
-                                format!("{}", self.kind)
-                            }
-                        },
-                        _ => format!("{}", self.kind),
-                    }
-                }, 
-                _ => format!("{}", self.kind)
-            };
-            if !ctxt.ignore_ids {
-                format!("{}[{}]", kind, self.id)
-            } else {
-                if let Some(meaning) = &self.meaning {
-                    format!("{}", meaning.value)
-                } else {
-                    format!("{}", kind)
-                }
-            }
-        } else {
-            if !ctxt.ignore_ids {
-                format!("{}[{}]({})", self.kind, self.id, child_text.join(", "))
-            } else {
-                let value = if let Some(ref meaning) = &self.meaning {
-                    meaning.value.clone()
-                } else {
-                    format!("{}", self.kind)
-                };
-                format!("{}({})", value, child_text.join(", "))
-            }
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TermKind {
     Var(usize),
-    ProofOrApp { is_proof: bool, name: String },
+    ProofOrApp(ProofOrApp),
     Quant(QuantIdx),
 }
-impl fmt::Display for TermKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Var(id) => write!(f, "qvar_{id}"),
-            Self::ProofOrApp { name, .. } => write!(f, "{name}"),
-            Self::Quant(idx) => write!(f, "{idx}"),
-        }
-    }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ProofOrApp {
+    pub is_proof: bool,
+    pub name: String,
 }
 
 impl TermKind {
@@ -134,7 +69,7 @@ impl TermKind {
     }
     pub(crate) fn parse_proof_app(is_proof: bool, name: &str) -> Self {
         let name = name.to_string();
-        Self::ProofOrApp { is_proof, name }
+        Self::ProofOrApp(ProofOrApp { is_proof, name })
     }
     pub fn quant_idx(&self) -> Option<QuantIdx> {
         match self {
@@ -142,6 +77,26 @@ impl TermKind {
             _ => None,
         }
     }
+}
+
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Meaning {
+    /// The theory in which the value should be interpreted (e.g. `bv`)
+    pub theory: String,
+    /// The value of the term (e.g. `#x0000000000000001` or `#b1`)
+    pub value: String,
+}
+
+
+/// A Z3 quantifier and associated data.
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct Quantifier {
+    pub kind: QuantKind,
+    pub num_vars: usize,
+    pub term: Option<TermIdx>,
+    pub cost: f32,
+    pub instances: Vec<InstIdx>,
+    pub vars: Option<VarNames>,
 }
 
 /// Represents an ID string of the form `name!id`.
@@ -155,16 +110,6 @@ pub enum QuantKind {
         name: String,
         id: usize,
     },
-}
-impl fmt::Display for QuantKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Other(kind) => write!(f, "{kind}"),
-            Self::Lambda => write!(f, "<null>"),
-            Self::NamedQuant(name) => write!(f, "{name}"),
-            Self::UnnamedQuant { name, id } => write!(f, "{name}!{id}"),
-        }
-    }
 }
 
 impl QuantKind {
@@ -191,65 +136,6 @@ impl QuantKind {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct Meaning {
-    /// The theory in which the value should be interpreted (e.g. `bv`)
-    pub theory: String,
-    /// The value of the term (e.g. `#x0000000000000001` or `#b1`)
-    pub value: String,
-}
-
-/// A Z3 quantifier and associated data.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct Quantifier {
-    pub kind: QuantKind,
-    pub num_vars: usize,
-    pub term: Option<TermIdx>,
-    pub cost: f32,
-    pub instances: Vec<InstIdx>,
-    pub vars: Option<VarNames>,
-}
-
-impl fmt::Display for Quantifier {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "(name: {}", self.kind)?;
-        if let Some(term) = &self.term {
-            write!(f, "[{term}]")?;
-        } else {
-            write!(f, "[N/A]")?;
-        }
-        write!(
-            f,
-            ", vars: {:?}({}), cost: {}, instances: {} {:?})\n",
-            self.vars,
-            self.num_vars,
-            self.cost,
-            self.instances.len(),
-            self.instances
-        )
-    }
-}
-impl Quantifier {
-pub fn pretty_text(&self, ctxt: &mut PrettyTextCtxt) -> String {
-        if let Some(term) = &self.term {
-            let var_text: Vec<String> = (0..self.num_vars)
-                .map(|idx| {
-                    let name = VarNames::get_name(&self.vars, idx);
-                    let ty = VarNames::get_type(&self.vars, idx);
-                    format!("{name}{ty}")
-                })
-                .collect();
-            format!(
-                "FORALL {}({})",
-                var_text.join(", "),
-                ctxt.terms[*term].pretty_text(ctxt)
-            )
-        } else {
-            self.kind.to_string()
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum VarNames {
     TypeOnly(Vec<String>),
@@ -259,7 +145,8 @@ impl VarNames {
     pub fn get_name(this: &Option<Self>, idx: usize) -> String {
         match this {
             None | Some(Self::TypeOnly(_)) => format!("qvar_{idx}"),
-            Some(Self::NameAndType(names)) => names[idx].0.clone(),
+            Some(Self::NameAndType(names)) if idx < names.len() => names[idx].0.clone(),
+            _ => format!("E_qvar_{idx}"), // TODO: should be fixed with push/pop handling
         }
     }
     pub fn get_type(this: &Option<Self>, idx: usize) -> String {
