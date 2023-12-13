@@ -296,8 +296,8 @@ impl InstGraph {
             let max_parent_depth = parents
                 .map(|nx| subtree_rooted_at_node.node_weight(nx).unwrap().max_depth)
                 .max(); 
-            if let Some(_) = max_parent_depth {
-                subtree_rooted_at_node[nx].max_depth += 1;
+            if let Some(depth) = max_parent_depth {
+                subtree_rooted_at_node[nx].max_depth = depth + 1;
             }
         }
         let furthest_away_node_idx = subtree_rooted_at_node
@@ -314,7 +314,6 @@ impl InstGraph {
             visitor.push(furthest_away_node_idx);
         }
         while let Some(curr) = visitor.pop() {
-            log!(format!("Visiting node {} on longest path", curr.index()));
             longest_path.push(curr);
             self.orig_graph[curr].visible = true;
             let curr_distance = subtree_rooted_at_node.node_weight(curr).unwrap().max_depth;
