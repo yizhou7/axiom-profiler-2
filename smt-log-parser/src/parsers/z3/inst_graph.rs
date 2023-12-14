@@ -3,6 +3,7 @@ use gloo_console::log;
 use petgraph::graph::{Edge, NodeIndex};
 use petgraph::stable_graph::StableGraph;
 use petgraph::visit::{IntoEdgeReferences, Bfs, Topo};
+use petgraph::visit::{IntoEdgeReferences, Bfs, Topo};
 use petgraph::{
     stable_graph::EdgeIndex,
     visit::{Dfs, EdgeRef},
@@ -10,6 +11,7 @@ use petgraph::{
 };
 use petgraph::{Direction, Graph};
 use std::fmt;
+use roaring::bitmap::RoaringBitmap;
 
 use crate::display_with::{DisplayCtxt, DisplayWithCtxt};
 use crate::items::{BlamedTermItem, InstIdx, QuantIdx, TermIdx, DepType, Dependency};
@@ -31,6 +33,7 @@ pub struct NodeData {
     branching_rank: usize,
     pub min_depth: Option<usize>,
     max_depth: usize, 
+    topo_ord: usize,
 }
 
 impl fmt::Debug for NodeData {
@@ -96,6 +99,7 @@ pub struct InstGraph {
     node_of_line_nr: FxHashMap<usize, NodeIndex>, // line number => node-index
     cost_ranked_node_indices: Vec<NodeIndex>,
     branching_ranked_node_indices: Vec<NodeIndex>,
+    tr_closure: Vec<RoaringBitmap>,
 }
 
 enum InstOrder {
@@ -159,12 +163,13 @@ impl InstGraph {
             .collect();
         // add all edges (u,v) in out_set x in_set to the new_inst_graph where v is reachable from u in the original graph
         // and (u,v) is not an edge in the original graph, i.e., all indirect edges
+        log!(format!("Computing intersection of OUT x IN with transitive closure"));
         for &u in &out_set {
             for &v in &in_set {
                 let old_u = new_inst_graph.node_weight(u).unwrap().orig_graph_idx;
                 let old_v = new_inst_graph.node_weight(v).unwrap().orig_graph_idx;
-                if old_u != old_v && !self.orig_graph.contains_edge(old_u, old_v)
-                    && petgraph::algo::has_path_connecting(&self.orig_graph, old_u, old_v, None)
+                if old_u != old_v && !self.orig_graph.contains_edge(old_u, old_v) && self.tr_closure_contains_edge(old_u, old_v)
+                    // && petgraph::algo::has_path_connecting(&self.orig_graph, old_u, old_v, None)
                 {
                     new_inst_graph.add_edge(
                         u,
@@ -178,12 +183,14 @@ impl InstGraph {
                 }
             }
         }
+        log!(format!("Topologically sorting new_inst_graph"));
         // compute transitive reduction to minimize |E| and not clutter the graph
         let toposorted_dag = petgraph::algo::toposort(&new_inst_graph, None).unwrap();
         let (intermediate, _) = petgraph::algo::tred::dag_to_toposorted_adjacency_list::<_, u32>(
             &new_inst_graph,
             &toposorted_dag,
         );
+        log!(format!("Computing transitive reduction"));
         let (tred, _) = petgraph::algo::tred::dag_transitive_reduction_closure(&intermediate);
         // remove all edges since we only want the direct edges and the indirect edges in the transitive reduction in the final graph
         new_inst_graph.clear_edges();
@@ -220,9 +227,13 @@ impl InstGraph {
         (
             self.visible_graph.node_count(),
             self.visible_graph.edge_count(),
-            prev_node_count > curr_node_count,
-            prev_edge_count > curr_edge_count
         )
+    }
+
+    fn tr_closure_contains_edge(&self, from: NodeIndex, to: NodeIndex) -> bool {
+        let topo_ord_from = self.orig_graph.node_weight(from).unwrap().topo_ord;
+        let from_bitset = &self.tr_closure[topo_ord_from];
+        from_bitset.contains(to.index() as u32)
     }
 
     pub fn keep_n_most_costly(&mut self, n: usize) {
@@ -517,6 +528,7 @@ impl InstGraph {
                     branching_rank: 0,
                     min_depth: None,
                     max_depth: 0,
+                    topo_ord: 0,
                 });
             }
         }
@@ -628,6 +640,45 @@ impl InstGraph {
                 node_weight.max_depth = depth + 1; 
             }
         }
+        // efficiently compute transitive closure with a vector of FixedBitSet's
+        log!("Computing topological order");
+        let mut topo = Topo::new(petgraph::visit::Reversed(&self.orig_graph));
+        // assign topological orders to each node
+        let mut topo_ord = self.orig_graph.node_count() - 1;
+        while let Some(nx) = topo.next(petgraph::visit::Reversed(&self.orig_graph)) {
+            self.orig_graph[nx].topo_ord = topo_ord;
+            if topo_ord > 0 {
+                topo_ord -= 1;
+            }
+        }
+        log!("Building fixedbitsets");
+        self.tr_closure = vec![RoaringBitmap::new(); self.orig_graph.node_count()];
+        // note that we are storing the FixedBitSet's of each node index in topological order!
+        log!("Computing transitive closure");
+        let mut topo = Topo::new(petgraph::visit::Reversed(&self.orig_graph));
+        let mut bitsets = self.tr_closure.as_mut_slice();
+        let mut ord = self.orig_graph.node_count() - 1;
+        while let Some((last, others)) = bitsets.split_last_mut() {
+            if let Some(nx) = topo.next(petgraph::visit::Reversed(&self.orig_graph)) {
+                // log!(format!("Visiting node {} with topo ord {} to compute bitset", nx.index(), ord));
+                last.insert(nx.index() as u32);
+                for pred in self.orig_graph.neighbors_directed(nx, Incoming) {
+                    // log!(format!("Visiting predecessor {} of node {} to compute bitset", pred.index(), nx.index()));
+                    let pred_topo_ord = self.orig_graph.node_weight(pred).unwrap().topo_ord;
+                    let pred_bitset = others.get_mut(pred_topo_ord).unwrap();
+                    *pred_bitset |= &*last;
+                    // log!(format!("The bitset of pred {} with topo ord {} is {}", pred.index(), pred_topo_ord, pred_bitset));
+                }
+                // log!(format!("After for loop of node {}", nx.index()));
+                // log!(format!("The bitset of node {} is {}", nx.index(), last));
+            }
+            bitsets = others;
+            if ord > 0 {
+                ord -= 1;
+            }
+            // log!(format!("After for if-let"));
+        }
+        log!("Finished computing transitive closure");
         self.visible_graph = self.orig_graph.clone();
     }
 
