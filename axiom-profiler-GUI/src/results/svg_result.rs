@@ -140,7 +140,7 @@ impl Component for SVGResult {
             }
             Msg::ResetGraph => {
                 log::debug!("Resetting graph");
-                self.inst_graph.reset();
+                self.inst_graph.reset_visibility_to(true);
                 false
             }
             Msg::RenderGraph(UserPermission { permission }) => {

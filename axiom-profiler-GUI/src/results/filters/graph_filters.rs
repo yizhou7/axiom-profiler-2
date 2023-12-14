@@ -20,6 +20,7 @@ pub enum Filter {
     VisitSubTreeWithRoot(NodeIndex, bool),
     MaxDepth(usize),
     ShowLongestPath(NodeIndex),
+    ShowMatchingLoops,
 }
 
 impl Display for Filter {
@@ -46,6 +47,7 @@ impl Display for Filter {
             },
             Self::MaxDepth(depth) => write!(f, "Show nodes up to depth {}", depth),
             Self::ShowLongestPath(node) => write!(f, "Showing longest path through node {}", node.index()),
+            Self::ShowMatchingLoops => write!(f, "Showing matching loops (experimental)"),
         }
     }
 }
@@ -68,6 +70,7 @@ impl Filter {
             Filter::VisitSourceTree(nidx, retain) => graph.visit_ancestors(nidx, retain),
             Filter::MaxDepth(depth) => graph.retain_nodes(|node: &NodeData| node.min_depth.unwrap() <= depth),
             Filter::ShowLongestPath(nidx) => return Some(graph.show_longest_path_through(nidx)),
+            Filter::ShowMatchingLoops => graph.show_matching_loops(), 
         }
         None
     }
@@ -110,6 +113,10 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
         let max_depth = max_depth.clone();
         let callback = props.add_filters.clone();
         Callback::from(move |_| callback.emit(vec![Filter::MaxDepth(max_depth.value)]))
+    };
+    let show_matching_loops = {
+        let callback = props.add_filters.clone();
+        Callback::from(move |_| callback.emit(vec![Filter::ShowMatchingLoops]))
     };
     html! {
         <div>
@@ -157,6 +164,10 @@ pub fn graph_filter(props: &GraphFilterProps) -> Html {
                     placeholder={""}
                 />
                 <button onclick={add_max_depth_filter}>{"Add"}</button>
+            </div>
+            <div>
+                <label for="matching_loops">{"Show matching loops"}</label>
+                <button onclick={show_matching_loops} id="matching_loops">{"Add"}</button>
             </div>
             {if selected_insts.len() > 0 {
                 html! {

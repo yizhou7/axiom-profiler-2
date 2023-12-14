@@ -1,4 +1,4 @@
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 use gloo_console::log;
 use petgraph::graph::{Edge, NodeIndex};
 use petgraph::stable_graph::StableGraph;
@@ -16,6 +16,8 @@ use crate::display_with::{DisplayCtxt, DisplayWithCtxt};
 use crate::items::{BlamedTermItem, InstIdx, QuantIdx, TermIdx, DepType, Dependency};
 
 use super::z3parser::Z3Parser;
+
+const MATCHING_LOOP_LOWER_BOUND: usize = 3;
 
 #[derive(Clone, Copy, Default)]
 pub struct NodeData {
@@ -99,6 +101,7 @@ pub struct InstGraph {
     cost_ranked_node_indices: Vec<NodeIndex>,
     branching_ranked_node_indices: Vec<NodeIndex>,
     tr_closure: Vec<RoaringBitmap>,
+    non_theory_quants: FxHashSet<QuantIdx>,
 }
 
 enum InstOrder {
@@ -394,9 +397,74 @@ impl InstGraph {
     //     }
     // }
 
-    pub fn reset(&mut self) {
+    pub fn show_matching_loops(&mut self) {
+        let mut matching_loops: Vec<Vec<NodeIndex>> = Vec::new();
+        for quant in self.non_theory_quants.clone() {
+            // log!(format!("Processing quant {}", quant));
+            self.reset_visibility_to(true);
+            self.retain_nodes(|node: &NodeData| !node.is_theory_inst && node.quant_idx == quant);
+            self.retain_visible_nodes_and_reconnect();
+            let mut subgraph_of_quant: Graph<NodeData, EdgeData> = Graph::from(self.visible_graph.clone());
+            let longest_path = Self::find_longest_path(&mut subgraph_of_quant);
+            matching_loops.push(longest_path);
+        }
+        self.reset_visibility_to(false);
+        for matching_loop in matching_loops {
+            if matching_loop.len() >= MATCHING_LOOP_LOWER_BOUND {
+                for node in matching_loop {
+                    // log!(format!("Node {} is part of a matching loop", node.index()));
+                    self.orig_graph[node].visible = true;
+                }
+            }
+        }
+    }
+
+    fn find_longest_path(graph: &mut Graph<NodeData, EdgeData>) -> Vec<NodeIndex> {
+        // traverse this subtree in topological order to compute longest distances from node
+        let mut topo = Topo::new(&*graph);
+        while let Some(nx) = topo.next(&*graph) {
+            let parents = graph.neighbors_directed(nx, Incoming); 
+            let max_parent_depth = parents
+                .map(|nx| graph.node_weight(nx).unwrap().max_depth)
+                .max(); 
+            if let Some(depth) = max_parent_depth {
+                // log!(format!("Computing depth {} for node {}", depth + 1, nx.index()));
+                graph[nx].max_depth = depth + 1;
+            } else {
+                graph[nx].max_depth = 0;
+                // log!(format!("Computing depth {} for node {}", 0, nx.index()));
+            }
+        }
+        let furthest_away_node_idx = graph 
+            .node_indices()
+            .max_by(|node_a, node_b| graph.node_weight(*node_a).unwrap().max_depth.cmp(&graph.node_weight(*node_b).unwrap().max_depth))
+            .unwrap();
+        // log!(format!("Furthest away node is {}", furthest_away_node_idx.index()));
+        // backtrack a longest path from furthest away node in subgraph until we reach a root 
+        let mut longest_path: Vec<NodeIndex> = Vec::new();
+        let mut visitor: Vec<NodeIndex>= Vec::new();
+        visitor.push(furthest_away_node_idx);
+        while let Some(curr) = visitor.pop() {
+            // log!(format!("Backtracking. Currently at node {}", curr.index()));
+            longest_path.push(graph.node_weight(curr).unwrap().orig_graph_idx);
+            let curr_distance = graph.node_weight(curr).unwrap().max_depth;
+            let pred = graph 
+                .neighbors_directed(curr, Incoming)
+                .filter(|pred| { 
+                    let pred_distance = graph.node_weight(*pred).unwrap().max_depth; 
+                    pred_distance == curr_distance - 1 
+                })
+                .last();
+            if let Some(node) = pred {
+                visitor.push(node);
+            }
+        }
+        longest_path
+    }
+
+    pub fn reset_visibility_to(&mut self, visibility: bool) {
         for node in self.orig_graph.node_weights_mut() {
-            node.visible = true;
+            node.visible = visibility;
         }
     }
 
@@ -536,6 +604,10 @@ impl InstGraph {
                     max_depth: 0,
                     topo_ord: 0,
                 });
+                if !dep.quant_discovered {
+                    self.non_theory_quants.insert(quant_idx);
+                    // log!(format!("Inserting quant {} into non_theory_quants", quant_idx));
+                }
             }
         }
         // then add all edges between nodes
