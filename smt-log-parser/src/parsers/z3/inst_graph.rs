@@ -3,7 +3,6 @@ use gloo_console::log;
 use petgraph::graph::{Edge, NodeIndex};
 use petgraph::stable_graph::StableGraph;
 use petgraph::visit::{IntoEdgeReferences, Bfs, Topo};
-use petgraph::visit::{IntoEdgeReferences, Bfs, Topo};
 use petgraph::{
     stable_graph::EdgeIndex,
     visit::{Dfs, EdgeRef},
@@ -107,6 +106,13 @@ enum InstOrder {
     Cost
 }
 
+pub struct VisibleGraphInfo {
+    pub node_count: usize,
+    pub edge_count: usize,
+    pub node_count_decreased: bool,
+    pub edge_count_decreased: bool,
+}
+
 impl InstGraph {
     pub fn from(parser: &Z3Parser) -> Self {
         let mut inst_graph = Self::default();
@@ -122,7 +128,7 @@ impl InstGraph {
         }
     }
 
-    pub fn retain_visible_nodes_and_reconnect(&mut self) -> (usize, usize, bool, bool) {
+    pub fn retain_visible_nodes_and_reconnect(&mut self) -> VisibleGraphInfo {
         let prev_node_count = self.visible_graph.node_count();
         let prev_edge_count = self.visible_graph.edge_count();
         // retain all visible nodes
@@ -224,10 +230,12 @@ impl InstGraph {
         self.visible_graph = new_inst_graph;
         let curr_node_count = self.visible_graph.node_count();
         let curr_edge_count = self.visible_graph.edge_count();
-        (
-            self.visible_graph.node_count(),
-            self.visible_graph.edge_count(),
-        )
+        VisibleGraphInfo { 
+            node_count: self.visible_graph.node_count(),
+            edge_count: self.visible_graph.edge_count(),
+            node_count_decreased: curr_node_count < prev_node_count,
+            edge_count_decreased: curr_edge_count < prev_edge_count,
+        }
     }
 
     fn tr_closure_contains_edge(&self, from: NodeIndex, to: NodeIndex) -> bool {
@@ -329,7 +337,6 @@ impl InstGraph {
             longest_path.push(curr);
             self.orig_graph[curr].visible = true;
             let curr_distance = subtree_rooted_at_node.node_weight(curr).unwrap().max_depth;
-            // log!(format!("Node {} has distance {} from {}", curr.index(), curr_distance, ))
             let pred = subtree_rooted_at_node
                 .neighbors_directed(curr, Incoming)
                 .filter(|pred| { 
@@ -347,7 +354,6 @@ impl InstGraph {
             longest_path.push(curr);
             self.orig_graph[curr].visible = true;
             let curr_distance = self.orig_graph.node_weight(curr).unwrap().max_depth;
-            // log!(format!("Node {} has distance {} from {}", curr.index(), curr_distance, ))
             let pred = self.orig_graph 
                 .neighbors_directed(curr, Incoming)
                 .filter(|pred| { 
@@ -653,30 +659,24 @@ impl InstGraph {
         }
         log!("Building fixedbitsets");
         self.tr_closure = vec![RoaringBitmap::new(); self.orig_graph.node_count()];
-        // note that we are storing the FixedBitSet's of each node index in topological order!
+        // note that we are storing the bitsets's of each node index in topological order!
         log!("Computing transitive closure");
         let mut topo = Topo::new(petgraph::visit::Reversed(&self.orig_graph));
         let mut bitsets = self.tr_closure.as_mut_slice();
         let mut ord = self.orig_graph.node_count() - 1;
         while let Some((last, others)) = bitsets.split_last_mut() {
             if let Some(nx) = topo.next(petgraph::visit::Reversed(&self.orig_graph)) {
-                // log!(format!("Visiting node {} with topo ord {} to compute bitset", nx.index(), ord));
                 last.insert(nx.index() as u32);
                 for pred in self.orig_graph.neighbors_directed(nx, Incoming) {
-                    // log!(format!("Visiting predecessor {} of node {} to compute bitset", pred.index(), nx.index()));
                     let pred_topo_ord = self.orig_graph.node_weight(pred).unwrap().topo_ord;
                     let pred_bitset = others.get_mut(pred_topo_ord).unwrap();
                     *pred_bitset |= &*last;
-                    // log!(format!("The bitset of pred {} with topo ord {} is {}", pred.index(), pred_topo_ord, pred_bitset));
                 }
-                // log!(format!("After for loop of node {}", nx.index()));
-                // log!(format!("The bitset of node {} is {}", nx.index(), last));
             }
             bitsets = others;
             if ord > 0 {
                 ord -= 1;
             }
-            // log!(format!("After for if-let"));
         }
         log!("Finished computing transitive closure");
         self.visible_graph = self.orig_graph.clone();

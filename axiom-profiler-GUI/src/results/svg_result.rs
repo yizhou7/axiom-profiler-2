@@ -5,7 +5,6 @@ use super::{filters::{
     filter_chain::{FilterChain, Msg as FilterChainMsg},
     graph_filters::Filter,
 }, worker::Worker};
-// use super::graph::graph_container::GraphContainer;
 use material_yew::WeakComponentLink;
 use num_format::{Locale, ToFormattedString};
 use petgraph::dot::{Config, Dot};
@@ -14,7 +13,7 @@ use smt_log_parser::{
     items::{QuantIdx, DepType::Equality},
     parsers::{
         z3::{
-            inst_graph::{EdgeType, InstGraph, InstInfo, EdgeInfo},
+            inst_graph::{EdgeType, InstGraph, InstInfo, EdgeInfo, VisibleGraphInfo},
             z3parser::Z3Parser,
         },
         LogParser,
@@ -143,7 +142,7 @@ impl Component for SVGResult {
                 false
             }
             Msg::RenderGraph(UserPermission { permission }) => {
-                let (node_count, edge_count, node_count_decreased, edge_count_decreased) = self.inst_graph.retain_visible_nodes_and_reconnect();
+                let VisibleGraphInfo { node_count, edge_count, node_count_decreased, edge_count_decreased } = self.inst_graph.retain_visible_nodes_and_reconnect();
                 log::debug!("The current node count is {}", node_count);
                 self.graph_dim.node_count = node_count;
                 self.graph_dim.edge_count = edge_count;
