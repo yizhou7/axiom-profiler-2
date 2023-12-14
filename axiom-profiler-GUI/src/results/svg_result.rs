@@ -288,7 +288,7 @@ impl Component for SVGResult {
                     }
                     true
                 } else {
-                    false
+                    true
                 }
             }
             Msg::UpdateSelectedNodes(nodes) => {
