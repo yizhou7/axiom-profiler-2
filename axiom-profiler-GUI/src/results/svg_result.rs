@@ -26,6 +26,8 @@ use yew::prelude::*;
 
 pub const EDGE_LIMIT: usize = 500;
 pub const DEFAULT_NODE_COUNT: usize = 125;
+pub const NODE_COLOUR_SATURATION: f64 = 0.4;
+pub const NODE_COLOUR_VALUE: f64 = 0.95;
 
 pub enum Msg {
     UpdateSvgText(AttrValue, bool),
@@ -204,7 +206,7 @@ impl Component for SVGResult {
                                             (true, false) => "invhouse",
                                             (true, true) => "diamond",
                                         },
-                                        self.colour_map.get(&node_data.quant_idx, 0.4),
+                                        self.colour_map.get(&node_data.quant_idx, NODE_COLOUR_SATURATION),
                                     )
                             },
                         )
@@ -385,7 +387,7 @@ impl QuantIdxToColourMap {
         HSVColour {
             hue: idx_perm as f64 / self.total_nr_of_quants as f64,
             sat,
-            val: 0.95,
+            val: NODE_COLOUR_VALUE,
         }
     }
 
