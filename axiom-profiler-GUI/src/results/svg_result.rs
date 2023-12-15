@@ -24,7 +24,7 @@ use viz_js::VizInstance;
 use web_sys::window;
 use yew::prelude::*;
 
-pub const EDGE_LIMIT: usize = 500;
+pub const EDGE_LIMIT: usize = 2000;
 pub const DEFAULT_NODE_COUNT: usize = 125;
 pub const NODE_COLOUR_SATURATION: f64 = 0.4;
 pub const NODE_COLOUR_VALUE: f64 = 0.95;
