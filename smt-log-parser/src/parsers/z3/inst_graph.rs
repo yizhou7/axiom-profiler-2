@@ -138,23 +138,12 @@ impl InstGraph {
         let mut new_inst_graph = self.orig_graph.filter_map(
             |_, &node| {
                 if node.visible {
-                    if node.orig_graph_idx.index() == 148881 || node.orig_graph_idx.index() == 148877 {
-                        log!(format!("Including node {} among visible nodes", node.orig_graph_idx.index()));
-                    }
                     Some(node)
                 } else {
                     None
                 }
             },
-            |edge_idx, &edge_data| {
-                let (from, to) = self.orig_graph.edge_endpoints(edge_idx).unwrap(); 
-                match (from.index(), to.index()) {
-                    (148881, _) => log!("Adding edge with source 148881 to filtered graph"),
-                    (_, 148881) => log!("Adding edge with target 148881 to filtered graph"),
-                    (_, _) => log!(""),
-                } 
-                Some(edge_data)
-            },
+            |_, &edge_data| Some(edge_data),
         );
         // remember all direct edges (will be added to the graph in the end)
         let direct_edges = new_inst_graph
@@ -183,7 +172,7 @@ impl InstGraph {
             .collect();
         // add all edges (u,v) in out_set x in_set to the new_inst_graph where v is reachable from u in the original graph
         // and (u,v) is not an edge in the original graph, i.e., all indirect edges
-        // log!(format!("Computing intersection of OUT x IN with transitive closure"));
+        log!(format!("Computing intersection of OUT x IN with transitive closure"));
         for &u in &out_set {
             for &v in &in_set {
                 let old_u = new_inst_graph.node_weight(u).unwrap().orig_graph_idx;
@@ -203,14 +192,14 @@ impl InstGraph {
                 }
             }
         }
-        // log!(format!("Topologically sorting new_inst_graph"));
+        log!(format!("Topologically sorting new_inst_graph"));
         // compute transitive reduction to minimize |E| and not clutter the graph
         let toposorted_dag = petgraph::algo::toposort(&new_inst_graph, None).unwrap();
         let (intermediate, _) = petgraph::algo::tred::dag_to_toposorted_adjacency_list::<_, u32>(
             &new_inst_graph,
             &toposorted_dag,
         );
-        // log!(format!("Computing transitive reduction"));
+        log!(format!("Computing transitive reduction"));
         let (tred, _) = petgraph::algo::tred::dag_transitive_reduction_closure(&intermediate);
         // remove all edges since we only want the direct edges and the indirect edges in the transitive reduction in the final graph
         new_inst_graph.clear_edges();
@@ -411,11 +400,12 @@ impl InstGraph {
     pub fn show_matching_loops(&mut self) {
         let mut matching_loops: Vec<Vec<NodeIndex>> = Vec::new();
         for quant in self.non_theory_quants.clone() {
-            log!(format!("Processing quant {}", quant));
+            // log!(format!("Processing quant {}", quant));
             self.reset_visibility_to(true);
             self.retain_nodes(|node: &NodeData| !node.is_theory_inst && node.quant_idx == quant);
-            self.retain_visible_nodes_and_reconnect(); 
-            let longest_path = Self::find_longest_path(self.visible_graph.clone());
+            self.retain_visible_nodes_and_reconnect();
+            let mut subgraph_of_quant: Graph<NodeData, EdgeData> = Graph::from(self.visible_graph.clone());
+            let longest_path = Self::find_longest_path(&mut subgraph_of_quant);
             matching_loops.push(longest_path);
         }
         self.reset_visibility_to(false);
@@ -429,10 +419,10 @@ impl InstGraph {
         }
     }
 
-    fn find_longest_path(mut graph: Graph<NodeData, EdgeData>) -> Vec<NodeIndex> {
+    fn find_longest_path(graph: &mut Graph<NodeData, EdgeData>) -> Vec<NodeIndex> {
         // traverse this subtree in topological order to compute longest distances from node
-        let mut topo = Topo::new(&graph);
-        while let Some(nx) = topo.next(&graph) {
+        let mut topo = Topo::new(&*graph);
+        while let Some(nx) = topo.next(&*graph) {
             let parents = graph.neighbors_directed(nx, Incoming); 
             let max_parent_depth = parents
                 .map(|nx| graph.node_weight(nx).unwrap().max_depth)
@@ -443,14 +433,6 @@ impl InstGraph {
             } else {
                 graph[nx].max_depth = 0;
                 // log!(format!("Computing depth {} for node {}", 0, nx.index()));
-            }
-            let orig_idx = graph.node_weight(nx).unwrap().orig_graph_idx;
-            if orig_idx.index() == 148886 || orig_idx.index() == 148881 || orig_idx.index() == 148877 || orig_idx.index() == 148869 || orig_idx.index() == 148873 {
-                log!(format!("The node with original index {} has distance {} in the subgraph and new index {}", orig_idx.index(), graph[nx].max_depth, nx.index()));
-            }
-            if orig_idx.index() == 148881 {
-                let parent_count = graph.neighbors_directed(nx, Incoming).count();
-                log!(format!("The node with original index {} has {} parents in the subgraph", orig_idx.index(), parent_count));
             }
         }
         let furthest_away_node_idx = graph 
@@ -464,20 +446,12 @@ impl InstGraph {
         visitor.push(furthest_away_node_idx);
         while let Some(curr) = visitor.pop() {
             // log!(format!("Backtracking. Currently at node {}", curr.index()));
-            let orig_idx = graph.node_weight(curr).unwrap().orig_graph_idx;
-            longest_path.push(orig_idx);
+            longest_path.push(graph.node_weight(curr).unwrap().orig_graph_idx);
             let curr_distance = graph.node_weight(curr).unwrap().max_depth;
-            if orig_idx.index() == 148886 || orig_idx.index() == 148881 {
-                log!(format!("The node with original index {} has distance {} in the subgraph", orig_idx.index(), curr_distance));
-            }
             let pred = graph 
                 .neighbors_directed(curr, Incoming)
                 .filter(|pred| { 
                     let pred_distance = graph.node_weight(*pred).unwrap().max_depth; 
-                    if orig_idx.index() == 148886 {
-                        let pred_orig_idx = graph.node_weight(*pred).unwrap().orig_graph_idx;
-                        log!(format!("The node with original index {} and distance {} has pred {} in the subgraph with distance {}", orig_idx.index(), curr_distance, pred_orig_idx.index(), pred_distance));
-                    }
                     pred_distance == curr_distance - 1 
                 })
                 .last();
