@@ -11,6 +11,7 @@ use petgraph::{
 use petgraph::{Direction, Graph};
 use std::fmt;
 use roaring::bitmap::RoaringBitmap;
+use itertools::Itertools;
 
 use crate::display_with::{DisplayCtxt, DisplayWithCtxt};
 use crate::items::{BlamedTermItem, InstIdx, QuantIdx, TermIdx, DepType, Dependency};
@@ -172,7 +173,6 @@ impl InstGraph {
             .collect();
         // add all edges (u,v) in out_set x in_set to the new_inst_graph where v is reachable from u in the original graph
         // and (u,v) is not an edge in the original graph, i.e., all indirect edges
-        log!(format!("Computing intersection of OUT x IN with transitive closure"));
         for &u in &out_set {
             for &v in &in_set {
                 let old_u = new_inst_graph.node_weight(u).unwrap().orig_graph_idx;
@@ -192,14 +192,12 @@ impl InstGraph {
                 }
             }
         }
-        log!(format!("Topologically sorting new_inst_graph"));
         // compute transitive reduction to minimize |E| and not clutter the graph
         let toposorted_dag = petgraph::algo::toposort(&new_inst_graph, None).unwrap();
         let (intermediate, _) = petgraph::algo::tred::dag_to_toposorted_adjacency_list::<_, u32>(
             &new_inst_graph,
             &toposorted_dag,
         );
-        log!(format!("Computing transitive reduction"));
         let (tred, _) = petgraph::algo::tred::dag_transitive_reduction_closure(&intermediate);
         // remove all edges since we only want the direct edges and the indirect edges in the transitive reduction in the final graph
         new_inst_graph.clear_edges();
@@ -398,28 +396,28 @@ impl InstGraph {
     // }
 
     pub fn show_matching_loops(&mut self) {
-        let mut matching_loops: Vec<Vec<NodeIndex>> = Vec::new();
+        let mut all_matching_loops_per_quant: Vec<Vec<Vec<NodeIndex>>> = Vec::new();
         for quant in self.non_theory_quants.clone() {
             // log!(format!("Processing quant {}", quant));
             self.reset_visibility_to(true);
             self.retain_nodes(|node: &NodeData| !node.is_theory_inst && node.quant_idx == quant);
             self.retain_visible_nodes_and_reconnect();
-            let mut subgraph_of_quant: Graph<NodeData, EdgeData> = Graph::from(self.visible_graph.clone());
-            let longest_path = Self::find_longest_path(&mut subgraph_of_quant);
-            matching_loops.push(longest_path);
+            let matching_loops = Self::find_longest_paths(&mut self.visible_graph);
+            all_matching_loops_per_quant.push(matching_loops);
         }
         self.reset_visibility_to(false);
-        for matching_loop in matching_loops {
-            if matching_loop.len() >= MATCHING_LOOP_LOWER_BOUND {
-                for node in matching_loop {
-                    // log!(format!("Node {} is part of a matching loop", node.index()));
-                    self.orig_graph[node].visible = true;
+        for matching_loops in all_matching_loops_per_quant {
+            for matching_loop in matching_loops {
+                if matching_loop.len() >= MATCHING_LOOP_LOWER_BOUND {
+                    for node in matching_loop {
+                        self.orig_graph[node].visible = true;
+                    }
                 }
             }
         }
     }
 
-    fn find_longest_path(graph: &mut Graph<NodeData, EdgeData>) -> Vec<NodeIndex> {
+    fn find_longest_paths(graph: &mut Graph<NodeData, EdgeData>) -> Vec<Vec<NodeIndex>> {
         // traverse this subtree in topological order to compute longest distances from node
         let mut topo = Topo::new(&*graph);
         while let Some(nx) = topo.next(&*graph) {
@@ -428,38 +426,38 @@ impl InstGraph {
                 .map(|nx| graph.node_weight(nx).unwrap().max_depth)
                 .max(); 
             if let Some(depth) = max_parent_depth {
-                // log!(format!("Computing depth {} for node {}", depth + 1, nx.index()));
                 graph[nx].max_depth = depth + 1;
             } else {
                 graph[nx].max_depth = 0;
-                // log!(format!("Computing depth {} for node {}", 0, nx.index()));
             }
         }
-        let furthest_away_node_idx = graph 
+        let furthest_away_nodes = graph 
             .node_indices()
-            .max_by(|node_a, node_b| graph.node_weight(*node_a).unwrap().max_depth.cmp(&graph.node_weight(*node_b).unwrap().max_depth))
-            .unwrap();
-        // log!(format!("Furthest away node is {}", furthest_away_node_idx.index()));
-        // backtrack a longest path from furthest away node in subgraph until we reach a root 
-        let mut longest_path: Vec<NodeIndex> = Vec::new();
+            .max_set_by(|node_a, node_b| 
+                graph.node_weight(*node_a).unwrap().max_depth.cmp(&graph.node_weight(*node_b).unwrap().max_depth)
+            );
+        // backtrack a longest path from furthest away nodes in subgraph until we reach a root 
+        let mut longest_paths: Vec<Vec<NodeIndex>> = Vec::new();
         let mut visitor: Vec<NodeIndex>= Vec::new();
-        visitor.push(furthest_away_node_idx);
-        while let Some(curr) = visitor.pop() {
-            // log!(format!("Backtracking. Currently at node {}", curr.index()));
-            longest_path.push(graph.node_weight(curr).unwrap().orig_graph_idx);
-            let curr_distance = graph.node_weight(curr).unwrap().max_depth;
-            let pred = graph 
-                .neighbors_directed(curr, Incoming)
-                .filter(|pred| { 
-                    let pred_distance = graph.node_weight(*pred).unwrap().max_depth; 
-                    pred_distance == curr_distance - 1 
-                })
-                .last();
-            if let Some(node) = pred {
-                visitor.push(node);
+        for furthest_away_node in furthest_away_nodes {
+            visitor.push(furthest_away_node);
+            let mut longest_path = Vec::new();
+            while let Some(curr) = visitor.pop() {
+                longest_path.push(graph.node_weight(curr).unwrap().orig_graph_idx);
+                let curr_distance = graph.node_weight(curr).unwrap().max_depth;
+                let mut preds = graph 
+                    .neighbors_directed(curr, Incoming)
+                    .filter(|pred| { 
+                        let pred_distance = graph.node_weight(*pred).unwrap().max_depth; 
+                        pred_distance == curr_distance - 1 
+                    });
+                while let Some(pred) = preds.next() {
+                    visitor.push(pred);
+                }
             }
+            longest_paths.push(longest_path);
         }
-        longest_path
+        longest_paths
     }
 
     pub fn reset_visibility_to(&mut self, visibility: bool) {
@@ -719,7 +717,6 @@ impl InstGraph {
             }
         }
         // efficiently compute transitive closure with a vector of FixedBitSet's
-        log!("Computing topological order");
         let mut topo = Topo::new(petgraph::visit::Reversed(&self.orig_graph));
         // assign topological orders to each node
         let mut topo_ord = self.orig_graph.node_count() - 1;
@@ -729,10 +726,8 @@ impl InstGraph {
                 topo_ord -= 1;
             }
         }
-        log!("Building fixedbitsets");
         self.tr_closure = vec![RoaringBitmap::new(); self.orig_graph.node_count()];
         // note that we are storing the bitsets's of each node index in topological order!
-        log!("Computing transitive closure");
         let mut topo = Topo::new(petgraph::visit::Reversed(&self.orig_graph));
         let mut bitsets = self.tr_closure.as_mut_slice();
         let mut ord = self.orig_graph.node_count() - 1;
