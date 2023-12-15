@@ -399,16 +399,18 @@ impl QuantIdxToColourMap {
         };
         let nz = NonZeroUsize::new(n);
         if let Some(nz) = nz {
+            // according to prime number theorem, the number of primes less than or equal to N is roughly N/ln(N)
+            let nr_primes_smaller_than_n = n as f64/f64::ln(n as f64);
             primal::Primes::all()
-                // Start from 13 since the smaller ones don't permute so nicely.
-                .skip(5)
+                // Start from "middle prime" smaller than n since both the very large and very small ones don't permute so nicely.
+                .skip((nr_primes_smaller_than_n/2.0).ceil() as usize)
                 // SAFETY: returned primes will never be zero.
                 .map(|p| unsafe { NonZeroUsize::new_unchecked(p) })
                 // Find the first prime that is coprime to `nz`.
                 .find(|&prime| nz.get() % prime.get() != 0)
+                .unwrap()
                 // Will always succeed since any prime larger than `nz / 2` is
                 // coprime. Terminates since `nz != 0`.
-                .unwrap()
         } else {
             ONE
         }
