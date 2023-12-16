@@ -8,11 +8,31 @@ use crate::{items::*, parsers::z3::z3parser::Z3Parser};
 
 pub trait DisplayWithCtxt<Ctxt, Data>: Sized {
     fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &Ctxt, data: &mut Data) -> fmt::Result;
-    fn with<'a>(self, ctxt: &'a Ctxt) -> DisplayWrapperEmpty<'a, Ctxt, Data, Self> where Self: Copy, Data: Default {
-        DisplayWrapperEmpty { inner: self, ctxt, data_marker: std::marker::PhantomData }
+    fn with<'a>(self, ctxt: &'a Ctxt) -> DisplayWrapperEmpty<'a, Ctxt, Data, Self>
+    where
+        Self: Copy,
+        Data: Default,
+    {
+        DisplayWrapperEmpty {
+            inner: self,
+            ctxt,
+            data_marker: std::marker::PhantomData,
+        }
     }
-    fn with_data<'a, 'b>(self, ctxt: &'a Ctxt, data: &'b mut Data) -> DisplayWrapperData<'a, 'b, Ctxt, Data, Self> where Self: Copy {
-        DisplayWrapperData { inner: self, ctxt, data, data_marker: std::marker::PhantomData }
+    fn with_data<'a, 'b>(
+        self,
+        ctxt: &'a Ctxt,
+        data: &'b mut Data,
+    ) -> DisplayWrapperData<'a, 'b, Ctxt, Data, Self>
+    where
+        Self: Copy,
+    {
+        DisplayWrapperData {
+            inner: self,
+            ctxt,
+            data,
+            data_marker: std::marker::PhantomData,
+        }
     }
 }
 
@@ -22,7 +42,9 @@ pub struct DisplayWrapperEmpty<'a, Ctxt, Data: Default, T: DisplayWithCtxt<Ctxt,
     data_marker: std::marker::PhantomData<Data>,
 }
 
-impl<'a, Ctxt, Data: Default, T: DisplayWithCtxt<Ctxt, Data> + Copy> fmt::Display for DisplayWrapperEmpty<'a, Ctxt, Data, T> {
+impl<'a, Ctxt, Data: Default, T: DisplayWithCtxt<Ctxt, Data> + Copy> fmt::Display
+    for DisplayWrapperEmpty<'a, Ctxt, Data, T>
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.inner.fmt_with(f, self.ctxt, &mut Data::default())
     }
@@ -35,7 +57,9 @@ pub struct DisplayWrapperData<'a, 'b, Ctxt, Data, T: DisplayWithCtxt<Ctxt, Data>
     data_marker: std::marker::PhantomData<&'b mut Data>,
 }
 
-impl<'a, 'b, Ctxt, Data, T: DisplayWithCtxt<Ctxt, Data> + Copy> fmt::Display for DisplayWrapperData<'a, 'b, Ctxt, Data, T> {
+impl<'a, 'b, Ctxt, Data, T: DisplayWithCtxt<Ctxt, Data> + Copy> fmt::Display
+    for DisplayWrapperData<'a, 'b, Ctxt, Data, T>
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // SAFETY: DisplayWrapperData is only created in `with_data` where it blocks the input `data`.
         let data = unsafe { &mut *self.data };
@@ -73,19 +97,31 @@ mod private {
                 bind_power: super::NO_BIND,
             }
         }
-        pub(super) fn with_children<T>(&mut self, children: &'a [TermIdx], f: impl FnOnce(&mut Self) -> T) -> T {
+        pub(super) fn with_children<T>(
+            &mut self,
+            children: &'a [TermIdx],
+            f: impl FnOnce(&mut Self) -> T,
+        ) -> T {
             let old = std::mem::replace(&mut self.children, children);
             let result = f(self);
             self.children = old;
             result
         }
-        pub(super) fn with_quant<T>(&mut self, quant: &'a Quantifier, f: impl FnOnce(&mut Self) -> T) -> T {
+        pub(super) fn with_quant<T>(
+            &mut self,
+            quant: &'a Quantifier,
+            f: impl FnOnce(&mut Self) -> T,
+        ) -> T {
             self.quant.push(quant);
             let result = f(self);
             self.quant.pop();
             result
         }
-        pub(super) fn with_bind_power<T>(&mut self, bind_power: u8, f: impl FnOnce(&mut Self, u8) -> T) -> T {
+        pub(super) fn with_bind_power<T>(
+            &mut self,
+            bind_power: u8,
+            f: impl FnOnce(&mut Self, u8) -> T,
+        ) -> T {
             let old = std::mem::replace(&mut self.bind_power, bind_power);
             let result = f(self, old);
             self.bind_power = old;
@@ -96,13 +132,16 @@ mod private {
             self.children
         }
         pub(super) fn find_quant(&self, idx: &mut usize) -> Option<&'a Quantifier> {
-            self.quant.iter().find(|q| {
-                let found = q.num_vars > *idx;
-                if !found {
-                    *idx -= q.num_vars;
-                }
-                found
-            }).copied()
+            self.quant
+                .iter()
+                .find(|q| {
+                    let found = q.num_vars > *idx;
+                    if !found {
+                        *idx -= q.num_vars;
+                    }
+                    found
+                })
+                .copied()
         }
     }
 }
@@ -117,14 +156,35 @@ const PREFIX_BIND: u8 = 31;
 ////////////
 
 impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for TermIdx {
-    fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'_>, _data: &mut ()) -> fmt::Result {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'_>,
+        _data: &mut (),
+    ) -> fmt::Result {
         let mut data = DisplayData::new();
         write!(f, "{}", ctxt.parser[self].with_data(ctxt, &mut data))
     }
 }
 
+impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for ENodeIdx {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'_>,
+        data: &mut (),
+    ) -> fmt::Result {
+        ctxt.parser[self].owner.fmt_with(f, ctxt, data)
+    }
+}
+
 impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for QuantIdx {
-    fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'_>, data: &mut ()) -> fmt::Result {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'_>,
+        data: &mut (),
+    ) -> fmt::Result {
         let quant = &ctxt.parser[self];
         if let Some(term) = quant.term {
             term.fmt_with(f, ctxt, data)
@@ -137,12 +197,45 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for QuantIdx {
     }
 }
 
+impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for &MatchKind {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'_>,
+        data: &mut (),
+    ) -> fmt::Result {
+        match self {
+            MatchKind::MBQI { quant, .. } => {
+                write!(f, "[MBQI]")?;
+                quant.fmt_with(f, ctxt, data)
+            }
+            MatchKind::TheorySolving { axiom_id, .. } => {
+                write!(f, "[TheorySolving] {}#", axiom_id.namespace)?;
+                if let Some(id) = axiom_id.id {
+                    write!(f, "{id}")?;
+                }
+                Ok(())
+            }
+            MatchKind::Axiom { axiom, .. } => {
+                write!(f, "[Ax]")?;
+                axiom.fmt_with(f, ctxt, data)
+            }
+            MatchKind::Quantifier { quant, .. } => quant.fmt_with(f, ctxt, data),
+        }
+    }
+}
+
 ////////////
 // Item defs
 ////////////
 
 impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Term {
-    fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'a>, data: &mut DisplayData<'a>) -> fmt::Result {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'a>,
+        data: &mut DisplayData<'a>,
+    ) -> fmt::Result {
         data.with_children(&self.child_ids, |data| {
             if ctxt.display_term_ids {
                 write!(f, "[{}]", self.id)?;
@@ -158,16 +251,19 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Term {
 }
 
 impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a TermKind {
-    fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'a>, data: &mut DisplayData<'a>) -> fmt::Result {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'a>,
+        data: &mut DisplayData<'a>,
+    ) -> fmt::Result {
         match self {
             &TermKind::Var(mut idx) => {
                 let vars = data.find_quant(&mut idx).map(|q| &q.vars).unwrap_or(&None);
                 write!(f, "{}", VarNames::get_name(vars, idx))
             }
-            TermKind::ProofOrApp(poa) =>
-                write!(f, "{}", poa.with_data(ctxt, data)),
-            TermKind::Quant(idx) =>
-                write!(f, "{}", ctxt.parser[*idx].with_data(ctxt, data)),
+            TermKind::ProofOrApp(poa) => write!(f, "{}", poa.with_data(ctxt, data)),
+            TermKind::Quant(idx) => write!(f, "{}", ctxt.parser[*idx].with_data(ctxt, data)),
         }
     }
 }
@@ -180,7 +276,12 @@ enum ProofOrAppKind {
     Proof,
 }
 impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a ProofOrApp {
-    fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'a>, data: &mut DisplayData<'a>) -> fmt::Result {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'a>,
+        data: &mut DisplayData<'a>,
+    ) -> fmt::Result {
         let math = ctxt.use_mathematical_symbols;
         use ProofOrAppKind::*;
         let (name, kind) = match self.name.as_ref() {
@@ -192,7 +293,7 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a ProofOrApp {
             "or" => (if math { "∨" } else { "||" }, Inline),
             "<=" => (if math { "≤" } else { "<=" }, Inline),
             ">=" => (if math { "≥" } else { ">=" }, Inline),
-            op@("=" | "+" | "-" | "*" | "/" | "<" | ">") => (op, Inline),
+            op @ ("=" | "+" | "-" | "*" | "/" | "<" | ">") => (op, Inline),
 
             "pattern" => ("pattern", Pattern),
 
@@ -252,17 +353,27 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a ProofOrApp {
 }
 
 impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Meaning {
-    fn fmt_with(self, f: &mut fmt::Formatter<'_>, _ctxt: &DisplayCtxt<'a>, _data: &mut DisplayData<'a>) -> fmt::Result {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        _ctxt: &DisplayCtxt<'a>,
+        _data: &mut DisplayData<'a>,
+    ) -> fmt::Result {
         match self.theory.as_ref() {
             "arith" | "bv" => write!(f, "{}", self.value),
-            theory=> write!(f, "/{theory} {}\\", self.value),
+            theory => write!(f, "/{theory} {}\\", self.value),
         }
     }
 }
 
 impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
-    fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'a>, data: &mut DisplayData<'a>) -> fmt::Result {
-        // Within the body of the term of a quantified formula, we 
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'a>,
+        data: &mut DisplayData<'a>,
+    ) -> fmt::Result {
+        // Within the body of the term of a quantified formula, we
         // want to replace the quantified variables by their names
         // for this, we need to store the quantifier in the context
         data.with_quant(self, |data| {
@@ -299,7 +410,12 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
 }
 
 impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a QuantKind {
-    fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'a>, _data: &mut DisplayData<'a>) -> fmt::Result {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'a>,
+        _data: &mut DisplayData<'a>,
+    ) -> fmt::Result {
         if ctxt.use_mathematical_symbols {
             write!(f, "∀ ")?;
         } else {

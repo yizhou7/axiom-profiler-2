@@ -12,7 +12,7 @@ use yew::prelude::*;
 pub enum Filter {
     MaxNodeIdx(usize),
     IgnoreTheorySolving,
-    IgnoreQuantifier(QuantIdx),
+    IgnoreQuantifier(Option<QuantIdx>),
     MaxInsts(usize),
     MaxBranching(usize),
     ShowNeighbours(NodeIndex, Direction),
@@ -28,7 +28,10 @@ impl Display for Filter {
         match self {
             Self::MaxNodeIdx(node_idx) => write!(f, "Only show nodes up to index {}", node_idx),
             Self::IgnoreTheorySolving => write!(f, "Ignore theory solving instantiations"),
-            Self::IgnoreQuantifier(qidx) => {
+            Self::IgnoreQuantifier(None) => {
+                write!(f, "Ignore instantiations without quantifier")
+            }
+            Self::IgnoreQuantifier(Some(qidx)) => {
                 write!(f, "Ignore instantiations of quantifier {}", qidx)
             }
             Self::MaxInsts(max) => write!(f, "Show the {} most expensive instantiations", max),
@@ -61,7 +64,7 @@ impl Filter {
                 graph.retain_nodes(|node: &NodeData| !node.is_theory_inst)
             }
             Filter::IgnoreQuantifier(qidx) => {
-                graph.retain_nodes(|node: &NodeData| node.quant_idx != qidx)
+                graph.retain_nodes(|node: &NodeData| node.mkind.quant_idx() != qidx)
             }
             Filter::MaxInsts(n) => graph.keep_n_most_costly(n),
             Filter::MaxBranching(n) => graph.keep_n_most_branching(n),

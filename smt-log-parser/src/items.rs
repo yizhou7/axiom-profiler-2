@@ -27,7 +27,7 @@ macro_rules! idx {
         }
         impl fmt::Display for $struct {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "{:?}", self)
+                write!(f, "{}", self.0)
             }
         }
     };
@@ -35,7 +35,9 @@ macro_rules! idx {
 idx!(TermIdx, "t{}");
 idx!(QuantIdx, "q{}");
 idx!(InstIdx, "i{}");
-idx!(DepIdx, "d{}");
+idx!(StackIdx, "s{}");
+idx!(ENodeIdx, "e{}");
+idx!(MatchIdx, "m{}");
 
 /// A Z3 term and associated data.
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -45,8 +47,6 @@ pub struct Term {
     pub meaning: Option<Meaning>,
     pub child_ids: Vec<TermIdx>,
     pub dep_term_ids: Vec<TermIdx>,
-    pub resp_inst: Option<InstIdx>,
-    pub equality_expls: Vec<EqualityExpl>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -86,7 +86,6 @@ pub struct Meaning {
     /// The value of the term (e.g. `#x0000000000000001` or `#b1`)
     pub value: String,
 }
-
 
 /// A Z3 quantifier and associated data.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -170,46 +169,130 @@ impl VarNames {
 /// A Z3 instantiation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Instantiation {
-    pub match_line_no: usize,
-    pub line_no: Option<usize>,
+    pub match_: MatchIdx,
     pub fingerprint: Fingerprint,
-    pub resulting_term: Option<TermIdx>,
-    pub z3_gen: Option<u32>,
+    pub proof_id: Option<Result<TermIdx, TermId>>,
+    pub z3_generation: Option<u32>,
     pub cost: f32,
-    pub quant: QuantIdx,
-    pub quant_discovered: bool,
-    pub pattern: Option<TermIdx>,
-    pub yields_terms: Vec<TermIdx>,
-    pub bound_terms: Vec<TermIdx>,
-    pub blamed_terms: Vec<BlamedTermItem>,
-    pub equality_expls: Vec<TermIdx>,
-    pub dep_instantiations: Vec<InstIdx>,
+    pub yields_terms: Vec<ENodeIdx>,
 }
 
-impl fmt::Display for Instantiation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "(@{}, @{}, {:x}, resulting: {:?}, gen: {:?}, cost: {}, Q: {}, ",
-            self.line_no.unwrap_or_default(),
-            self.match_line_no,
-            *self.fingerprint,
-            self.resulting_term,
-            self.z3_gen,
-            self.cost,
-            self.quant
-        )?;
-        write!(
-            f,
-            "pattern: {:?}, yields: {:?}({}), bound: {:?}, blamed: {:?}, eq: {:?}, dep: {:?})\n",
-            self.pattern,
-            self.yields_terms,
-            self.yields_terms.len(),
-            self.bound_terms,
-            self.blamed_terms,
-            self.equality_expls,
-            self.dep_instantiations
-        )
+impl Instantiation {
+    pub fn get_resulting_term(&self) -> Option<TermIdx> {
+        self.proof_id.as_ref()?.as_ref().ok().copied()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Match {
+    pub kind: MatchKind,
+    pub blamed: Vec<BlameKind>,
+}
+
+impl Match {
+    pub fn due_to_enodes(&self) -> impl Iterator<Item = (&BlameKind, ENodeIdx)> + '_ {
+        self.blamed
+            .iter()
+            .filter_map(|x| x.get_blame_node().map(|b| (x, b)))
+    }
+    pub fn due_to_terms(&self) -> impl Iterator<Item = ENodeIdx> + '_ {
+        self.blamed.iter().filter_map(|x| match x {
+            BlameKind::Term { term } => Some(*term),
+            _ => None,
+        })
+    }
+    pub fn due_to_equalities(&self) -> impl Iterator<Item = ENodeIdx> + '_ {
+        self.blamed.iter().filter_map(|x| match x {
+            BlameKind::Equality { eq } => Some(*eq),
+            _ => None,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum MatchKind {
+    MBQI {
+        quant: QuantIdx,
+        bound_terms: Vec<ENodeIdx>,
+    },
+    TheorySolving {
+        axiom_id: TermId,
+        bound_terms: Vec<TermIdx>,
+        rewrite_of: Option<TermIdx>,
+    },
+    Axiom {
+        axiom: QuantIdx,
+        pattern: TermIdx,
+        bound_terms: Vec<TermIdx>,
+    },
+    Quantifier {
+        quant: QuantIdx,
+        pattern: TermIdx,
+        bound_terms: Vec<ENodeIdx>,
+    },
+}
+impl MatchKind {
+    pub fn quant_idx(&self) -> Option<QuantIdx> {
+        match self {
+            Self::MBQI { quant, .. }
+            | Self::Axiom { axiom: quant, .. }
+            | Self::Quantifier { quant, .. } => Some(*quant),
+            _ => None,
+        }
+    }
+    pub fn pattern(&self) -> Option<TermIdx> {
+        match self {
+            Self::MBQI { .. } | Self::TheorySolving { .. } => None,
+            Self::Axiom { pattern, .. } | Self::Quantifier { pattern, .. } => Some(*pattern),
+        }
+    }
+    pub fn bound_terms<T>(
+        &self,
+        enode: impl Fn(ENodeIdx) -> T,
+        term: impl Fn(TermIdx) -> T,
+    ) -> Vec<T> {
+        match self {
+            Self::MBQI { bound_terms, .. } | Self::Quantifier { bound_terms, .. } => {
+                bound_terms.iter().map(|&x| enode(x)).collect()
+            }
+            Self::TheorySolving { bound_terms, .. } | Self::Axiom { bound_terms, .. } => {
+                bound_terms.iter().map(|&x| term(x)).collect()
+            }
+        }
+    }
+    pub fn is_discovered(&self) -> bool {
+        self.quant_idx().is_none()
+    }
+    pub fn is_mbqi(&self) -> bool {
+        matches!(self, Self::MBQI { .. })
+    }
+    // TODO: this is currently unused
+    pub fn rewrite_of(&self) -> Option<TermIdx> {
+        match self {
+            Self::TheorySolving { rewrite_of, .. } => *rewrite_of,
+            _ => None,
+        }
+    }
+}
+
+/// The kind of dependency between two quantifier instantiations.
+/// - Term: one instantiation produced a term that the other triggered on
+/// - Equality: dependency based on an equality.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum BlameKind {
+    Term { term: ENodeIdx },
+    Equality { eq: ENodeIdx },
+    // TODO: should not happen
+    OtherEquality(EqualityExpl),
+}
+
+impl BlameKind {
+    pub fn get_blame_node(&self) -> Option<ENodeIdx> {
+        match self {
+            Self::Term { term } => Some(*term),
+            Self::Equality { eq } => Some(*eq),
+            Self::OtherEquality(_) => None,
+        }
     }
 }
 
@@ -224,6 +307,9 @@ impl Fingerprint {
             .map(Self)
             .ok()
     }
+    pub fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
 }
 impl std::ops::Deref for Fingerprint {
     type Target = u64;
@@ -231,14 +317,10 @@ impl std::ops::Deref for Fingerprint {
         &self.0
     }
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-/// An entry in the blamed term part of a `[new-match]` Z3 trace line.
-/// - Single: standalone identifier.
-/// - Pair: a pair of identifiers grouped in parentheses. (#A #B)
-pub enum BlamedTermItem {
-    Single(TermIdx),
-    Pair(TermIdx, TermIdx),
+impl fmt::Display for Fingerprint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:x}", self.0)
+    }
 }
 
 /// Represents an ID string of the form `name#id` or `name#`.
@@ -279,13 +361,6 @@ impl<'a> TermIdCow<'a> {
 }
 pub type TermId = TermIdCow<'static>;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum DiscoveredIdCow<'a> {
-    MBQI,
-    TheorySolving(TermIdCow<'a>),
-}
-pub type DiscoveredId = DiscoveredIdCow<'static>;
-
 /// Remapping from `TermId` to `TermIdx`. We want to have a single flat vector
 /// of terms but `TermId`s don't map to this nicely, additionally the `TermId`s
 /// may repeat and so we want to map to the latest current `TermIdx`. Has a
@@ -319,7 +394,7 @@ impl TermIdToIdxMap {
         // The `id` of two different terms may clash and so we may remove
         // a `TermIdx` from the map. This is fine since we want future uses of
         // `id` to refer to the new term and not the old one.
-        vec[id_idx] = Some(idx);
+        vec[id_idx].replace(idx);
     }
     fn get_vec(&self, namespace: &str) -> Option<&Vec<Option<TermIdx>>> {
         if namespace.is_empty() {
@@ -335,84 +410,45 @@ impl TermIdToIdxMap {
     }
 }
 
-/// The type of dependency between two quantifier instantiations.
-/// - None: no dependency, because an instantiation is not dependent on any others.
-/// - Term: dependency based on a match without equalities.
-/// - Equality: dependency based on an equality.
-#[derive(Debug, Clone, Serialize, Deserialize, Copy, PartialEq, Default)]
-pub enum DepType {
-    #[default] None,
-    Term,
-    Equality,
-}
-
-/// A dependency between two quantifier instantiations.
-/// `from` can be 0 to represent instatiations with no dependent instantiations.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Dependency {
-    pub from: usize,
-    pub to: Option<usize>,
-    pub to_iidx: Option<InstIdx>,
-    pub blamed: Option<TermIdx>,
-    pub dep_type: DepType,
-    pub quant: QuantIdx,
-    pub quant_discovered: bool,
-    // pub cost: f64  // may want to just have single score field
-}
-
-impl fmt::Display for Dependency {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "@{} -> @{} ({:?}, {:?}, {})\n",
-            self.from,
-            self.to.unwrap_or_default(),
-            self.blamed,
-            self.dep_type,
-            self.quant
-        )
-    }
-}
-
 /// A Z3 equality explanation.
 /// Root represents a term that is a root of its equivalence class.
 /// All other variants represent an equality between two terms and where it came from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EqualityExpl {
     Root {
-        id: TermIdx,
+        id: ENodeIdx,
     },
     Literal {
-        from: TermIdx,
-        eq: TermIdx,
-        to: TermIdx,
+        from: ENodeIdx,
+        /// The equality term this is from
+        eq: ENodeIdx,
+        to: ENodeIdx,
     },
     Congruence {
-        from: TermIdx,
+        from: ENodeIdx,
         arg_eqs: Vec<(TermIdx, TermIdx)>,
-        to: TermIdx,
+        to: ENodeIdx,
         // add dependent instantiations
     },
     Theory {
-        from: TermIdx,
+        from: ENodeIdx,
         theory: String,
-        to: TermIdx,
+        to: ENodeIdx,
     },
     Axiom {
-        from: TermIdx,
-        to: TermIdx,
+        from: ENodeIdx,
+        to: ENodeIdx,
     },
     Unknown {
         kind: String,
-        from: TermIdx,
+        from: ENodeIdx,
         args: Vec<String>,
-        to: TermIdx,
+        to: ENodeIdx,
     },
 }
 
 impl fmt::Display for EqualityExpl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // println!("{:?}", self);
         match self {
             EqualityExpl::Root { id } => write!(f, "Root {id}\n"),
             EqualityExpl::Literal {
@@ -442,14 +478,38 @@ impl fmt::Display for EqualityExpl {
 }
 
 impl EqualityExpl {
-    pub fn from_to(&self) -> (TermIdx, TermIdx) {
+    pub fn from(&self) -> ENodeIdx {
+        use EqualityExpl::*;
         match *self {
-            EqualityExpl::Root { id } => (id, id),
-            EqualityExpl::Literal { from, to, .. }
-            | EqualityExpl::Congruence { from, to, .. }
-            | EqualityExpl::Theory { from, to, .. }
-            | EqualityExpl::Axiom { from, to, .. }
-            | EqualityExpl::Unknown { from, to, .. } => (from, to),
+            Root { id } => id,
+            Literal { from, .. }
+            | Congruence { from, .. }
+            | Theory { from, .. }
+            | Axiom { from, .. }
+            | Unknown { from, .. } => from,
+        }
+    }
+    pub fn to(&self) -> ENodeIdx {
+        use EqualityExpl::*;
+        match *self {
+            Root { id } => id,
+            Literal { to, .. }
+            | Congruence { to, .. }
+            | Theory { to, .. }
+            | Axiom { to, .. }
+            | Unknown { to, .. } => to,
+        }
+    }
+    pub fn dependency_on(&self) -> Option<ENodeIdx> {
+        use EqualityExpl::*;
+        match *self {
+            Root { .. } => None,
+            Literal { eq, .. } => Some(eq),
+            // TODO: other cases
+            Congruence { .. } => None,
+            Theory { .. } => None,
+            Axiom { .. } => None,
+            Unknown { .. } => None,
         }
     }
 }

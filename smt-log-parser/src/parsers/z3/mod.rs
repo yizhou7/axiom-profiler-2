@@ -2,19 +2,22 @@ use std::fmt::Debug;
 
 use super::LogParser;
 
+pub mod egraph;
+pub mod inst;
 pub mod inst_graph;
+pub mod stack;
+pub mod terms;
 /// Original Z3 log parser. Works with Z3 v.4.12.1, should work with other versions
 /// as long as the log format is the same for the important line cases.
 /// Compare with the log files in the `logs/` folder to see if this is the case.
 pub mod z3parser;
-// pub mod dump;
 
 impl<T: Z3LogParser + Default> LogParser for T {
     fn is_line_start(&mut self, first_byte: u8) -> bool {
         first_byte == b'['
     }
 
-    fn process_line(&mut self, line: &str, line_no: usize) -> bool {
+    fn process_line(&mut self, line: &str, _line_no: usize) -> bool {
         // Much faster than `split_whitespace` or `split(' ')` since it works on
         // [u8] instead of [char] and so doesn't need to convert to UTF-8.
         let mut split = line.split_ascii_whitespace();
@@ -32,9 +35,9 @@ impl<T: Z3LogParser + Default> LogParser for T {
             "[attach-var-names]" => self.attach_var_names(split),
             "[attach-enode]" => self.attach_enode(split),
             "[eq-expl]" => self.eq_expl(split),
-            "[new-match]" => self.new_match(split, line_no),
-            "[inst-discovered]" => self.inst_discovered(split, line_no),
-            "[instance]" => self.instance(split, line_no),
+            "[new-match]" => self.new_match(split),
+            "[inst-discovered]" => self.inst_discovered(split),
+            "[instance]" => self.instance(split),
             "[end-of-instance]" => self.end_of_instance(split),
             "[decide-and-or]" => self.decide_and_or(split),
             "[decide]" => self.decide(split),
@@ -72,14 +75,12 @@ pub trait Z3LogParser: Debug {
     fn attach_var_names<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()>;
     fn attach_enode<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()>;
     fn eq_expl<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()>;
-    fn new_match<'a>(&mut self, l: impl Iterator<Item = &'a str>, line_no: usize) -> Option<()>;
-    fn inst_discovered<'a>(
-        &mut self,
-        l: impl Iterator<Item = &'a str>,
-        line_no: usize,
-    ) -> Option<()>;
-    fn instance<'a>(&mut self, l: impl Iterator<Item = &'a str>, line_no: usize) -> Option<()>;
+    fn new_match<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()>;
+    fn inst_discovered<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()>;
+    fn instance<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()>;
     fn end_of_instance<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()>;
+    fn push<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()>;
+    fn pop<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()>;
     fn eof(&mut self);
 
     // unused in original parser
@@ -90,12 +91,6 @@ pub trait Z3LogParser: Debug {
         DEFAULT
     }
     fn assign<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()> {
-        DEFAULT
-    }
-    fn push<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()> {
-        DEFAULT
-    }
-    fn pop<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()> {
         DEFAULT
     }
     fn begin_check<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Option<()> {

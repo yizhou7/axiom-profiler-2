@@ -10,7 +10,7 @@ use num_format::{Locale, ToFormattedString};
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::{NodeIndex, EdgeIndex};
 use smt_log_parser::{
-    items::{QuantIdx, DepType::Equality},
+    items::{QuantIdx, MatchKind, BlameKind},
     parsers::{
         z3::{
             inst_graph::{EdgeType, InstGraph, InstInfo, EdgeInfo, VisibleGraphInfo},
@@ -89,17 +89,17 @@ impl Component for SVGResult {
         log::debug!("Creating SVGResult component");
         let parser = Z3Parser::from_str(&ctx.props().trace_file_text).process_all();
         let inst_graph = InstGraph::from(&parser);
-        let total_nr_of_quants = parser.total_nr_of_quants();
-        let colour_map = QuantIdxToColourMap::from(total_nr_of_quants);
+        let (quant_count, non_quant_insts) = parser.quant_count_incl_theory_solving();
+        let colour_map = QuantIdxToColourMap::from(quant_count, non_quant_insts);
         let get_node_info = Callback::from({
             let inst_graph = inst_graph.clone();
             move |(node, ignore_ids, parser): (NodeIndex, bool, Rc<Z3Parser>)| {
-            inst_graph.get_instantiation_info(node.index(), parser, ignore_ids).unwrap()
+            inst_graph.get_instantiation_info(node.index(), parser, ignore_ids)
         }});
         let get_edge_info = Callback::from({
             let inst_graph = inst_graph.clone();
             move |(edge, ignore_ids, parser): (EdgeIndex, bool, Rc<Z3Parser>)| {
-            inst_graph.get_edge_info(edge, parser, ignore_ids).unwrap()
+            inst_graph.get_edge_info(edge, parser, ignore_ids)
         }});
         Self {
             parser: Rc::new(parser),
@@ -183,15 +183,15 @@ impl Component for SVGResult {
                                     EdgeType::Indirect => "indirect",
                                 },
                                 match edge_data.weight().edge_type {
-                                    EdgeType::Direct(Equality) => "empty",
+                                    EdgeType::Direct(BlameKind::Equality { .. }) => "empty",
                                     _ => "normal",
-
                                 }
                             ),
                             &|_, (_, node_data)| {
-                                format!("id={} label=\"{}\" style=filled shape={} fillcolor=\"{}\" fontcolor=black gradientangle=90",
+                                format!("id={} label=\"{}\" style=\"{}\" shape={} fillcolor=\"{}\" fontcolor=black gradientangle=90",
                                         format!("node{}", node_data.orig_graph_idx.index()),
                                         node_data.orig_graph_idx.index(),
+                                        if node_data.mkind.is_mbqi() { "filled,dashed" } else { "filled" },
                                         // match (self.inst_graph.node_has_filtered_children(node_data.orig_graph_idx), 
                                         //        self.inst_graph.node_has_filtered_parents(node_data.orig_graph_idx)) {
                                         //     (false, false) => format!("{}", self.colour_map.get(&node_data.quant_idx, 0.7)),
@@ -206,7 +206,7 @@ impl Component for SVGResult {
                                             (true, false) => "invhouse",
                                             (true, true) => "diamond",
                                         },
-                                        self.colour_map.get(&node_data.quant_idx, NODE_COLOUR_SATURATION),
+                                        self.colour_map.get(&node_data.mkind, NODE_COLOUR_SATURATION),
                                     )
                             },
                         )
@@ -364,28 +364,33 @@ impl SVGResult {
 }
 
 struct QuantIdxToColourMap {
-    total_nr_of_quants: usize,
+    total_count: usize,
+    non_quant_insts: bool,
     coprime: NonZeroUsize,
     shift: usize,
 }
 
 impl QuantIdxToColourMap {
-    pub fn from(total_nr_of_quants: usize) -> Self {
+    pub fn from(quant_count: usize, non_quant_insts: bool) -> Self {
+        let total_count = quant_count + non_quant_insts as usize;
         Self {
-            total_nr_of_quants,
-            coprime: Self::find_coprime(total_nr_of_quants),
+            total_count,
+            non_quant_insts,
+            coprime: Self::find_coprime(total_count),
             // Currently `idx == 0` will always have the same hue of 0, if we do
             // not want this behavior pick a random number here instead.
             shift: 0,
         }
     }
 
-    pub fn get(&self, qidx: &QuantIdx, sat: f64) -> HSVColour {
-        let idx = usize::from(*qidx);
-        debug_assert!(idx < self.total_nr_of_quants);
-        let idx_perm = (idx * self.coprime.get() + self.shift) % self.total_nr_of_quants;
+    pub fn get(&self, mkind: &MatchKind, sat: f64) -> HSVColour {
+        let qidx = mkind.quant_idx();
+        debug_assert!(self.non_quant_insts || qidx.is_some());
+        let idx = qidx.map(usize::from).map(|q| q + self.non_quant_insts as usize).unwrap_or(0);
+        debug_assert!(idx < idx);
+        let idx_perm = (idx * self.coprime.get() + self.shift) % self.total_count;
         HSVColour {
-            hue: idx_perm as f64 / self.total_nr_of_quants as f64,
+            hue: idx_perm as f64 / self.total_count as f64,
             sat,
             val: NODE_COLOUR_VALUE,
         }

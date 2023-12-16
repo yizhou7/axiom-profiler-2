@@ -1,4 +1,4 @@
-use fxhash::FxHashMap;
+use fxhash::FxHashSet;
 use typed_index_collections::TiVec;
 
 use crate::{
@@ -6,70 +6,51 @@ use crate::{
     parsers::z3::{VersionInfo, Z3LogParser},
 };
 
+use super::{
+    egraph::{EGraph, ENode},
+    inst::Insts,
+    stack::Stack,
+    terms::Terms,
+};
+
 /// A parser for Z3 log files. Use one of the various `Z3Parser::from_*` methods
 /// to construct this parser.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct Z3Parser {
     pub(super) version_info: Option<VersionInfo>,
-    pub(super) term_id_map: TermIdToIdxMap,
-    pub(super) discovered_map: DiscoveredQuantToIdxMap,
-    pub(super) terms: TiVec<TermIdx, Term>, // [namespace => [ID number => Term]]
-    pub(super) quantifiers: TiVec<QuantIdx, Quantifier>, // [namespace => [ID number => Quantifier]]
-    pub(super) matches: FxHashMap<Fingerprint, Instantiation>, // [match line number => Instantiation]
-    pub(super) instantiations: TiVec<InstIdx, Instantiation>,  // [line number => Instantiation]
-    pub(super) inst_stack: Vec<InstIdx>,
-    pub(super) temp_dependencies: FxHashMap<usize, Vec<Dependency>>, // [match line number => Vec<Dependency>]
-    pub(super) dependencies: Vec<Dependency>,
-}
+    pub(super) terms: Terms,
 
-#[derive(Debug, Default, PartialEq)]
-pub struct DiscoveredQuantToIdxMap {
-    discovered_map: FxHashMap<DiscoveredId, QuantIdx>,
-}
-impl DiscoveredQuantToIdxMap {
-    pub fn discovered_quant(
-        &mut self,
-        id: DiscoveredId,
-        default: impl FnOnce() -> QuantIdx,
-    ) -> QuantIdx {
-        *self.discovered_map.entry(id).or_insert_with(default)
-    }
+    pub(super) quantifiers: TiVec<QuantIdx, Quantifier>,
+
+    pub(super) insts: Insts,
+    pub(super) inst_stack: Vec<InstIdx>,
+
+    pub(super) egraph: EGraph,
+    pub(super) stack: Stack,
 }
 
 impl Z3Parser {
     pub fn version_info(&self) -> Option<&VersionInfo> {
         self.version_info.as_ref()
     }
-    pub fn new_term(&mut self, id: TermIdCow, term: Term) -> TermIdx {
-        let idx = self.terms.next_key();
-        for c in &term.child_ids {
-            self.terms[*c].dep_term_ids.push(idx);
+
+    pub fn parse_existing_enode(&self, id: &str) -> Option<ENodeIdx> {
+        let idx = self.terms.parse_existing_id(id)?;
+        self.egraph.get_enode(idx, &self.stack)
+    }
+    pub fn parse_z3_generation<'a>(
+        l: &mut impl Iterator<Item = &'a str>,
+    ) -> Result<Option<u32>, std::num::ParseIntError> {
+        if let Some(gen) = l.next() {
+            gen.parse::<u32>().map(Some)
+        } else {
+            Ok(None)
         }
-        self.terms.push(term);
-        self.term_id_map.register_term(id, idx);
-        idx
     }
 
-    pub fn discovered_quant(&mut self, id: DiscoveredId, method: &str) -> QuantIdx {
-        self.discovered_map.discovered_quant(id, || {
-            self.quantifiers.push_and_get_key(Quantifier {
-                kind: QuantKind::Other(method.to_string()),
-                num_vars: 0,
-                term: None,
-                instances: Vec::new(),
-                cost: 0.0,
-                vars: None,
-            })
-        })
-    }
-
-    #[must_use]
-    fn parse_existing_id(&self, id: &str) -> Option<TermIdx> {
-        Some(self.term_id_map.get_term(&TermIdCow::parse(id)?).unwrap())
-    }
     #[must_use]
     fn gobble_children<'a>(&self, l: impl Iterator<Item = &'a str>) -> Option<Vec<TermIdx>> {
-        l.map(|id| self.parse_existing_id(id)).collect()
+        l.map(|id| self.terms.parse_existing_id(id)).collect()
     }
     #[must_use]
     fn gobble_var_names_list<'a>(l: impl Iterator<Item = &'a str>) -> Option<VarNames> {
@@ -151,8 +132,8 @@ impl Z3Parser {
         Self::gobble_tuples::<true>(l)
             .map(|t| {
                 let (first, second) = t?;
-                let first = self.parse_existing_id(first)?;
-                let second = self.parse_existing_id(second)?;
+                let first = self.terms.parse_existing_id(first)?;
+                let second = self.terms.parse_existing_id(second)?;
                 Some((first, second))
             })
             .collect()
@@ -177,7 +158,7 @@ impl Z3LogParser for Z3Parser {
         let solver = l.next()?.to_string();
         let version = l.next()?;
         // Return if there is unexpectedly more data
-        l.next().map_or(Some(()), |_| None)?;
+        Self::expect_completed(l)?;
         let version = semver::Version::parse(version).ok()?;
         println!("{solver} {version}");
         self.version_info = Some(VersionInfo { solver, version });
@@ -197,10 +178,8 @@ impl Z3LogParser for Z3Parser {
             meaning: None,
             child_ids: children,
             dep_term_ids: Vec::new(),
-            resp_inst: None,
-            equality_expls: Vec::new(),
         };
-        let tidx = self.new_term(full_id, term);
+        let tidx = self.terms.new_term(full_id, term);
         let q = Quantifier {
             num_vars,
             kind: quant_name,
@@ -218,17 +197,15 @@ impl Z3LogParser for Z3Parser {
         let full_id = l.next().and_then(TermIdCow::parse)?;
         let kind = l.next().and_then(TermKind::parse_var)?;
         // Return if there is unexpectedly more data
-        l.next().map_or(Some(()), |_| None)?;
+        Self::expect_completed(l)?;
         let term = Term {
             id: full_id.into_owned(),
             kind,
             meaning: None,
             child_ids: Vec::new(),
             dep_term_ids: Vec::new(),
-            resp_inst: None,
-            equality_expls: Vec::new(),
         };
-        self.new_term(full_id, term);
+        self.terms.new_term(full_id, term);
         Some(())
     }
 
@@ -247,10 +224,8 @@ impl Z3LogParser for Z3Parser {
             meaning: None,
             child_ids: children,
             dep_term_ids: Vec::new(),
-            resp_inst: None,
-            equality_expls: Vec::new(),
         };
-        self.new_term(full_id, term);
+        self.terms.new_term(full_id, term);
         Some(())
     }
 
@@ -259,7 +234,7 @@ impl Z3LogParser for Z3Parser {
         let theory = l.next()?.to_string();
         let value = l.collect::<Vec<_>>().join(" ");
         let meaning = Meaning { theory, value };
-        let idx = self.parse_existing_id(id)?;
+        let idx = self.terms.parse_existing_id(id)?;
         if let Some(old) = &self.terms[idx].meaning {
             assert_eq!(old, &meaning);
         } else {
@@ -271,72 +246,67 @@ impl Z3LogParser for Z3Parser {
     fn attach_var_names<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let id = l.next()?;
         let var_names = Self::gobble_var_names_list(l)?;
-        let tidx = self.parse_existing_id(id)?;
-        let qidx = self.terms[tidx].kind.quant_idx().unwrap();
+        let tidx = self.terms.parse_existing_id(id)?;
+        let qidx = self.terms[tidx].kind.quant_idx()?;
         assert!(self.quantifiers[qidx].vars.is_none());
         self.quantifiers[qidx].vars = Some(var_names);
         Some(())
     }
 
     fn attach_enode<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
-        let idx = self.parse_existing_id(l.next()?)?;
-        // TODO
-        let _some_number = l.next()?.parse::<usize>().ok()?;
+        let idx = self.terms.parse_existing_id(l.next()?)?;
+        let z3_generation = Self::parse_z3_generation(&mut l).ok()?;
         // Return if there is unexpectedly more data
-        l.next().map_or(Some(()), |_| None)?;
-        // TODO: how should we handle an empty `inst_stack`?
-        if let Some(inst) = self.inst_stack.last() {
-            self.terms[idx].resp_inst = Some(*inst);
-            self.instantiations[*inst].yields_terms.push(idx);
+        Self::expect_completed(l)?;
+
+        let created_by = self.inst_stack.last().copied();
+        let enode = self
+            .egraph
+            .new_enode(created_by, idx, z3_generation, &self.stack);
+        if let Some(inst) = created_by {
+            // If `None` then this is a ground term not created by an instantiation.
+            self.insts[inst].yields_terms.push(enode);
         }
         Some(())
     }
 
     fn eq_expl<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
-        let idx = self.parse_existing_id(l.next()?)?;
+        let from = self.parse_existing_enode(l.next()?)?;
         let kind = l.next()?;
         let eq_expl = {
             let mut kind_dependent_info = Self::iter_until_eq(l.by_ref(), ";");
             match kind {
-                "root" => EqualityExpl::Root { id: idx },
+                "root" => EqualityExpl::Root { id: from },
                 "lit" => {
                     let eq = kind_dependent_info.next()?;
-                    let eq = self.parse_existing_id(eq)?;
+                    let eq = self.parse_existing_enode(eq)?;
                     Self::expect_completed(kind_dependent_info)?;
-                    let to = self.parse_existing_id(l.next()?)?;
-                    EqualityExpl::Literal { from: idx, eq, to }
+                    let to = self.parse_existing_enode(l.next()?)?;
+                    EqualityExpl::Literal { from, eq, to }
                 }
                 "cg" => {
                     let arg_eqs = self.gobble_id_pairs(kind_dependent_info)?;
-                    let to = self.parse_existing_id(l.next()?)?;
-                    EqualityExpl::Congruence {
-                        from: idx,
-                        arg_eqs,
-                        to,
-                    }
+                    let to = self.parse_existing_enode(l.next()?)?;
+                    EqualityExpl::Congruence { from, arg_eqs, to }
                     // For each pair (#A #B), reconstruct dependent equality explanations connecting #A to #B ...
                 }
                 "th" => {
                     let theory = kind_dependent_info.next()?.to_string();
                     Self::expect_completed(kind_dependent_info)?;
-                    let to = self.parse_existing_id(l.next()?)?;
-                    EqualityExpl::Theory {
-                        from: idx,
-                        theory,
-                        to,
-                    }
+                    let to = self.parse_existing_enode(l.next()?)?;
+                    EqualityExpl::Theory { from, theory, to }
                 }
                 "ax" => {
                     Self::expect_completed(kind_dependent_info)?;
-                    let to = self.parse_existing_id(l.next()?)?;
-                    EqualityExpl::Axiom { from: idx, to }
+                    let to = self.parse_existing_enode(l.next()?)?;
+                    EqualityExpl::Axiom { from, to }
                 }
                 kind => {
                     let args = kind_dependent_info.map(String::from).collect();
-                    let to = self.parse_existing_id(l.next()?)?;
+                    let to = self.parse_existing_enode(l.next()?)?;
                     EqualityExpl::Unknown {
                         kind: kind.to_string(),
-                        from: idx,
+                        from,
                         args,
                         to,
                     }
@@ -344,306 +314,206 @@ impl Z3LogParser for Z3Parser {
             }
         };
         // Return if there is unexpectedly more data
-        l.next().map_or(Some(()), |_| None)?;
-        // TODO: can there ever be more than one per term?
-        if !self.terms[idx].equality_expls.contains(&eq_expl) {
-            // TODO: handle `push` and `pop` properly to avoid duplicates?
-            self.terms[idx].equality_expls.push(eq_expl);
-        }
+        Self::expect_completed(l)?;
+
+        self.egraph.new_equality(from, eq_expl);
         Some(())
     }
 
-    fn new_match<'a>(
-        &mut self,
-        mut l: impl Iterator<Item = &'a str>,
-        line_no: usize,
-    ) -> Option<()> {
+    fn new_match<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let fingerprint = l.next().and_then(Fingerprint::parse)?;
-        let idx = self.parse_existing_id(l.next()?)?;
-        let quant = self.terms[idx].kind.quant_idx().unwrap();
-        let pattern = self.parse_existing_id(l.next()?)?;
-        let bound_terms = Self::iter_until_eq(&mut l, ";")
-            .map(|id| self.parse_existing_id(id))
-            .collect::<Option<Vec<_>>>()?;
+        let idx = self.terms.parse_existing_id(l.next()?)?;
+        let quant = self.terms[idx].kind.quant_idx()?;
+        let pattern = self.terms.parse_existing_id(l.next()?)?;
+        let bound_terms = Self::iter_until_eq(&mut l, ";");
+        let is_axiom = fingerprint.is_zero();
 
-        self.temp_dependencies.insert(line_no + 1, Vec::new());
+        let kind = if is_axiom {
+            let bound_terms = bound_terms
+                .map(|id| self.terms.parse_existing_id(id))
+                .collect::<Option<Vec<_>>>()?;
+            MatchKind::Axiom {
+                axiom: quant,
+                pattern,
+                bound_terms,
+            }
+        } else {
+            let bound_terms = bound_terms
+                .map(|id| self.parse_existing_enode(id))
+                .collect::<Option<Vec<_>>>()?;
+            MatchKind::Quantifier {
+                quant,
+                pattern,
+                bound_terms,
+            }
+        };
 
-        let mut equality_expls = Vec::new();
-        let mut blamed_terms = Vec::new();
-        let mut dep_instantiations = Vec::new();
+        let mut blamed = Vec::new();
         while let Some(word) = l.next() {
             if let Some(first_term) = word.strip_prefix('(') {
                 // assumes that if we see "(#A", the next word in the split is "#B)"
                 let second_term = l.next()?.strip_suffix(')')?;
-                let fidx = self.parse_existing_id(first_term)?;
-                let sidx = self.parse_existing_id(second_term)?;
-                if fidx != sidx {
-                    let eqs = &self.terms[fidx].equality_expls;
-                    for eq in eqs.iter().filter(|eq| eq.from_to() == (fidx, sidx)) {
-                        // TODO: why could this never iterate, why could it iterate more than once?
-                        match eq {
-                            EqualityExpl::Root { .. } => (),
-                            EqualityExpl::Literal { eq, .. } => {
-                                if let Some((inst, dep)) =
-                                    self.add_dependency(*eq, DepType::Equality)
-                                {
-                                    self.temp_dependencies
-                                        .get_mut(&(line_no + 1))
-                                        .unwrap()
-                                        .push(dep);
-                                    dep_instantiations.push(inst);
-                                }
-                                equality_expls.push(*eq);
-                            }
-                            EqualityExpl::Congruence { .. } => (), // TODO: need to implement this?
-                            EqualityExpl::Theory { .. } => (),
-                            EqualityExpl::Axiom { .. } => (),
-                            EqualityExpl::Unknown { .. } => (),
-                        }
+                let fidx = self.parse_existing_enode(first_term)?;
+                let sidx = self.parse_existing_enode(second_term)?;
+                let eqs = self
+                    .egraph
+                    .get_equalities(fidx, sidx, &mut FxHashSet::default());
+                debug_assert!(!eqs.is_empty(), "could not find equality {first_term} ({fidx:?}) -> {second_term} ({sidx:?}) ({fingerprint})");
+                for eq in eqs {
+                    if let Some(eq) = eq.dependency_on() {
+                        blamed.push(BlameKind::Equality { eq })
+                    } else {
+                        blamed.push(BlameKind::OtherEquality(eq.clone()))
                     }
-                    // equality_expls.push(fidx);
                 }
-                blamed_terms.push(BlamedTermItem::Pair(fidx, sidx));
             } else {
-                let widx = self.parse_existing_id(word)?;
-                if let Some((inst, dep)) = self.add_dependency(widx, DepType::Term) {
-                    self.temp_dependencies
-                        .get_mut(&(line_no + 1))
-                        .unwrap()
-                        .push(dep);
-                    dep_instantiations.push(inst);
-                }
-                blamed_terms.push(BlamedTermItem::Single(widx));
-            }
+                let term = self.parse_existing_enode(word)?;
+                blamed.push(BlameKind::Term { term })
+            };
         }
-        if dep_instantiations.is_empty() {
-            self.add_blank_dependency_if_needed(quant, false, line_no + 1);
-        }
-        let instant = Instantiation {
-            match_line_no: line_no + 1,
-            line_no: None,
-            fingerprint,
-            resulting_term: None,
-            z3_gen: None,
-            cost: 1.0,
-            quant,
-            quant_discovered: false,
-            pattern: Some(pattern),
-            yields_terms: Vec::new(),
-            bound_terms,
-            blamed_terms,
-            equality_expls,
-            dep_instantiations,
-        };
-        self.matches.insert(fingerprint, instant);
+
+        let match_ = Match { kind, blamed };
+        self.insts.new_match(fingerprint, match_);
         Some(())
     }
 
-    fn inst_discovered<'a>(
-        &mut self,
-        mut l: impl Iterator<Item = &'a str>,
-        line_no: usize,
-    ) -> Option<()> {
+    fn inst_discovered<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let method = l.next()?;
         let fingerprint = Fingerprint::parse(l.next()?)?;
-        let mut dep_instantiations = Vec::new();
-        self.temp_dependencies.insert(line_no + 1, Vec::new());
-        let (quant, bound_terms, blamed_terms) = match method {
-            "theory-solving" => {
-                let ts_id = l.next().and_then(TermIdCow::parse)?;
-                let id = DiscoveredId::TheorySolving(ts_id.into_owned());
-                let quant = self.discovered_quant(id, method);
-                let maybe_semi = l.next(); // Skip `;`
-                                           // Return if there is unexpectedly some string other than `;`
-                maybe_semi
-                    .filter(|s| *s != ";")
-                    .map_or(Some(()), |_| None)?;
 
-                let blamed_terms = l.map(|id| {
-                    let id = self.parse_existing_id(id)?;
-                    if let Some((inst, dep)) = self.add_dependency(id, DepType::Term) {
-                        self.temp_dependencies
-                            .get_mut(&(line_no + 1))
-                            .unwrap()
-                            .push(dep);
-                        dep_instantiations.push(inst);
-                    };
-                    Some(BlamedTermItem::Single(id))
-                });
-                (quant, Vec::new(), blamed_terms.collect::<Option<Vec<_>>>()?)
+        let (kind, blamed) = match method {
+            "theory-solving" => {
+                debug_assert!(
+                    fingerprint.is_zero(),
+                    "Theory solving should have zero fingerprint"
+                );
+                let axiom_id = l.next().and_then(TermIdCow::parse)?.into_owned();
+
+                let bound_terms = Self::iter_until_eq(&mut l, ";")
+                    .map(|id| self.terms.parse_existing_id(id))
+                    .collect::<Option<Vec<_>>>()?;
+
+                let mut blamed = Vec::new();
+                let mut rewrite_of = None;
+                while let Some(word) = l.next() {
+                    let term = self.terms.parse_existing_id(word)?;
+                    if let Some(enode) = self.egraph.get_enode(term, &self.stack) {
+                        assert!(
+                            rewrite_of.is_none(),
+                            "theory-solving non-rewrite axiom should blame valid enodes"
+                        );
+                        blamed.push(BlameKind::Term { term: enode });
+                    } else {
+                        assert!(
+                            blamed.is_empty(),
+                            "theory-solving rewrite axiom should only have one term"
+                        );
+                        rewrite_of = Some(term);
+                    }
+                }
+
+                let kind = MatchKind::TheorySolving {
+                    axiom_id,
+                    bound_terms,
+                    rewrite_of,
+                };
+                (kind, blamed)
             }
             "MBQI" => {
-                let id = DiscoveredId::MBQI;
-                let quant = self.discovered_quant(id, method);
-                let bound_terms = l.map(|id| self.parse_existing_id(id));
-                (quant, bound_terms.collect::<Option<Vec<_>>>()?, Vec::new())
+                let quant = self.terms.parse_existing_id(l.next()?)?;
+                let quant = self.terms[quant].kind.quant_idx()?;
+                let bound_terms = l
+                    .map(|id| self.parse_existing_enode(id))
+                    .collect::<Option<Vec<_>>>()?;
+                let kind = MatchKind::MBQI { quant, bound_terms };
+                (kind, Vec::new())
             }
             _ => return None,
         };
-        if dep_instantiations.is_empty() {
-            self.add_blank_dependency_if_needed(quant, true, line_no + 1);
-        }
-        let instant = Instantiation {
-            match_line_no: line_no + 1,
-            line_no: None,
-            fingerprint,
-            resulting_term: None,
-            z3_gen: None,
-            cost: 1.0,
-            quant,
-            quant_discovered: true,
-            pattern: None,
-            yields_terms: Vec::new(),
-            bound_terms,
-            blamed_terms,
-            equality_expls: Vec::new(),
-            dep_instantiations,
-        };
-
-        self.matches.insert(fingerprint, instant);
+        let match_ = Match { kind, blamed };
+        self.insts.new_match(fingerprint, match_);
         Some(())
     }
 
-    fn instance<'a>(&mut self, mut l: impl Iterator<Item = &'a str>, line_no: usize) -> Option<()> {
+    fn instance<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let fingerprint = l.next().and_then(Fingerprint::parse)?;
+        let mut proof = Self::iter_until_eq(&mut l, ";");
+        let proof_id = if let Some(proof) = proof.next() {
+            Some(self.terms.parse_id(proof)?)
+        } else {
+            None
+        };
+        Self::expect_completed(proof)?;
+        let z3_generation = Self::parse_z3_generation(&mut l).ok()?;
 
-        let mut inst = self
-            .matches
-            .get(&fingerprint)
-            .expect("Fingerprint should be in instantiations")
-            .clone();
-        inst.line_no = Some(line_no + 1);
-        let qidx = inst.quant;
-
-        let mut next = l.next();
-        if let Some(idx) = next.and_then(|id| self.parse_existing_id(id)) {
-            assert!(inst.resulting_term.is_none());
-            inst.resulting_term = Some(idx);
-            next = l.next();
-        }
-        match (next, l.next()) {
-            (None, None) => (),
-            (Some(";"), Some(z3_gen)) => {
-                inst.z3_gen = Some(z3_gen.parse().ok()?);
-            }
-            _ => return None,
-        }
-        let iidx = self.instantiations.push_and_get_key(inst);
-
+        let inst = Instantiation {
+            // Will be filled in by `new_inst`
+            match_: MatchIdx::default(),
+            fingerprint,
+            proof_id,
+            z3_generation,
+            yields_terms: Vec::new(),
+            cost: 1.0,
+        };
+        let iidx = self.insts.new_inst(fingerprint, inst);
         self.inst_stack.push(iidx);
-        let quantifier = &mut self.quantifiers[qidx];
-        quantifier.instances.push(iidx);
-        quantifier.cost += 1.0;
         Some(())
     }
 
-    fn end_of_instance<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
-        let iidx = self.inst_stack.pop().unwrap();
-        let inst = &mut self.instantiations[iidx];
-        let deps = self.temp_dependencies.get_mut(&inst.match_line_no).unwrap();
-        deps.iter_mut().for_each(|dep| {
-            dep.to = inst.line_no;
-            dep.to_iidx = Some(iidx);
-            dep.quant = inst.quant;
-        });
-        self.dependencies.append(deps);
-
-        // Return if there is unexpectedly more data
-        l.next().map_or(Some(()), |_| None)
+    fn end_of_instance<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<()> {
+        self.inst_stack.pop().unwrap();
+        Self::expect_completed(l)
     }
 
     fn eof(&mut self) {
+        // TODO: this shouldn't be done here.
         self.compute_costs();
     }
-}
 
-impl Default for Z3Parser {
-    /// Creates a new Z3Parser
-    fn default() -> Z3Parser {
-        Z3Parser {
-            version_info: None,
-            term_id_map: TermIdToIdxMap::default(),
-            discovered_map: DiscoveredQuantToIdxMap::default(),
-            terms: TiVec::new(),
-            quantifiers: TiVec::new(),
-            matches: FxHashMap::default(),
-            instantiations: TiVec::new(),
-            inst_stack: Vec::new(),
-            temp_dependencies: FxHashMap::default(),
-            dependencies: Vec::new(),
+    fn push<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
+        let scope = l.next()?.parse::<usize>().ok()?;
+        // Return if there is unexpectedly more data
+        Self::expect_completed(l)?;
+        self.stack.new_frame(scope);
+        Some(())
+    }
+
+    fn pop<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
+        let num = l.next()?.parse::<usize>().ok()?;
+        let scope = l.next()?.parse::<usize>().ok()?;
+        // Return if there is unexpectedly more data
+        Self::expect_completed(l)?;
+        for i in 0..num {
+            self.stack.pop_frame(scope - i);
         }
-    }
-}
-
-impl Z3Parser {
-    /// Add a (partial) blank instantiation dependency. Used to keep track of instantiations dependent on no others.
-    fn add_blank_dependency_if_needed(
-        &mut self,
-        quant: QuantIdx,
-        quant_discovered: bool,
-        match_line: usize,
-    ) {
-        let dep = Dependency {
-            from: match_line,
-            to: None,
-            to_iidx: None,
-            blamed: None,
-            dep_type: DepType::None,
-            quant,
-            quant_discovered,
-        };
-        self.temp_dependencies
-            .get_mut(&match_line)
-            .unwrap()
-            .push(dep);
-    }
-
-    /// Add a (partial) instantiation dependency from the quantifier that instantiated the term with ID `from`, if there is one.
-    ///
-    /// Since this is done during a `"[match]"` or `"[inst-discovered]"` line, the instantiation's actual line number is not available yet.
-    /// Additionally, some matches are not instantiated at all.
-    #[must_use]
-    fn add_dependency(
-        &self,
-        from_term: TermIdx,
-        dep_type: DepType,
-    ) -> Option<(InstIdx, Dependency)> {
-        let eq_term = &self.terms[from_term];
-        eq_term.resp_inst.map(|inst| {
-            let instantiation = &self.instantiations[inst];
-            let dep = Dependency {
-                from: instantiation.line_no.unwrap(),
-                to: None,
-                to_iidx: None,
-                blamed: Some(from_term),
-                dep_type,
-                quant: instantiation.quant,
-                quant_discovered: instantiation.quant_discovered,
-            };
-            (inst, dep)
-        })
+        Some(())
     }
 }
 
 impl Z3Parser {
     fn compute_costs(&mut self) {
-        let mut insts = self.instantiations.as_mut_slice();
+        let mut insts = self.insts.insts.as_mut_slice();
         while let Some((last, others)) = insts.split_last_mut() {
             insts = others;
-            let num_deps = last.dep_instantiations.len() as f32;
-            let cost = last.cost / num_deps;
-            for &dep_iidx in &last.dep_instantiations {
-                let dep_inst = insts.get_mut(dep_iidx).unwrap();
-                dep_inst.cost += cost;
-                let qidx = dep_inst.quant;
-                let dep_inst_quant = self.quantifiers.get_mut(qidx).unwrap();
-                dep_inst_quant.cost += cost;
+            let match_ = &self.insts.matches[last.match_];
+            let deps: Vec<_> = match_
+                .due_to_enodes()
+                .filter_map(|(_, blame)| self.egraph[blame].created_by)
+                .collect();
+            let num_deps = deps.len() as f32;
+            for blamed in deps {
+                let cost = last.cost / num_deps;
+                let blamed_inst = &mut insts[blamed];
+                blamed_inst.cost += cost;
+                if let Some(qidx) = match_.kind.quant_idx() {
+                    self.quantifiers[qidx].cost += cost;
+                }
             }
         }
     }
 
-    pub fn total_nr_of_quants(&self) -> usize {
-        self.quantifiers.len()
+    pub fn quant_count_incl_theory_solving(&self) -> (usize, bool) {
+        (self.quantifiers.len(), self.insts.has_theory_solving_inst())
     }
 }
 
@@ -657,5 +527,11 @@ impl std::ops::Index<QuantIdx> for Z3Parser {
     type Output = Quantifier;
     fn index(&self, idx: QuantIdx) -> &Self::Output {
         &self.quantifiers[idx]
+    }
+}
+impl std::ops::Index<ENodeIdx> for Z3Parser {
+    type Output = ENode;
+    fn index(&self, idx: ENodeIdx) -> &Self::Output {
+        &self.egraph[idx]
     }
 }

@@ -4,7 +4,7 @@ use web_sys::HtmlElement;
 use yew::prelude::*;
 use indexmap::map::IndexMap;
 use petgraph::graph::{NodeIndex, EdgeIndex};
-use smt_log_parser::{parsers::z3::{inst_graph::{InstInfo, EdgeInfo}, z3parser::Z3Parser}, items::DepType};
+use smt_log_parser::{parsers::z3::{inst_graph::{InstInfo, EdgeInfo}, z3parser::Z3Parser}, items::BlameKind};
 use smt_log_parser::parsers::z3::inst_graph::EdgeType;
 use material_yew::WeakComponentLink;
 use super::graph::graph_container::GraphContainer;
@@ -244,12 +244,13 @@ fn selected_nodes_info(SelectedNodesInfoProps { selected_nodes, on_click }: &Sel
                     on_click.emit(selected_inst.node_index.clone())
                 })
             };
+            let z3_gen = selected_inst.z3_gen.map(|gen| format!(", Z3 generation {gen}")).unwrap_or_default();
             html! {
             <details id={format!("{}", selected_inst.node_index.index())} onclick={on_select}>
                 <summary>{format!("Node {}", selected_inst.node_index.index())}</summary>
                 <ul>
-                    <li><h4>{"Instantiation happens at line number: "}</h4><p>{if let Some(val) = selected_inst.line_no {format!("{val}")} else { String::new() }}</p></li>
-                    <li><h4>{"Cost: "}</h4><p>{selected_inst.cost}</p></li>
+                    <li><h4>{"Instantiation number: "}</h4><p>{format!("{}", selected_inst.inst_idx)}</p></li>
+                    <li><h4>{"Cost: "}</h4><p>{"Calculated "}{selected_inst.cost}{z3_gen}</p></li>
                     <li><h4>{"Instantiated formula: "}</h4><p>{&selected_inst.formula}</p></li>
                     <li>{get_ul("Blamed terms: ", &selected_inst.blamed_terms)}</li>
                     <li>{get_ul("Bound terms: ", &selected_inst.bound_terms)}</li>
@@ -284,12 +285,12 @@ fn selected_edges_info(SelectedEdgesInfoProps { selected_edges, on_click }: &Sel
             <details id={format!("{}", selected_edge.edge_data.orig_graph_idx.unwrap().index())} onclick={on_select}>
                 <summary>{format!("Dependency from {} to {}", selected_edge.from.index(), selected_edge.to.index())}</summary>
                 {match selected_edge.edge_data.edge_type {
-                    EdgeType::Direct(DepType::Term) => html! {
+                    EdgeType::Direct(BlameKind::Term { .. }) => html! {
                         <div>
                         <h4>{"Blame term: "}</h4><p>{selected_edge.blame_term.clone()}</p>
                         </div>
                     }, 
-                    EdgeType::Direct(DepType::Equality) => html! {
+                    EdgeType::Direct(BlameKind::Equality { .. }) => html! {
                         <div>
                         <h4>{"Equality: "}</h4><p>{selected_edge.blame_term.clone()}</p>
                         </div>

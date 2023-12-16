@@ -29,7 +29,7 @@ pub fn node_actions(props: &NodeActionsProps) -> Html {
     let show_parents = callback_from(Box::new(|inst: &InstInfo| Filter::ShowNeighbours(inst.node_index, Incoming)));
     let show_source_tree = callback_from(Box::new(|inst: &InstInfo| Filter::VisitSourceTree(inst.node_index, true)));
     let hide_source_tree = callback_from(Box::new(|inst: &InstInfo| Filter::VisitSourceTree(inst.node_index, false)));
-    let ignore_quantifier = callback_from(Box::new(|inst: &InstInfo| Filter::IgnoreQuantifier(inst.quant)));
+    let ignore_quantifier = callback_from(Box::new(|inst: &InstInfo| Filter::IgnoreQuantifier(inst.mkind.quant_idx())));
     let show_longest_path = callback_from(Box::new(|inst: &InstInfo| Filter::ShowLongestPath(inst.node_index)));
     html! {
     <>
