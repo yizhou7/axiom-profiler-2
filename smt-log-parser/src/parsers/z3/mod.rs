@@ -17,7 +17,7 @@ impl<T: Z3LogParser + Default> LogParser for T {
         first_byte == b'['
     }
 
-    fn process_line(&mut self, line: &str, _line_no: usize) -> bool {
+    fn process_line(&mut self, line: &str, line_no: usize) -> bool {
         // Much faster than `split_whitespace` or `split(' ')` since it works on
         // [u8] instead of [char] and so doesn't need to convert to UTF-8.
         let mut split = line.split_ascii_whitespace();
@@ -52,7 +52,11 @@ impl<T: Z3LogParser + Default> LogParser for T {
             "[conflict]" => self.conflict(split),
             _ => None,
         };
-        parse.unwrap_or_else(|| eprintln!("Error parsing line: {line:?}"));
+        parse.unwrap_or_else(|| if std::env::var("SLP_TEST_MODE").is_ok() {
+            panic!("Error parsing line {line_no}: {line:?}");
+        } else {
+            eprintln!("Error parsing line {line_no}: {line:?}")
+        });
         true
     }
 
