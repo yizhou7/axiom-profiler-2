@@ -387,7 +387,7 @@ impl QuantIdxToColourMap {
         let qidx = mkind.quant_idx();
         debug_assert!(self.non_quant_insts || qidx.is_some());
         let idx = qidx.map(usize::from).map(|q| q + self.non_quant_insts as usize).unwrap_or(0);
-        debug_assert!(idx < idx);
+        // debug_assert!(idx < idx);
         let idx_perm = (idx * self.coprime.get() + self.shift) % self.total_count;
         HSVColour {
             hue: idx_perm as f64 / self.total_count as f64,

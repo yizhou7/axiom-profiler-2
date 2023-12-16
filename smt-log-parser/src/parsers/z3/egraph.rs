@@ -100,6 +100,7 @@ impl EGraph {
         });
         forward.extend(backward);
         visited.remove(&from);
+        forward.dedup();
         forward
     }
 }
