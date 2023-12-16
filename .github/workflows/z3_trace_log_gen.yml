@@ -1,4 +1,4 @@
-name: Z3 Trace Log Generator 
+name: Z3 Trace Log Generator
 
 on:
   push:
@@ -71,7 +71,7 @@ jobs:
               # Get the filename without extension
               base_name=$(basename "${file%.*}")
               # Run Z3 solver for the file and save the log in the 'logs' directory
-              z3 trace=true proof=true trace-file-name=logs/${base_name}.log ./$file
+              z3 trace=true proof=true trace-file-name=logs/${base_name}.log ./$file > /dev/null
           done
           # Loop through all files and check that log exists
           for file in smt-problems/**/*.smt2; do
@@ -82,7 +82,7 @@ jobs:
 
               echo "Processing uncached $file"
               # Run Z3 solver for the file and save the log in the 'logs' directory
-              z3 trace=true proof=true trace-file-name=logs/${base_name}.log ./$file
+              z3 trace=true proof=true trace-file-name=logs/${base_name}.log ./$file > /dev/null
           done
 
           # Compress the 'logs' directory using bzip2
