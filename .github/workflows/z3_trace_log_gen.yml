@@ -59,11 +59,11 @@ jobs:
       - name: Run Z3 solver on changed smt2 files and compress 
         id: run_z3_and_upload
         env:
-          cache-file: logs_z3_v${{ steps.configure-z3-id.outputs.z3_v_clean }}.tar.bz2
+          CACHE_FILE: logs_z3_v${{ steps.configure-z3-id.outputs.z3_v_clean }}.tar.bz2
         run: |
           # Create the 'logs' directory
           mkdir logs
-          test -f "${cache-file}" && tar -xf "${cache-file}" || echo "No cache"
+          test -f "${CACHE_FILE}" && tar -xf "${CACHE_FILE}" || echo "No cache"
 
           # Loop through changed files
           for file in ${{ steps.changed-smt2-files.outputs.smt_all_changed_files }}; do
@@ -86,10 +86,10 @@ jobs:
           # done
 
           # Compress the 'logs' directory using bzip2
-          echo "Compressing to ${cache-file}"
-          tar -cjf "${cache-file}" logs/
+          echo "Compressing to ${CACHE_FILE}"
+          tar -cjf "${CACHE_FILE}" logs/
           ls -la
-          echo "logs_path=$(realpath ${cache-file})" >> $GITHUB_OUTPUT
+          echo "logs_path=$(realpath ${CACHE_FILE})" >> $GITHUB_OUTPUT
 
       - name: Delete old cache
         run: |
