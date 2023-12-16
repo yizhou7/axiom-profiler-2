@@ -19,7 +19,7 @@ use crate::items::{BlameKind, ENodeIdx, Fingerprint, InstIdx, MatchKind};
 
 use super::z3parser::Z3Parser;
 
-const MATCHING_LOOP_LOWER_BOUND: usize = 3;
+const MIN_MATCHING_LOOP_LENGTH: usize = 3;
 
 #[derive(Clone)]
 pub struct NodeData {
@@ -441,10 +441,8 @@ impl InstGraph {
         self.reset_visibility_to(false);
         for matching_loops in all_matching_loops_per_quant {
             for matching_loop in matching_loops {
-                if matching_loop.len() >= MATCHING_LOOP_LOWER_BOUND {
-                    for node in matching_loop {
-                        self.orig_graph[node].visible = true;
-                    }
+                for node in matching_loop {
+                    self.orig_graph[node].visible = true;
                 }
             }
         }
@@ -464,13 +462,17 @@ impl InstGraph {
                 graph[nx].max_depth = 0;
             }
         }
-        let furthest_away_nodes = graph.node_indices().max_set_by(|node_a, node_b| {
-            graph
-                .node_weight(*node_a)
-                .unwrap()
-                .max_depth
-                .cmp(&graph.node_weight(*node_b).unwrap().max_depth)
-        });
+        let furthest_away_nodes = graph
+            .node_indices()
+            // only want to show matching loops of length at least 3, hence only keep nodes with depth at least 2
+            .filter(|nx| graph.node_weight(*nx).unwrap().max_depth >= MIN_MATCHING_LOOP_LENGTH - 1)
+            .max_set_by(|node_a, node_b| {
+                graph
+                    .node_weight(*node_a)
+                    .unwrap()
+                    .max_depth
+                    .cmp(&graph.node_weight(*node_b).unwrap().max_depth)
+                });
         // backtrack a longest path from furthest away nodes in subgraph until we reach a root
         let mut longest_paths: Vec<FxHashSet<NodeIndex>> = Vec::new();
         let mut visitor: Vec<NodeIndex> = Vec::new();
