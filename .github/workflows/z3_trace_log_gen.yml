@@ -68,7 +68,7 @@ jobs:
               test -f "${log_file_name}" && continue
 
               rm -f "logs/${base_name}_fHash_*.log"
-              echo "Processing $file"
+              echo "Processing $file to $log_file_name"
               # Run Z3 solver for the file and save the log in the 'logs' directory, TODO: `proof=true`?
               z3 trace=true proof=true trace-file-name=${log_file_name} ./$file > /dev/null || echo "!!! Error processing $file"
           done
@@ -77,17 +77,18 @@ jobs:
           echo "Compressing to ${CACHE_FILE}"
           tar -cjf "${CACHE_FILE}" logs/
 
-      - name: Delete old cache
-        run: |
-          echo "Fetching list of cache key"
-          cacheKeys=$(gh cache list -L 100 | cut -f 1 )
+      # TODO: not enough permission for this.
+      # - name: Delete old cache
+      #   run: |
+      #     echo "Fetching list of cache key"
+      #     cacheKeys=$(gh cache list -L 100 | cut -f 1)
 
-          ## Setting this to not fail the workflow while deleting cache keys. 
-          set +e
-          for cacheKey in $cacheKeys
-          do
-              echo "Deleting $cacheKey"
-              gh cache delete $cacheKey
-          done
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     ## Setting this to not fail the workflow while deleting cache keys. 
+      #     set +e
+      #     for cacheKey in $cacheKeys; do
+      #         echo "Deleting $cacheKey"
+      #         gh cache delete $cacheKey -R $REPO
+      #     done
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     REPO: ${{ github.repository }}
