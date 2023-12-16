@@ -47,15 +47,6 @@ jobs:
           restore-keys: |
             logs-${{ steps.configure-z3-id.outputs.z3_v_clean }}-
 
-      # this fetches all changed (added/modified) smt2 files in the repository 
-      - name: Fetch changed smt2 files
-        id: changed-smt2-files
-        uses: tj-actions/changed-files@v38.2.0 # see GitHub Action "Changed Files"
-        with: 
-          files_yaml: |
-            smt:
-              - 'smt-problems/**/*.smt2'
-
       - name: Run Z3 solver on changed smt2 files and compress 
         id: run_z3_and_upload
         env:
@@ -65,31 +56,26 @@ jobs:
           mkdir logs
           test -f "${CACHE_FILE}" && tar -xf "${CACHE_FILE}" || echo "No cache"
 
-          # Loop through changed files
-          for file in ${{ steps.changed-smt2-files.outputs.smt_all_changed_files }}; do
-              echo "Processing $file"
+          # Loop through all files and check that log exists
+          for file in smt-problems/**/*.smt2; do
+              test -f "$file" || break
+              # Get the file hash
+              file_hash=$(shasum -a 256 "$file" | cut -d' ' -f1)
               # Get the filename without extension
               base_name=$(basename "${file%.*}")
-              # Run Z3 solver for the file and save the log in the 'logs' directory
-              z3 trace=true proof=true trace-file-name=logs/${base_name}.log ./$file > /dev/null || echo "!!! Error processing $file"
-          done
-          # # Loop through all files and check that log exists
-          # for file in smt-problems/**/*.smt2; do
-          #     test -f "$file" || break
-          #     # Get the filename without extension
-          #     base_name=$(basename "${file%.*}")
-          #     test -f "logs/${base_name}.log" && continue
+              # Log file name
+              log_file_name="logs/${base_name}_fHash_${file_hash}.log"
+              test -f "${log_file_name}" && continue
 
-          #     echo "Processing uncached $file"
-          #     # Run Z3 solver for the file and save the log in the 'logs' directory
-          #     z3 trace=true proof=true trace-file-name=logs/${base_name}.log ./$file > /dev/null || echo "!!! Error processing $file"
-          # done
+              rm -f "logs/${base_name}_fHash_*.log"
+              echo "Processing $file"
+              # Run Z3 solver for the file and save the log in the 'logs' directory, TODO: `proof=true`?
+              z3 trace=true proof=true trace-file-name=${log_file_name} ./$file > /dev/null || echo "!!! Error processing $file"
+          done
 
           # Compress the 'logs' directory using bzip2
           echo "Compressing to ${CACHE_FILE}"
           tar -cjf "${CACHE_FILE}" logs/
-          ls -la
-          echo "logs_path=$(realpath ${CACHE_FILE})" >> $GITHUB_OUTPUT
 
       - name: Delete old cache
         run: |
@@ -98,11 +84,10 @@ jobs:
 
           ## Setting this to not fail the workflow while deleting cache keys. 
           set +e
-          echo "Deleting caches..."
           for cacheKey in $cacheKeys
           do
-              gh cache delete ${{ steps.cache.outputs.cache_id }}
+              echo "Deleting $cacheKey"
+              gh cache delete $cacheKey
           done
-          echo "Done"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
