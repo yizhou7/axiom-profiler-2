@@ -63,7 +63,7 @@ jobs:
         run: |
           # Create the 'logs' directory
           mkdir logs
-          test -f "$cache-file" && tar -xf "$cache-file" || echo "No cache"
+          test -f "${cache-file}" && tar -xf "${cache-file}" || echo "No cache"
 
           # Loop through changed files
           for file in ${{ steps.changed-smt2-files.outputs.smt_all_changed_files }}; do
@@ -86,8 +86,8 @@ jobs:
           # done
 
           # Compress the 'logs' directory using bzip2
-          echo "Compressing to $cache-file"
-          tar -cjf "$cache-file" logs/
+          echo "Compressing to ${cache-file}"
+          tar -cjf "${cache-file}" logs/
           ls -la
           echo "logs_path=$(realpath ${cache-file})" >> $GITHUB_OUTPUT
 
