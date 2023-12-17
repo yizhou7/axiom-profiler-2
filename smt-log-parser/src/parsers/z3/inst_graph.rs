@@ -11,6 +11,7 @@ use petgraph::{
 };
 use petgraph::{Direction, Graph};
 use roaring::bitmap::RoaringBitmap;
+use std::collections::HashSet;
 use std::fmt;
 use typed_index_collections::TiVec;
 
@@ -422,7 +423,7 @@ impl InstGraph {
             .node_weights()
             .flat_map(|node| node.mkind.quant_idx())
             .collect();
-        let mut all_matching_loops_per_quant: Vec<Vec<FxHashSet<NodeIndex>>> = Vec::new();
+        let mut matching_loop_nodes_per_quant: Vec<FxHashSet<NodeIndex>> = Vec::new();
         log!(format!("Start processing quants"));
         for quant in quants {
             log!(format!("Processing quant {}", quant));
@@ -435,20 +436,18 @@ impl InstGraph {
             });
             self.retain_visible_nodes_and_reconnect();
             let matching_loops = Self::find_longest_paths(&mut self.visible_graph);
-            all_matching_loops_per_quant.push(matching_loops);
+            matching_loop_nodes_per_quant.push(matching_loops);
         }
         log!(format!("Done processing quants"));
         self.reset_visibility_to(false);
-        for matching_loops in all_matching_loops_per_quant {
-            for matching_loop in matching_loops {
-                for node in matching_loop {
-                    self.orig_graph[node].visible = true;
-                }
+        for matching_loop in matching_loop_nodes_per_quant {
+            for node in matching_loop {
+                self.orig_graph[node].visible = true;
             }
         }
     }
 
-    fn find_longest_paths(graph: &mut Graph<NodeData, EdgeData>) -> Vec<FxHashSet<NodeIndex>> {
+    fn find_longest_paths(graph: &mut Graph<NodeData, EdgeData>) -> FxHashSet<NodeIndex> {
         // traverse this subtree in topological order to compute longest distances from node
         let mut topo = Topo::new(&*graph);
         while let Some(nx) = topo.next(&*graph) {
@@ -473,29 +472,24 @@ impl InstGraph {
                     .max_depth
                     .cmp(&graph.node_weight(*node_b).unwrap().max_depth)
                 });
-        // backtrack a longest path from furthest away nodes in subgraph until we reach a root
-        let mut longest_paths: Vec<FxHashSet<NodeIndex>> = Vec::new();
-        let mut visitor: Vec<NodeIndex> = Vec::new();
-        for furthest_away_node in furthest_away_nodes {
-            let mut visited: FxHashSet<_> = [furthest_away_node].into_iter().collect();
-            visitor.push(furthest_away_node);
-            let mut longest_path = FxHashSet::default();
-            while let Some(curr) = visitor.pop() {
-                longest_path.insert(graph.node_weight(curr).unwrap().orig_graph_idx);
-                let curr_distance = graph.node_weight(curr).unwrap().max_depth;
-                let mut preds = graph.neighbors_directed(curr, Incoming).filter(|pred| {
-                    let pred_distance = graph.node_weight(*pred).unwrap().max_depth;
-                    pred_distance == curr_distance - 1
-                });
-                while let Some(pred) = preds.next() {
-                    if visited.insert(pred) {
-                        visitor.push(pred);
-                    }
+        // backtrack longest paths from furthest away nodes in subgraph until we reach a root
+        let mut matching_loop_nodes: FxHashSet<NodeIndex> = FxHashSet::default();
+        let mut visitor: Vec<NodeIndex> = furthest_away_nodes;
+        let mut visited: FxHashSet<_> = FxHashSet::default();
+        while let Some(curr) = visitor.pop() {
+            matching_loop_nodes.insert(graph.node_weight(curr).unwrap().orig_graph_idx);
+            let curr_distance = graph.node_weight(curr).unwrap().max_depth;
+            let mut preds = graph.neighbors_directed(curr, Incoming).filter(|pred| {
+                let pred_distance = graph.node_weight(*pred).unwrap().max_depth;
+                pred_distance == curr_distance - 1
+            });
+            while let Some(pred) = preds.next() {
+                if visited.insert(pred) {
+                    visitor.push(pred);
                 }
             }
-            longest_paths.push(longest_path);
         }
-        longest_paths
+        matching_loop_nodes 
     }
 
     pub fn reset_visibility_to(&mut self, visibility: bool) {
