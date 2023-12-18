@@ -13,6 +13,7 @@ pub enum Filter {
     MaxNodeIdx(usize),
     IgnoreTheorySolving,
     IgnoreQuantifier(Option<QuantIdx>),
+    IgnoreAllButQuantifier(Option<QuantIdx>),
     MaxInsts(usize),
     MaxBranching(usize),
     ShowNeighbours(NodeIndex, Direction),
@@ -33,6 +34,12 @@ impl Display for Filter {
             }
             Self::IgnoreQuantifier(Some(qidx)) => {
                 write!(f, "Ignore instantiations of quantifier {}", qidx)
+            }
+            Self::IgnoreAllButQuantifier(None) => {
+                write!(f, "Ignore all instantiations without quantifier")
+            }
+            Self::IgnoreAllButQuantifier(Some(qidx)) => {
+                write!(f, "Only show instantiations of quantifier {}", qidx)
             }
             Self::MaxInsts(max) => write!(f, "Show the {} most expensive instantiations", max),
             Self::MaxBranching(max) => write!(f, "Show the {} instantiations with the most children", max),
@@ -65,6 +72,9 @@ impl Filter {
             }
             Filter::IgnoreQuantifier(qidx) => {
                 graph.retain_nodes(|node: &NodeData| node.mkind.quant_idx() != qidx)
+            }
+            Filter::IgnoreAllButQuantifier(qidx) => {
+                graph.retain_nodes(|node: &NodeData| node.mkind.quant_idx() == qidx)
             }
             Filter::MaxInsts(n) => graph.keep_n_most_costly(n),
             Filter::MaxBranching(n) => graph.keep_n_most_branching(n),

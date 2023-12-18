@@ -30,6 +30,7 @@ pub fn node_actions(props: &NodeActionsProps) -> Html {
     let show_source_tree = callback_from(Box::new(|inst: &InstInfo| Filter::VisitSourceTree(inst.node_index, true)));
     let hide_source_tree = callback_from(Box::new(|inst: &InstInfo| Filter::VisitSourceTree(inst.node_index, false)));
     let ignore_quantifier = callback_from(Box::new(|inst: &InstInfo| Filter::IgnoreQuantifier(inst.mkind.quant_idx())));
+    let ignore_all_but_quantifier = callback_from(Box::new(|inst: &InstInfo| Filter::IgnoreAllButQuantifier(inst.mkind.quant_idx())));
     let show_longest_path = callback_from(Box::new(|inst: &InstInfo| Filter::ShowLongestPath(inst.node_index)));
     html! {
     <>
@@ -48,6 +49,9 @@ pub fn node_actions(props: &NodeActionsProps) -> Html {
         </div>
         <div>
             <button onclick={ignore_quantifier}>{"Ignore all nodes of this quantifier"}</button>
+        </div>
+        <div>
+            <button onclick={ignore_all_but_quantifier}>{"Only show this quantifier"}</button>
         </div>
         <div>
             <button onclick={show_longest_path}>{"Show longest path through last selected node"}</button>
