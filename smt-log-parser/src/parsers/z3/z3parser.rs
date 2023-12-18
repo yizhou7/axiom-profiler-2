@@ -167,8 +167,17 @@ impl Z3LogParser for Z3Parser {
 
     fn mk_quant<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let full_id = l.next().and_then(TermIdCow::parse)?;
-        let quant_name = l.next().map(QuantKind::parse)?;
-        let num_vars = l.next()?.parse().ok()?;
+        let mut quant_name = std::borrow::Cow::Borrowed(l.next()?);
+        let mut num_vars_str = l.next()?;
+        let mut num_vars = num_vars_str.parse::<usize>();
+        // The name may contain spaces... TODO: PR to add quotes around name when logging in z3
+        while num_vars.is_err() {
+            quant_name = std::borrow::Cow::Owned(format!("{quant_name} {num_vars_str}"));
+            num_vars_str = l.next()?;
+            num_vars = num_vars_str.parse::<usize>();
+        }
+        let quant_name = QuantKind::parse(&*quant_name);
+        let num_vars = num_vars.unwrap();
         let children = self.gobble_children(l)?;
         assert!(!children.is_empty());
         let qidx = self.quantifiers.next_key();

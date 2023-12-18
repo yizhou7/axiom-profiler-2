@@ -128,7 +128,7 @@ impl QuantKind {
                 name: name.to_string(),
                 id,
             })
-            .unwrap_or_else(|| Self::NamedQuant(name.to_string()))
+            .unwrap_or_else(|| Self::NamedQuant(value.to_string()))
     }
     pub fn is_discovered(&self) -> bool {
         matches!(self, Self::Other(_))
