@@ -264,14 +264,14 @@ mod wrapper {
             // never go over time as long as the lines-per-time of the parser
             // does not drop by more than `MAX_TIME_OVER_APPROX` between checks.
             // The closer this is to `1`, the fewer checks we'll do.
-            const MAX_LINES_PER_TIME_VARIATION: u128 = 10;
+            const MAX_LINES_PER_TIME_VARIATION: u128 = 50;
             let initial_lines_per_check =
                 delta.as_millis().try_into().unwrap_or(usize::MAX).max(10);
             // How many lines must pass before we check time again?
             let mut lines_per_check = initial_lines_per_check;
             // How many lines until the next time check?
             let mut next_check = lines_per_check;
-            let max_lpc = lines_per_check.checked_mul(1000).unwrap_or(usize::MAX);
+            let max_lpc = lines_per_check.checked_mul(2).unwrap_or(usize::MAX);
             let mut start = Instant::now();
             let mut last_check_time = start;
             add_await([self.process_until(move |p, rs| {
