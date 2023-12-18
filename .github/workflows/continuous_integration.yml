@@ -31,7 +31,7 @@ jobs:
     - uses: actions/cache/restore@v3
       with:
         path: logs
-        key: logs-${{ steps.configure-z3-id.outputs.z3_v_clean }}-${{ github.sha }}
+        key: logs-${{ steps.configure-z3-id.outputs.z3_v_clean }}-${{ hashFiles('smt-problems/**/*.smt2') }}
     - id: check-logs-cached
       run: test -d "logs"
     - run: cargo test --all
@@ -74,7 +74,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: logs
-          key: logs-${{ steps.configure-z3-id.outputs.z3_v_clean }}-${{ github.sha }}
+          key: logs-${{ steps.configure-z3-id.outputs.z3_v_clean }}-${{ hashFiles('smt-problems/**/*.smt2') }}
           restore-keys: |
             logs-${{ steps.configure-z3-id.outputs.z3_v_clean }}-
 
@@ -98,7 +98,7 @@ jobs:
               rm -f "logs/${base_name}_fHash_*.log"
               echo "Processing $file to $log_file_name"
               # Run Z3 solver for the file and save the log in the 'logs' directory, TODO: `proof=true`?
-              z3 trace=true proof=true trace-file-name=${log_file_name} ./$file > /dev/null || echo "!!! Error processing $file"
+              z3 trace=true -T:60 trace-file-name=${log_file_name} ./$file > /dev/null || echo "!!! Error processing $file"
           done
 
       # TODO: not enough permission for this.
