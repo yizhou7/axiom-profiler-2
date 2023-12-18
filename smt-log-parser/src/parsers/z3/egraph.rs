@@ -58,7 +58,12 @@ impl EGraph {
         self.enodes[to].back_equalities.insert(from);
     }
 
-    pub fn get_equalities(
+    pub fn get_equalities(&self, from: ENodeIdx, to: ENodeIdx) -> &[EqualityExpl] {
+        self.enodes[from].equalities.get(&to).map(|e| &**e).unwrap_or_default()
+    }
+
+    // TODO: unused due to being slow
+    pub fn get_equalities_transitive(
         &self,
         from: ENodeIdx,
         to: ENodeIdx,
@@ -75,7 +80,7 @@ impl EGraph {
                 if *tgt == to {
                     eqs.iter().collect()
                 } else {
-                    let mut eqs_sln = self.get_equalities(*tgt, to, visited);
+                    let mut eqs_sln = self.get_equalities_transitive(*tgt, to, visited);
                     if eqs_sln.is_empty() {
                         Vec::new()
                     } else {
@@ -89,7 +94,7 @@ impl EGraph {
             if *tgt == to {
                 self.enodes[*tgt].equalities[&from].iter().collect()
             } else {
-                let mut eqs_sln = self.get_equalities(*tgt, to, visited);
+                let mut eqs_sln = self.get_equalities_transitive(*tgt, to, visited);
                 if eqs_sln.is_empty() {
                     Vec::new()
                 } else {

@@ -1,4 +1,3 @@
-use fxhash::FxHashSet;
 use typed_index_collections::TiVec;
 
 use crate::{
@@ -362,18 +361,21 @@ impl Z3LogParser for Z3Parser {
             if let Some(first_term) = word.strip_prefix('(') {
                 // assumes that if we see "(#A", the next word in the split is "#B)"
                 let second_term = l.next()?.strip_suffix(')')?;
-                let fidx = self.parse_existing_enode(first_term)?;
-                let sidx = self.parse_existing_enode(second_term)?;
+                let from = self.parse_existing_enode(first_term)?;
+                let to = self.parse_existing_enode(second_term)?;
                 let eqs = self
                     .egraph
-                    .get_equalities(fidx, sidx, &mut FxHashSet::default());
-                debug_assert!(!eqs.is_empty(), "could not find equality {first_term} ({fidx:?}) -> {second_term} ({sidx:?}) ({fingerprint})");
+                    .get_equalities(from, to);
+                // TODO: why aren't all equalities explained by a prior `eq-expl`?
+                // debug_assert!(!eqs.is_empty(), "could not find equality {first_term} ({from:?}) -> {second_term} ({to:?}) ({fingerprint})");
+                let blamed_len = blamed.len();
                 for eq in eqs {
                     if let Some(eq) = eq.dependency_on() {
-                        blamed.push(BlameKind::Equality { eq })
-                    } else {
-                        blamed.push(BlameKind::OtherEquality(eq.clone()))
+                        blamed.push(BlameKind::Equality { eq });
                     }
+                }
+                if blamed_len == blamed.len() {
+                    blamed.push(BlameKind::UnknownEquality { from, to });
                 }
             } else {
                 let term = self.parse_existing_enode(word)?;
