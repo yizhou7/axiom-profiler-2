@@ -4,3 +4,6 @@ members = [
     "smt-log-parser",
     "axiom-profiler-GUI",
 ]
+
+[profile.test]
+opt-level = 2
