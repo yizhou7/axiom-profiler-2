@@ -41,14 +41,13 @@ impl EGraph {
 
     pub fn get_enode(&self, term: TermIdx, stack: &Stack) -> Option<ENodeIdx> {
         let enode = *self.term_to_enode.get(&term)?;
-        debug_assert!(
-            self.enodes[enode]
-                .frame
-                .map(|f| stack.stack_frames[f].active)
-                .unwrap_or(true),
-            "could not find active enode for term"
-        );
-        Some(enode)
+        let frame = self.enodes[enode].frame;
+        // This cannot be an enode if it points to a popped stack frame
+        if frame.map(|f| !stack.stack_frames[f].active).unwrap_or_default() {
+            None
+        } else {
+            Some(enode)
+        }
     }
 
     pub fn new_equality(&mut self, from: ENodeIdx, eq: EqualityExpl) {
