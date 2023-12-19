@@ -57,7 +57,7 @@ impl Display for Filter {
             },
             Self::MaxDepth(depth) => write!(f, "Show nodes up to depth {}", depth),
             Self::ShowLongestPath(node) => write!(f, "Showing longest path through node {}", node.index()),
-            Self::ShowMatchingLoops => write!(f, "Showing matching loops (experimental)"),
+            Self::ShowMatchingLoops => write!(f, "Showing matching loops"),
         }
     }
 }

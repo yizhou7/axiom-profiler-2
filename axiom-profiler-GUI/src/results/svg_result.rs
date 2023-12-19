@@ -10,7 +10,7 @@ use num_format::{Locale, ToFormattedString};
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::{NodeIndex, EdgeIndex};
 use smt_log_parser::{
-    items::{QuantIdx, MatchKind, BlameKind},
+    items::{MatchKind, BlameKind},
     parsers::{
         z3::{
             inst_graph::{EdgeType, InstGraph, InstInfo, EdgeInfo, VisibleGraphInfo},
