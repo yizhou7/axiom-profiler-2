@@ -32,6 +32,9 @@ impl Z3Parser {
     pub fn version_info(&self) -> Option<&VersionInfo> {
         self.version_info.as_ref()
     }
+    pub fn is_version(&self, version: semver::Version) -> bool {
+        self.version_info.as_ref().map(|v| v.version == version).unwrap_or_default()
+    }
 
     pub fn parse_existing_enode(&self, id: &str) -> Option<ENodeIdx> {
         let idx = self.terms.parse_existing_id(id)?;
@@ -262,7 +265,16 @@ impl Z3LogParser for Z3Parser {
     }
 
     fn attach_enode<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
-        let idx = self.terms.parse_existing_id(l.next()?)?;
+        let idx = self.terms.parse_existing_id(l.next()?);
+        let Some(idx) = idx else {
+            const Z3_4_8_7: semver::Version = semver::Version::new(4, 8, 7);
+            if self.is_version(Z3_4_8_7) {
+                // Z3 4.8.7 seems to have a bug where it can emit a non-existent term id here.
+                return Some(());
+            } else {
+                return None;
+            }
+        };
         let z3_generation = Self::parse_z3_generation(&mut l).ok()?;
         // Return if there is unexpectedly more data
         Self::expect_completed(l)?;
