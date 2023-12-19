@@ -37,6 +37,16 @@ jobs:
       run: test -d "logs"
     - run: cargo test --all
 
+    # Failure
+    - run: tar -cjf failing_logs.tar.bz2 logs/
+      if: failure()
+    - uses: actions/upload-artifact@v3.1.2
+      if: failure()
+      with:
+        name: "logs_z3_v${{ matrix.z3version }}"
+        path: failing_logs.tar.bz2
+
+
   generate_log:
     # only run this job on push to main branch
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
