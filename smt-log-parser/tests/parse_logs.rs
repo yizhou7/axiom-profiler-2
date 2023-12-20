@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use smt_log_parser::{LogParser, Z3Parser};
 
@@ -9,20 +9,20 @@ fn parse_all_logs() {
     let all_logs = std::fs::read_dir("../logs").unwrap();
     for log in all_logs {
         let filename = log.unwrap().path();
-        let (metadata, parser) = Z3Parser::from_file(&filename).unwrap();
-        // Set limit if supported
-        let _ = rlimit::Resource::AS.set(metadata.len() * 4, rlimit::Resource::AS.get_hard().unwrap_or(rlimit::INFINITY));
+        let (metadata, mut parser) = Z3Parser::from_file(&filename).unwrap();
+        let file_size = metadata.len();
 
         // Gives 50 millis per MB (or 50 secs per GB)
-        let to = Duration::from_millis(500 + (metadata.len() / 20_000));
+        let timeout = Duration::from_millis(500 + (file_size / 20_000));
+        println!("Parsing {} ({} MB) with timeout of {timeout:?}", filename.display(), file_size / 1024 / 1024);
+        let now = Instant::now();
 
-        println!("Parsing {} ({} MB) with timeout of {to:?}", filename.display(), metadata.len() / 1024 / 1024);
-        let (timeout, result) = parser.process_all_timeout(to);
-
-        assert!(timeout.is_none());
-        let physical_mem = memory_stats::memory_stats().unwrap().physical_mem as u64;
-        println!("Have {} MB of physical memory",physical_mem / 1024 / 1024);
-        assert!(physical_mem < metadata.len(), "Memory usage was {} MB, but file size was {} MB", physical_mem / 1024 / 1024, metadata.len() / 1024 / 1024);
-        drop(result);
+        let _ = parser.process_check_every(Duration::from_millis(100), |_, _| {
+            assert!(now.elapsed() < timeout, "Parsing took longer than timeout");
+            let physical_mem = memory_stats::memory_stats().unwrap().physical_mem as u64;
+            assert!(physical_mem < file_size, "Memory usage was {} MB, but file size was {} MB", physical_mem / 1024 / 1024, file_size / 1024 / 1024);
+            true
+        }).unwrap();
+        drop(parser);
     }
 }
