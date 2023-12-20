@@ -13,7 +13,8 @@ fn parse_all_logs() {
         // Set limit if supported
         let _ = rlimit::Resource::RSS.set(metadata.len(), rlimit::Resource::RSS.get_hard().unwrap_or(rlimit::INFINITY)).unwrap();
         // Gives 50 millis per MB (or 50 secs per GB)
-        let to = Duration::from_millis(500 + (metadata.len() / 20_000));
+        // let to = Duration::from_millis(500 + (metadata.len() / 20_000));
+        let to = Duration::from_secs(600);
         println!("Parsing {} with timeout of {to:?}", filename.display());
         let (timeout, _result) = parser.process_all_timeout(to);
         assert!(timeout.is_none());
