@@ -280,6 +280,12 @@ mod wrapper {
                     let now = Instant::now();
                     match delta.checked_sub(now - start) {
                         Some(time_left) if !time_left.is_zero() => {
+                            // TODO: remove
+                            if let Some(usage) = memory_stats::memory_stats() {
+                                println!("Current physical memory usage: {}MB", usage.physical_mem / 1024 / 1024);
+                            } else {
+                                println!("Couldn't get the current memory usage :(");
+                            }
                             let time_left = time_left.as_nanos();
                             let check_delta = (now - last_check_time).as_nanos();
                             last_check_time = now;

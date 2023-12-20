@@ -20,3 +20,5 @@ duplicate = "1.0"
 gloo-console = "0.3.0"
 roaring = "0.10"
 itertools = "0.12.0"
+# TODO: remove
+memory-stats = "1.1.0"
