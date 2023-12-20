@@ -22,3 +22,6 @@ roaring = "0.10"
 itertools = "0.12.0"
 # TODO: remove
 memory-stats = "1.1.0"
+
+[dev-dependencies]
+rlimit = "0.10.0"
