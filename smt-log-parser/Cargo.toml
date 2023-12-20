@@ -20,6 +20,7 @@ duplicate = "1.0"
 gloo-console = "0.3.0"
 roaring = "0.10"
 itertools = "0.12.0"
+lasso = { version = "0.7", features = ["serialize"] }
 
 [dev-dependencies]
 memory-stats = "1.1.0"

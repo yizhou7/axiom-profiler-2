@@ -71,7 +71,6 @@ impl<'a, 'b, Ctxt, Data, T: DisplayWithCtxt<Ctxt, Data> + Copy> fmt::Display
 // Items
 ////////////
 
-#[derive(Debug)]
 pub struct DisplayCtxt<'a> {
     pub parser: &'a Z3Parser,
 
@@ -192,7 +191,7 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for QuantIdx {
             let QuantKind::Other(name) = &quant.kind else {
                 panic!()
             };
-            write!(f, "{}", name)
+            write!(f, "{}", ctxt.parser.strings.resolve(name))
         }
     }
 }
@@ -210,7 +209,7 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for &MatchKind {
                 quant.fmt_with(f, ctxt, data)
             }
             MatchKind::TheorySolving { axiom_id, .. } => {
-                write!(f, "[TheorySolving] {}#", axiom_id.namespace)?;
+                write!(f, "[TheorySolving] {}#", ctxt.parser.strings.resolve(&axiom_id.namespace))?;
                 if let Some(id) = axiom_id.id {
                     write!(f, "{id}")?;
                 }
@@ -238,7 +237,9 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Term {
     ) -> fmt::Result {
         data.with_children(&self.child_ids, |data| {
             if ctxt.display_term_ids {
-                write!(f, "[{}]", self.id)?;
+                let namespace = ctxt.parser.strings.resolve(&self.id.namespace);
+                let id = self.id.id.map(|id| id.to_string()).unwrap_or_default();
+                write!(f, "[{namespace}#{id}]")?;
             }
             if let Some(meaning) = &self.meaning {
                 write!(f, "{}", meaning.with_data(ctxt, data))?;
@@ -260,7 +261,7 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a TermKind {
         match self {
             &TermKind::Var(mut idx) => {
                 let vars = data.find_quant(&mut idx).map(|q| &q.vars).unwrap_or(&None);
-                write!(f, "{}", VarNames::get_name(vars, idx))
+                write!(f, "{}", VarNames::get_name(&ctxt.parser.strings, vars, idx))
             }
             TermKind::ProofOrApp(poa) => write!(f, "{}", poa.with_data(ctxt, data)),
             TermKind::Quant(idx) => write!(f, "{}", ctxt.parser[*idx].with_data(ctxt, data)),
@@ -284,7 +285,8 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a ProofOrApp {
     ) -> fmt::Result {
         let math = ctxt.use_mathematical_symbols;
         use ProofOrAppKind::*;
-        let (name, kind) = match self.name.as_ref() {
+        let name = ctxt.parser.strings.resolve(&self.name);
+        let (name, kind) = match name {
             name if self.is_proof => (name, Proof),
             "not" => (if math { "¬" } else { "!" }, Unary),
             "-" if data.children().len() == 1 => ("-", Unary),
@@ -356,12 +358,14 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Meaning {
     fn fmt_with(
         self,
         f: &mut fmt::Formatter<'_>,
-        _ctxt: &DisplayCtxt<'a>,
+        ctxt: &DisplayCtxt<'a>,
         _data: &mut DisplayData<'a>,
     ) -> fmt::Result {
-        match self.theory.as_ref() {
-            "arith" | "bv" => write!(f, "{}", self.value),
-            theory => write!(f, "/{theory} {}\\", self.value),
+        let theory = ctxt.parser.strings.resolve(&self.theory);
+        let value = ctxt.parser.strings.resolve(&self.value);
+        match theory {
+            "arith" | "bv" => write!(f, "{value}"),
+            theory => write!(f, "/{theory} {value}\\"),
         }
     }
 }
@@ -384,8 +388,8 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
                 }
                 write!(f, "{}", self.kind.with_data(ctxt, data))?;
                 for idx in 0..self.num_vars {
-                    let name = VarNames::get_name(&self.vars, idx);
-                    let ty = VarNames::get_type(&self.vars, idx);
+                    let name = VarNames::get_name(&ctxt.parser.strings, &self.vars, idx);
+                    let ty = VarNames::get_type(&ctxt.parser.strings, &self.vars, idx);
                     if idx != 0 {
                         write!(f, ", ")?;
                     }
@@ -424,10 +428,10 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a QuantKind {
         if ctxt.display_quantifier_name {
             write!(f, "\"")?;
             match self {
-                QuantKind::Other(kind) => write!(f, "{kind}")?,
+                QuantKind::Other(kind) => write!(f, "{}", ctxt.parser.strings.resolve(kind))?,
                 QuantKind::Lambda => write!(f, "<null>")?,
-                QuantKind::NamedQuant(name) => write!(f, "{name}")?,
-                QuantKind::UnnamedQuant { name, id } => write!(f, "{name}!{id}")?,
+                QuantKind::NamedQuant(name) => write!(f, "{}", ctxt.parser.strings.resolve(name))?,
+                QuantKind::UnnamedQuant { name, id } => write!(f, "{}!{id}", ctxt.parser.strings.resolve(name))?,
             };
             write!(f, "\" ")?;
         }

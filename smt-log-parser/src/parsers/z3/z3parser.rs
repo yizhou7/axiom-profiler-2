@@ -14,7 +14,7 @@ use super::{
 
 /// A parser for Z3 log files. Use one of the various `Z3Parser::from_*` methods
 /// to construct this parser.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug)]
 pub struct Z3Parser {
     pub(super) version_info: Option<VersionInfo>,
     pub(super) terms: Terms,
@@ -26,6 +26,24 @@ pub struct Z3Parser {
 
     pub(super) egraph: EGraph,
     pub(super) stack: Stack,
+
+    pub strings: StringTable,
+}
+
+impl Default for Z3Parser {
+    fn default() -> Self {
+        let mut strings = StringTable::with_hasher(fxhash::FxBuildHasher::default());
+        Self {
+            version_info: None,
+            terms: Terms::new(&mut strings),
+            quantifiers: Default::default(),
+            insts: Default::default(),
+            inst_stack: Default::default(),
+            egraph: Default::default(),
+            stack: Default::default(),
+            strings,
+        }
+    }
 }
 
 impl Z3Parser {
@@ -36,8 +54,8 @@ impl Z3Parser {
         self.version_info.as_ref().map(|v| v.version == version).unwrap_or_default()
     }
 
-    pub fn parse_existing_enode(&self, id: &str) -> Option<ENodeIdx> {
-        let idx = self.terms.parse_existing_id(id)?;
+    pub fn parse_existing_enode(&mut self, id: &str) -> Option<ENodeIdx> {
+        let idx = self.terms.parse_existing_id(&mut self.strings, id)?;
         self.egraph.get_enode(idx, &self.stack)
     }
     pub fn parse_z3_generation<'a>(
@@ -51,30 +69,32 @@ impl Z3Parser {
     }
 
     #[must_use]
-    fn gobble_children<'a>(&self, l: impl Iterator<Item = &'a str>) -> Option<Vec<TermIdx>> {
-        l.map(|id| self.terms.parse_existing_id(id)).collect()
+    fn gobble_children<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<Vec<TermIdx>> {
+        l.map(|id| self.terms.parse_existing_id(&mut self.strings, id)).collect()
     }
     #[must_use]
-    fn gobble_var_names_list<'a>(l: impl Iterator<Item = &'a str>) -> Option<VarNames> {
+    fn gobble_var_names_list<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Option<VarNames> {
         let mut t = Self::gobble_tuples::<true>(l);
         // TODO: if the list can be empty then remove the first `?` and
         // replace with default case.
         let (first, second) = t.next()??;
         if first == "" {
+            let first = Some(self.strings.get_or_intern(second));
             let tuples = t.map(|t| match t? {
-                ("", second) => Some(second.to_string()),
+                ("", second) => Some(self.strings.get_or_intern(second)),
                 _ => None,
             });
-            let types = [Some(second.to_string())].into_iter().chain(tuples);
+            let types = [first].into_iter().chain(tuples);
             Some(VarNames::TypeOnly(types.collect::<Option<Vec<_>>>()?))
         } else {
-            fn strip_bars((first, second): (&str, &str)) -> Option<(String, String)> {
+            fn strip_bars(strings: &mut StringTable, (first, second): (&str, &str)) -> Option<(IString, IString)> {
                 let first = first.strip_prefix('|')?.strip_suffix('|')?;
                 let second = second.strip_prefix('|')?.strip_suffix('|')?;
-                Some((first.to_string(), second.to_string()))
+                Some((strings.get_or_intern(first), strings.get_or_intern(second)))
             }
-            let tuples = t.map(|t| strip_bars(t?));
-            let names_and_types = [strip_bars((first, second))].into_iter().chain(tuples);
+            let first = strip_bars(&mut self.strings, (first, second));
+            let tuples = t.map(|t| strip_bars(&mut self.strings, t?));
+            let names_and_types = [first].into_iter().chain(tuples);
             Some(VarNames::NameAndType(
                 names_and_types.collect::<Option<Vec<_>>>()?,
             ))
@@ -128,14 +148,14 @@ impl Z3Parser {
     }
     #[must_use]
     fn gobble_id_pairs<'a>(
-        &self,
+        &mut self,
         l: impl Iterator<Item = &'a str>,
     ) -> Option<Vec<(TermIdx, TermIdx)>> {
         Self::gobble_tuples::<true>(l)
             .map(|t| {
                 let (first, second) = t?;
-                let first = self.terms.parse_existing_id(first)?;
-                let second = self.terms.parse_existing_id(second)?;
+                let first = self.terms.parse_existing_id(&mut self.strings, first)?;
+                let second = self.terms.parse_existing_id(&mut self.strings, second)?;
                 Some((first, second))
             })
             .collect()
@@ -168,7 +188,7 @@ impl Z3LogParser for Z3Parser {
     }
 
     fn mk_quant<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
-        let full_id = l.next().and_then(TermIdCow::parse)?;
+        let full_id = l.next().and_then(|id| TermId::parse(&mut self.strings, id))?;
         let mut quant_name = std::borrow::Cow::Borrowed(l.next()?);
         let mut num_vars_str = l.next()?;
         let mut num_vars = num_vars_str.parse::<usize>();
@@ -178,17 +198,16 @@ impl Z3LogParser for Z3Parser {
             num_vars_str = l.next()?;
             num_vars = num_vars_str.parse::<usize>();
         }
-        let quant_name = QuantKind::parse(&*quant_name);
+        let quant_name = QuantKind::parse(&mut self.strings, &*quant_name);
         let num_vars = num_vars.unwrap();
         let children = self.gobble_children(l)?;
         assert!(!children.is_empty());
         let qidx = self.quantifiers.next_key();
         let term = Term {
-            id: full_id.into_owned(),
+            id: full_id,
             kind: TermKind::Quant(qidx),
             meaning: None,
             child_ids: children,
-            dep_term_ids: Vec::new(),
         };
         let tidx = self.terms.new_term(full_id, term);
         let q = Quantifier {
@@ -205,16 +224,15 @@ impl Z3LogParser for Z3Parser {
     }
 
     fn mk_var<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
-        let full_id = l.next().and_then(TermIdCow::parse)?;
+        let full_id = l.next().and_then(|id| TermId::parse(&mut self.strings, id))?;
         let kind = l.next().and_then(TermKind::parse_var)?;
         // Return if there is unexpectedly more data
         Self::expect_completed(l)?;
         let term = Term {
-            id: full_id.into_owned(),
+            id: full_id,
             kind,
             meaning: None,
             child_ids: Vec::new(),
-            dep_term_ids: Vec::new(),
         };
         self.terms.new_term(full_id, term);
         Some(())
@@ -225,16 +243,15 @@ impl Z3LogParser for Z3Parser {
         mut l: impl Iterator<Item = &'a str>,
         is_proof: bool,
     ) -> Option<()> {
-        let full_id = l.next().and_then(TermIdCow::parse)?;
-        let kind = TermKind::parse_proof_app(is_proof, l.next()?);
+        let full_id = l.next().and_then(|id| TermId::parse(&mut self.strings, id))?;
+        let kind = TermKind::parse_proof_app(is_proof, self.strings.get_or_intern(l.next()?));
         // TODO: add rewrite, monotonicity cases
         let children = self.gobble_children(l)?;
         let term = Term {
-            id: full_id.into_owned(),
+            id: full_id,
             kind,
             meaning: None,
             child_ids: children,
-            dep_term_ids: Vec::new(),
         };
         self.terms.new_term(full_id, term);
         Some(())
@@ -242,10 +259,10 @@ impl Z3LogParser for Z3Parser {
 
     fn attach_meaning<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let id = l.next()?;
-        let theory = l.next()?.to_string();
-        let value = l.collect::<Vec<_>>().join(" ");
+        let theory = self.strings.get_or_intern(l.next()?);
+        let value = self.strings.get_or_intern(l.collect::<Vec<_>>().join(" "));
         let meaning = Meaning { theory, value };
-        let idx = self.terms.parse_existing_id(id)?;
+        let idx = self.terms.parse_existing_id(&mut self.strings, id)?;
         if let Some(old) = &self.terms[idx].meaning {
             assert_eq!(old, &meaning);
         } else {
@@ -256,8 +273,8 @@ impl Z3LogParser for Z3Parser {
 
     fn attach_var_names<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let id = l.next()?;
-        let var_names = Self::gobble_var_names_list(l)?;
-        let tidx = self.terms.parse_existing_id(id)?;
+        let var_names = self.gobble_var_names_list(l)?;
+        let tidx = self.terms.parse_existing_id(&mut self.strings, id)?;
         let qidx = self.terms[tidx].kind.quant_idx()?;
         assert!(self.quantifiers[qidx].vars.is_none());
         self.quantifiers[qidx].vars = Some(var_names);
@@ -265,7 +282,7 @@ impl Z3LogParser for Z3Parser {
     }
 
     fn attach_enode<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
-        let idx = self.terms.parse_existing_id(l.next()?);
+        let idx = self.terms.parse_existing_id(&mut self.strings, l.next()?);
         let Some(idx) = idx else {
             const Z3_4_8_7: semver::Version = semver::Version::new(4, 8, 7);
             if self.is_version(Z3_4_8_7) {
@@ -311,7 +328,7 @@ impl Z3LogParser for Z3Parser {
                     // For each pair (#A #B), reconstruct dependent equality explanations connecting #A to #B ...
                 }
                 "th" => {
-                    let theory = kind_dependent_info.next()?.to_string();
+                    let theory = self.strings.get_or_intern(kind_dependent_info.next()?);
                     Self::expect_completed(kind_dependent_info)?;
                     let to = self.parse_existing_enode(l.next()?)?;
                     EqualityExpl::Theory { from, theory, to }
@@ -322,10 +339,10 @@ impl Z3LogParser for Z3Parser {
                     EqualityExpl::Axiom { from, to }
                 }
                 kind => {
-                    let args = kind_dependent_info.map(String::from).collect();
+                    let args = kind_dependent_info.map(|s| self.strings.get_or_intern(s)).collect();
                     let to = self.parse_existing_enode(l.next()?)?;
                     EqualityExpl::Unknown {
-                        kind: kind.to_string(),
+                        kind: self.strings.get_or_intern(kind),
                         from,
                         args,
                         to,
@@ -342,15 +359,15 @@ impl Z3LogParser for Z3Parser {
 
     fn new_match<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let fingerprint = l.next().and_then(Fingerprint::parse)?;
-        let idx = self.terms.parse_existing_id(l.next()?)?;
+        let idx = self.terms.parse_existing_id(&mut self.strings, l.next()?)?;
         let quant = self.terms[idx].kind.quant_idx()?;
-        let pattern = self.terms.parse_existing_id(l.next()?)?;
+        let pattern = self.terms.parse_existing_id(&mut self.strings, l.next()?)?;
         let bound_terms = Self::iter_until_eq(&mut l, ";");
         let is_axiom = fingerprint.is_zero();
 
         let kind = if is_axiom {
             let bound_terms = bound_terms
-                .map(|id| self.terms.parse_existing_id(id))
+                .map(|id| self.terms.parse_existing_id(&mut self.strings, id))
                 .collect::<Option<Vec<_>>>()?;
             MatchKind::Axiom {
                 axiom: quant,
@@ -410,16 +427,16 @@ impl Z3LogParser for Z3Parser {
                     fingerprint.is_zero(),
                     "Theory solving should have zero fingerprint"
                 );
-                let axiom_id = l.next().and_then(TermIdCow::parse)?.into_owned();
+                let axiom_id = l.next().and_then(|id| TermId::parse(&mut self.strings, id))?;
 
                 let bound_terms = Self::iter_until_eq(&mut l, ";")
-                    .map(|id| self.terms.parse_existing_id(id))
+                    .map(|id| self.terms.parse_existing_id(&mut self.strings, id))
                     .collect::<Option<Vec<_>>>()?;
 
                 let mut blamed = Vec::new();
                 let mut rewrite_of = None;
                 while let Some(word) = l.next() {
-                    let term = self.terms.parse_existing_id(word)?;
+                    let term = self.terms.parse_existing_id(&mut self.strings, word)?;
                     if let Some(enode) = self.egraph.get_enode(term, &self.stack) {
                         assert!(
                             rewrite_of.is_none(),
@@ -443,7 +460,7 @@ impl Z3LogParser for Z3Parser {
                 (kind, blamed)
             }
             "MBQI" => {
-                let quant = self.terms.parse_existing_id(l.next()?)?;
+                let quant = self.terms.parse_existing_id(&mut self.strings, l.next()?)?;
                 let quant = self.terms[quant].kind.quant_idx()?;
                 let bound_terms = l
                     .map(|id| self.parse_existing_enode(id))
@@ -462,7 +479,7 @@ impl Z3LogParser for Z3Parser {
         let fingerprint = l.next().and_then(Fingerprint::parse)?;
         let mut proof = Self::iter_until_eq(&mut l, ";");
         let proof_id = if let Some(proof) = proof.next() {
-            Some(self.terms.parse_id(proof)?)
+            Some(self.terms.parse_id(&mut self.strings, proof)?)
         } else {
             None
         };

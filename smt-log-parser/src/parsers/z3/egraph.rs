@@ -5,7 +5,7 @@ use crate::items::{ENodeIdx, EqualityExpl, InstIdx, StackIdx, TermIdx};
 
 use super::stack::Stack;
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default)]
 pub struct EGraph {
     term_to_enode: FxHashMap<TermIdx, ENodeIdx>,
     enodes: TiVec<ENodeIdx, ENode>,
@@ -110,7 +110,7 @@ impl EGraph {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct ENode {
     frame: Option<StackIdx>,
     pub created_by: Option<InstIdx>,

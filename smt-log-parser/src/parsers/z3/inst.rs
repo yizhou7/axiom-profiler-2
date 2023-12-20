@@ -3,7 +3,7 @@ use typed_index_collections::TiVec;
 
 use crate::items::{Fingerprint, InstIdx, Instantiation, Match, MatchIdx};
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default)]
 pub struct Insts {
     // `theory-solving` fingerprints are always 0, others rarely repeat.
     fingerprint_to_match: FxHashMap<Fingerprint, (MatchIdx, Option<InstIdx>)>,

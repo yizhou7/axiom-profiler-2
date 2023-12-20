@@ -1,36 +1,40 @@
 use typed_index_collections::TiVec;
 
-use crate::items::{Term, TermId, TermIdCow, TermIdToIdxMap, TermIdx};
+use crate::items::{Term, TermId, TermIdToIdxMap, TermIdx, StringTable};
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug)]
 pub struct Terms {
     term_id_map: TermIdToIdxMap,
     terms: TiVec<TermIdx, Term>,
 }
 
 impl Terms {
-    pub(super) fn new_term(&mut self, id: TermIdCow, term: Term) -> TermIdx {
-        let idx = self.terms.next_key();
-        for c in &term.child_ids {
-            self.terms[*c].dep_term_ids.push(idx);
+    pub(super) fn new(strings: &mut StringTable) -> Self {
+        Self {
+            term_id_map: TermIdToIdxMap::new(strings),
+            terms: TiVec::new(),
         }
+    }
+
+    pub(super) fn new_term(&mut self, id: TermId, term: Term) -> TermIdx {
+        let idx = self.terms.next_key();
         self.terms.push(term);
         self.term_id_map.register_term(id, idx);
         idx
     }
 
     #[must_use]
-    pub(super) fn parse_id(&self, id: &str) -> Option<Result<TermIdx, TermId>> {
-        let term_id = TermIdCow::parse(id)?;
+    pub(super) fn parse_id(&self, strings: &mut StringTable, id: &str) -> Option<Result<TermIdx, TermId>> {
+        let term_id = TermId::parse(strings, id)?;
         Some(
             self.term_id_map
                 .get_term(&term_id)
-                .ok_or_else(|| term_id.into_owned()),
+                .ok_or_else(|| term_id),
         )
     }
     #[must_use]
-    pub(super) fn parse_existing_id(&self, id: &str) -> Option<TermIdx> {
-        self.parse_id(id).and_then(|r| r.ok())
+    pub(super) fn parse_existing_id(&self, strings: &mut StringTable, id: &str) -> Option<TermIdx> {
+        self.parse_id(strings, id).and_then(|r| r.ok())
     }
 }
 

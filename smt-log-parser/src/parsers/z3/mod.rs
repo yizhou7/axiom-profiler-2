@@ -66,7 +66,7 @@ impl<T: Z3LogParser + Default> LogParser for T {
 }
 
 const DEFAULT: Option<()> = Some(());
-pub trait Z3LogParser: Debug {
+pub trait Z3LogParser {
     /* Methods to handle each line case of Z3 logs.
      `l` is a line split with spaces as delimiters,
      and `l0` is the raw line (used only when )

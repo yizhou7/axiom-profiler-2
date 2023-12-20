@@ -1,4 +1,4 @@
-use crate::results::graph_info::{GraphInfo, Msg as GraphInfoMsg};
+use crate::{results::graph_info::{GraphInfo, Msg as GraphInfoMsg}, RcParser};
 
 use self::colours::HSVColour;
 use super::{filters::{
@@ -61,7 +61,7 @@ struct GraphDimensions {
 }
 
 pub struct SVGResult {
-    parser: Rc<Z3Parser>,
+    parser: RcParser,
     colour_map: QuantIdxToColourMap,
     inst_graph: InstGraph,
     svg_text: AttrValue,
@@ -70,15 +70,15 @@ pub struct SVGResult {
     graph_dim: GraphDimensions,
     worker: Option<Box<dyn yew_agent::Bridge<Worker>>>,
     async_graph_and_filter_chain: bool,
-    get_node_info: Callback<(NodeIndex, bool, Rc<Z3Parser>), InstInfo>,
-    get_edge_info: Callback<(EdgeIndex, bool, Rc<Z3Parser>), EdgeInfo>,
+    get_node_info: Callback<(NodeIndex, bool, RcParser), InstInfo>,
+    get_edge_info: Callback<(EdgeIndex, bool, RcParser), EdgeInfo>,
     selected_insts: Vec<InstInfo>,
 
 }
 
 #[derive(Properties, PartialEq)]
 pub struct SVGProps {
-    pub parser: std::rc::Rc<Z3Parser>,
+    pub parser: RcParser,
 }
 
 impl Component for SVGResult {
@@ -87,19 +87,19 @@ impl Component for SVGResult {
 
     fn create(ctx: &Context<Self>) -> Self {
         log::debug!("Creating SVGResult component");
-        let parser = std::rc::Rc::clone(&ctx.props().parser);
-        let inst_graph = InstGraph::from(&parser);
+        let parser = RcParser::clone(&ctx.props().parser);
+        let inst_graph = InstGraph::from(&*parser);
         let (quant_count, non_quant_insts) = parser.quant_count_incl_theory_solving();
         let colour_map = QuantIdxToColourMap::from(quant_count, non_quant_insts);
         let get_node_info = Callback::from({
             let inst_graph = inst_graph.clone();
-            move |(node, ignore_ids, parser): (NodeIndex, bool, Rc<Z3Parser>)| {
-            inst_graph.get_instantiation_info(node.index(), parser, ignore_ids)
+            move |(node, ignore_ids, parser): (NodeIndex, bool, RcParser)| {
+            inst_graph.get_instantiation_info(node.index(), &*parser, ignore_ids)
         }});
         let get_edge_info = Callback::from({
             let inst_graph = inst_graph.clone();
-            move |(edge, ignore_ids, parser): (EdgeIndex, bool, Rc<Z3Parser>)| {
-            inst_graph.get_edge_info(edge, parser, ignore_ids)
+            move |(edge, ignore_ids, parser): (EdgeIndex, bool, RcParser)| {
+            inst_graph.get_edge_info(edge, &*parser, ignore_ids)
         }});
         Self {
             parser,
@@ -170,20 +170,20 @@ impl Component for SVGResult {
                             &[Config::EdgeNoLabel, Config::NodeNoLabel, Config::GraphContentOnly],
                             &|_, edge_data| format!(
                                 "id={} style={} class={} arrowhead={}",
-                                match edge_data.weight().orig_graph_idx {
-                                    Some(idx) => format!("edge{}", idx.index()),
-                                    None => "indirect".to_string() 
+                                match edge_data.weight() {
+                                    EdgeType::Direct { orig_graph_idx, .. } => format!("edge{}", orig_graph_idx.index()),
+                                    EdgeType::Indirect => "indirect".to_string() 
                                 },
-                                match edge_data.weight().edge_type {
-                                    EdgeType::Direct(_) => "solid",
+                                match edge_data.weight() {
+                                    EdgeType::Direct { .. } => "solid",
                                     EdgeType::Indirect => "dashed",
                                 },
-                                match edge_data.weight().edge_type {
-                                    EdgeType::Direct(_) => "direct",
+                                match edge_data.weight() {
+                                    EdgeType::Direct { .. } => "direct",
                                     EdgeType::Indirect => "indirect",
                                 },
-                                match edge_data.weight().edge_type {
-                                    EdgeType::Direct(BlameKind::Equality { .. }) => "empty",
+                                match edge_data.weight() {
+                                    EdgeType::Direct { kind: BlameKind::Equality { .. }, .. } => "empty",
                                     _ => "normal",
                                 }
                             ),
@@ -320,7 +320,7 @@ impl Component for SVGResult {
                         reset_graph={reset_graph.clone()}
                         render_graph={render_graph.clone()}
                         weak_link={self.filter_chain_link.clone()}
-                        dependency={ctx.props().parser.as_ref() as *const _}
+                        dependency={ctx.props().parser.as_ptr()}
                     />
                 </ContextProvider<Vec<InstInfo>>>
                 {async_graph_and_filter_chain_warning}

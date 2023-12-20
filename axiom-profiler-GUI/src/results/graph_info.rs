@@ -7,6 +7,8 @@ use petgraph::graph::{NodeIndex, EdgeIndex};
 use smt_log_parser::{parsers::z3::{inst_graph::{InstInfo, EdgeInfo}, z3parser::Z3Parser}, items::BlameKind};
 use smt_log_parser::parsers::z3::inst_graph::EdgeType;
 use material_yew::WeakComponentLink;
+use crate::RcParser;
+
 use super::graph::graph_container::GraphContainer;
 
 pub struct GraphInfo {
@@ -32,9 +34,9 @@ pub enum Msg {
 #[derive(Properties, PartialEq)]
 pub struct GraphInfoProps {
     pub weak_link: WeakComponentLink<GraphInfo>,
-    pub node_info: Callback<(NodeIndex, bool, Rc<Z3Parser>), InstInfo>,
-    pub edge_info: Callback<(EdgeIndex, bool, Rc<Z3Parser>), EdgeInfo>,
-    pub parser: Rc<Z3Parser>,
+    pub node_info: Callback<(NodeIndex, bool, RcParser), InstInfo>,
+    pub edge_info: Callback<(EdgeIndex, bool, RcParser), EdgeInfo>,
+    pub parser: RcParser,
     pub svg_text: AttrValue,
     pub update_selected_nodes: Callback<Vec<InstInfo>>,
 }
@@ -137,7 +139,7 @@ impl Component for GraphInfo {
                     *node = updated_node;
                 }
                 for edge in self.selected_edges.values_mut() {
-                    let edge_idx = edge.edge_data.orig_graph_idx.unwrap();
+                    let edge_idx = edge.orig_graph_idx;
                     let updated_dep = ctx.props().edge_info.emit((edge_idx, self.ignore_term_ids, ctx.props().parser.clone()));
                     *edge = updated_dep;
                 }
@@ -278,19 +280,19 @@ fn selected_edges_info(SelectedEdgesInfoProps { selected_edges, on_click }: &Sel
                 let on_click = on_click.clone();
                 let selected_edge = selected_edge.clone();
                 Callback::from(move |_| {
-                    on_click.emit(selected_edge.edge_data.orig_graph_idx.unwrap().clone())
+                    on_click.emit(selected_edge.orig_graph_idx)
                 })
             };
             html! {
-            <details id={format!("{}", selected_edge.edge_data.orig_graph_idx.unwrap().index())} onclick={on_select}>
+            <details id={format!("{}", selected_edge.orig_graph_idx.index())} onclick={on_select}>
                 <summary>{format!("Dependency from {} to {}", selected_edge.from.index(), selected_edge.to.index())}</summary>
-                {match selected_edge.edge_data.edge_type {
-                    EdgeType::Direct(BlameKind::Term { .. }) => html! {
+                {match selected_edge.edge_data {
+                    BlameKind::Term { .. } => html! {
                         <div>
                         <h4>{"Blame term: "}</h4><p>{selected_edge.blame_term.clone()}</p>
                         </div>
                     }, 
-                    EdgeType::Direct(BlameKind::Equality { .. }) => html! {
+                    BlameKind::Equality { .. } => html! {
                         <div>
                         <h4>{"Equality: "}</h4><p>{selected_edge.blame_term.clone()}</p>
                         </div>

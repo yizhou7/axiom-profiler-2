@@ -27,7 +27,7 @@ pub enum Msg {
 }
 
 pub struct FileDataComponent {
-    files: Vec<std::rc::Rc<Z3Parser>>,
+    files: Vec<RcParser>,
     readers: Vec<FileReader>,
 }
 
@@ -85,7 +85,7 @@ impl Component for FileDataComponent {
             }
             Msg::LoadedFile(file_name, parser) => {
                 log::info!("Processing: {file_name}");
-                self.files.push(std::rc::Rc::new(parser));
+                self.files.push(RcParser::new(parser));
                 true
             }
         }
@@ -113,7 +113,7 @@ impl Component for FileDataComponent {
                     </div>
                 </div>
                 <div style="display: flex; ">
-                    { for self.files.iter().map(|f| Self::view_file(std::rc::Rc::clone(f)))}
+                    { for self.files.iter().map(|f| Self::view_file(RcParser::clone(f)))}
                 </div>
             </div>
         }
@@ -121,7 +121,7 @@ impl Component for FileDataComponent {
 }
 
 impl FileDataComponent {
-    fn view_file(data: std::rc::Rc<Z3Parser>) -> Html {
+    fn view_file(data: RcParser) -> Html {
         log::debug!("Viewing file");
         html! {
             <SVGResult parser={data}/>
@@ -158,22 +158,33 @@ enum Route {
     Test,
 }
 
-// fn switch(routes: Route) -> Html {
-//     match routes {
-//         Route::App => html! {
-//             <App/>
-//         },
-//         Route::Test => html! {
-//             <Test/>
-//         },
-//     }
-// }
+pub struct RcParser(std::rc::Rc<Z3Parser>);
 
-// #[function_component(Main)]
-// fn main() -> Html {
-//     html! {
-//         <BrowserRouter>
-//             <Switch<Route> render={switch} />
-//         </BrowserRouter>
-//     }
-// }
+impl std::ops::Deref for RcParser {
+    type Target = Z3Parser;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Clone for RcParser {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl PartialEq for RcParser {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(&*self.0, &*other.0)
+    }
+}
+
+impl RcParser {
+    fn new(parser: Z3Parser) -> Self {
+        Self(std::rc::Rc::new(parser))
+    }
+    pub(crate) fn as_ptr(&self) -> *const Z3Parser {
+        std::rc::Rc::as_ptr(&self.0)
+    }
+}

@@ -2,6 +2,10 @@ use fxhash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt;
+use std::num::NonZeroU32;
+
+pub type StringTable = lasso::Rodeo<lasso::Spur, fxhash::FxBuildHasher>;
+pub type IString = lasso::Spur;
 
 #[macro_export]
 macro_rules! idx {
@@ -40,26 +44,25 @@ idx!(ENodeIdx, "e{}");
 idx!(MatchIdx, "m{}");
 
 /// A Z3 term and associated data.
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Term {
     pub id: TermId,
     pub kind: TermKind,
     pub meaning: Option<Meaning>,
     pub child_ids: Vec<TermIdx>,
-    pub dep_term_ids: Vec<TermIdx>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TermKind {
     Var(usize),
     ProofOrApp(ProofOrApp),
     Quant(QuantIdx),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProofOrApp {
     pub is_proof: bool,
-    pub name: String,
+    pub name: IString,
 }
 
 impl TermKind {
@@ -67,8 +70,7 @@ impl TermKind {
     pub(crate) fn parse_var(value: &str) -> Option<TermKind> {
         value.parse::<usize>().map(TermKind::Var).ok()
     }
-    pub(crate) fn parse_proof_app(is_proof: bool, name: &str) -> Self {
-        let name = name.to_string();
+    pub(crate) fn parse_proof_app(is_proof: bool, name: IString) -> Self {
         Self::ProofOrApp(ProofOrApp { is_proof, name })
     }
     pub fn quant_idx(&self) -> Option<QuantIdx> {
@@ -79,16 +81,16 @@ impl TermKind {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Meaning {
     /// The theory in which the value should be interpreted (e.g. `bv`)
-    pub theory: String,
+    pub theory: IString,
     /// The value of the term (e.g. `#x0000000000000001` or `#b1`)
-    pub value: String,
+    pub value: IString,
 }
 
 /// A Z3 quantifier and associated data.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Quantifier {
     pub kind: QuantKind,
     pub num_vars: usize,
@@ -99,14 +101,14 @@ pub struct Quantifier {
 }
 
 /// Represents an ID string of the form `name!id`.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum QuantKind {
-    Other(String), // From `[inst-discovered]` with `theory-solving` or `MBQI`
+    Other(IString), // From `[inst-discovered]` with `theory-solving` or `MBQI`
     Lambda,
-    NamedQuant(String),
+    NamedQuant(IString),
     /// Represents a name string of the form `name!id`
     UnnamedQuant {
-        name: String,
+        name: IString,
         id: usize,
     },
 }
@@ -115,7 +117,7 @@ impl QuantKind {
     /// Splits an ID string into name and ID number (if unnamed).
     /// 0 is used for identifiers without a number
     /// (usually for theory-solving 'quantifiers' such as "basic#", "arith#")    
-    pub(crate) fn parse(value: &str) -> Self {
+    pub(crate) fn parse(strings: &mut StringTable, value: &str) -> Self {
         if value == "<null>" {
             return Self::Lambda;
         }
@@ -125,36 +127,36 @@ impl QuantKind {
             .next()
             .and_then(|id| id.parse::<usize>().ok())
             .map(|id| Self::UnnamedQuant {
-                name: name.to_string(),
+                name: strings.get_or_intern(name),
                 id,
             })
-            .unwrap_or_else(|| Self::NamedQuant(value.to_string()))
+            .unwrap_or_else(|| Self::NamedQuant(strings.get_or_intern(value)))
     }
     pub fn is_discovered(&self) -> bool {
         matches!(self, Self::Other(_))
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum VarNames {
-    TypeOnly(Vec<String>),
-    NameAndType(Vec<(String, String)>),
+    TypeOnly(Vec<IString>),
+    NameAndType(Vec<(IString, IString)>),
 }
 impl VarNames {
-    pub fn get_name<'a>(this: &'a Option<Self>, idx: usize) -> Cow<'a, str> {
+    pub fn get_name<'a>(strings: &'a StringTable, this: &Option<Self>, idx: usize) -> Cow<'a, str> {
         match this {
-            Some(Self::NameAndType(names)) => Cow::Borrowed(&names[idx].0),
+            Some(Self::NameAndType(names)) => Cow::Borrowed(strings.resolve(&names[idx].0)),
             None | Some(Self::TypeOnly(_)) => Cow::Owned(format!("qvar_{idx}")),
         }
     }
-    pub fn get_type(this: &Option<Self>, idx: usize) -> String {
+    pub fn get_type(strings: &StringTable, this: &Option<Self>, idx: usize) -> String {
         this.as_ref()
             .map(|this| {
                 let ty = match this {
                     Self::TypeOnly(names) => &names[idx],
                     Self::NameAndType(names) => &names[idx].1,
                 };
-                format!(": {ty}")
+                format!(": {}", strings.resolve(ty))
             })
             .unwrap_or_default()
     }
@@ -167,7 +169,7 @@ impl VarNames {
 }
 
 /// A Z3 instantiation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Instantiation {
     pub match_: MatchIdx,
     pub fingerprint: Fingerprint,
@@ -183,7 +185,7 @@ impl Instantiation {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Match {
     pub kind: MatchKind,
     pub blamed: Vec<BlameKind>,
@@ -209,7 +211,7 @@ impl Match {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MatchKind {
     MBQI {
         quant: QuantIdx,
@@ -278,7 +280,7 @@ impl MatchKind {
 /// The kind of dependency between two quantifier instantiations.
 /// - Term: one instantiation produced a term that the other triggered on
 /// - Equality: dependency based on an equality.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BlameKind {
     Term { term: ENodeIdx },
     Equality { eq: ENodeIdx },
@@ -324,69 +326,59 @@ impl fmt::Display for Fingerprint {
 }
 
 /// Represents an ID string of the form `name#id` or `name#`.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
-pub struct TermIdCow<'a> {
-    pub namespace: Cow<'a, str>,
-    pub id: Option<usize>,
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, Hash)]
+pub struct TermId {
+    pub namespace: IString,
+    pub id: Option<NonZeroU32>,
 }
-impl fmt::Display for TermIdCow<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}#{}", self.namespace, self.id.unwrap_or_default())
-    }
-}
-impl<'a> TermIdCow<'a> {
+impl TermId {
     /// Splits an ID string into namespace and ID number.
     /// 0 is used for identifiers without a number
     /// (usually for theory-solving 'quantifiers' such as "basic#", "arith#")
     #[must_use]
-    pub fn parse(value: &'a str) -> Option<Self> {
+    pub fn parse(strings: &mut StringTable, value: &str) -> Option<Self> {
         let hash_idx = value.find('#')?;
-        let namespace = Cow::Borrowed(&value[..hash_idx]);
+        let namespace = strings.get_or_intern(&value[..hash_idx]);
         let id = &value[hash_idx + 1..];
         let id = match id {
             "" => None,
-            id => Some(id.parse::<usize>().ok()?),
+            id => Some(NonZeroU32::new(id.parse::<u32>().ok()? + 1)?),
         };
         Some(Self { namespace, id })
     }
-    pub fn into_owned(&self) -> TermId {
-        TermId {
-            namespace: self.namespace.clone().into_owned().into(),
-            id: self.id,
-        }
-    }
-    pub fn order(&self) -> usize {
-        self.id.map(|id| id + 1).unwrap_or_default()
+    pub fn order(&self) -> u32 {
+        self.id.map(|id| id.get()).unwrap_or_default()
     }
 }
-pub type TermId = TermIdCow<'static>;
 
 /// Remapping from `TermId` to `TermIdx`. We want to have a single flat vector
 /// of terms but `TermId`s don't map to this nicely, additionally the `TermId`s
 /// may repeat and so we want to map to the latest current `TermIdx`. Has a
 /// special fast path for the common empty namespace case.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug)]
 pub struct TermIdToIdxMap {
+    empty_string: IString,
     empty_namespace: Vec<Option<TermIdx>>,
-    namespace_map: FxHashMap<String, Vec<Option<TermIdx>>>,
+    namespace_map: FxHashMap<IString, Vec<Option<TermIdx>>>,
 }
 impl TermIdToIdxMap {
-    fn get_vec_mut(&mut self, idx: Cow<'_, str>) -> &mut Vec<Option<TermIdx>> {
-        if idx.is_empty() {
+    pub fn new(strings: &mut StringTable) -> Self {
+        Self {
+            empty_string: strings.get_or_intern_static(""),
+            empty_namespace: Vec::new(),
+            namespace_map: FxHashMap::default(),
+        }
+    }
+    fn get_vec_mut(&mut self, namespace: IString) -> &mut Vec<Option<TermIdx>> {
+        if self.empty_string == namespace {
             // Special handling of common case for empty namespace
             &mut self.empty_namespace
         } else {
-            // Double lookup avoids cloning if already contained and should
-            // be optimized away. Switch to `raw_entry_mut` once stabilized.
-            if !self.namespace_map.contains_key(&*idx) {
-                self.namespace_map.entry(idx.into_owned()).or_default()
-            } else {
-                self.namespace_map.get_mut(&*idx).unwrap()
-            }
+            self.namespace_map.entry(namespace).or_default()
         }
     }
-    pub fn register_term(&mut self, id: TermIdCow, idx: TermIdx) {
-        let id_idx = id.order();
+    pub fn register_term(&mut self, id: TermId, idx: TermIdx) {
+        let id_idx = id.order() as usize;
         let vec = self.get_vec_mut(id.namespace);
         if id_idx >= vec.len() {
             vec.resize(id_idx + 1, None);
@@ -396,16 +388,16 @@ impl TermIdToIdxMap {
         // `id` to refer to the new term and not the old one.
         vec[id_idx].replace(idx);
     }
-    fn get_vec(&self, namespace: &str) -> Option<&Vec<Option<TermIdx>>> {
-        if namespace.is_empty() {
+    fn get_vec(&self, namespace: IString) -> Option<&Vec<Option<TermIdx>>> {
+        if self.empty_string == namespace {
             Some(&self.empty_namespace)
         } else {
-            self.namespace_map.get(namespace)
+            self.namespace_map.get(&namespace)
         }
     }
-    pub fn get_term(&self, id: &TermIdCow) -> Option<TermIdx> {
-        self.get_vec(&id.namespace)
-            .and_then(|vec| vec.get(id.order()).and_then(|x| x.as_ref()))
+    pub fn get_term(&self, id: &TermId) -> Option<TermIdx> {
+        self.get_vec(id.namespace)
+            .and_then(|vec| vec.get(id.order() as usize).and_then(|x| x.as_ref()))
             .copied()
     }
 }
@@ -413,7 +405,7 @@ impl TermIdToIdxMap {
 /// A Z3 equality explanation.
 /// Root represents a term that is a root of its equivalence class.
 /// All other variants represent an equality between two terms and where it came from.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum EqualityExpl {
     Root {
         id: ENodeIdx,
@@ -432,7 +424,7 @@ pub enum EqualityExpl {
     },
     Theory {
         from: ENodeIdx,
-        theory: String,
+        theory: IString,
         to: ENodeIdx,
     },
     Axiom {
@@ -440,41 +432,11 @@ pub enum EqualityExpl {
         to: ENodeIdx,
     },
     Unknown {
-        kind: String,
+        kind: IString,
         from: ENodeIdx,
-        args: Vec<String>,
+        args: Vec<IString>,
         to: ENodeIdx,
     },
-}
-
-impl fmt::Display for EqualityExpl {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            EqualityExpl::Root { id } => write!(f, "Root {id}\n"),
-            EqualityExpl::Literal {
-                from: id,
-                eq: from,
-                to,
-            } => write!(f, "Lit. {id}: {from}, {to}\n"),
-            EqualityExpl::Congruence {
-                from: id,
-                arg_eqs: terms,
-                to,
-            } => write!(f, "Cong. {id}: {terms:?}, {to}\n"),
-            EqualityExpl::Theory {
-                from: id,
-                theory,
-                to: term,
-            } => write!(f, "Theory {id}: {theory} {term}\n"),
-            EqualityExpl::Axiom { from: id, to: term } => write!(f, "Axiom {id}: {term}\n"),
-            EqualityExpl::Unknown {
-                kind,
-                from: id,
-                args,
-                to: term,
-            } => write!(f, "Unknown ({kind} {args:?}) {id}: {term}\n"),
-        }
-    }
 }
 
 impl EqualityExpl {

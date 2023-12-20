@@ -11,7 +11,6 @@ use petgraph::{
 };
 use petgraph::{Direction, Graph};
 use roaring::bitmap::RoaringBitmap;
-use std::collections::HashSet;
 use std::fmt;
 use typed_index_collections::TiVec;
 
@@ -46,45 +45,62 @@ impl fmt::Debug for NodeData {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub enum EdgeType {
-    Direct(BlameKind),
+    Direct {
+        kind: BlameKind,
+        orig_graph_idx: EdgeIndex,
+    },
     Indirect,
+}
+
+impl PartialEq for EdgeType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (EdgeType::Direct { orig_graph_idx: s, .. }, EdgeType::Direct { orig_graph_idx: o, .. }) => s == o,
+            (EdgeType::Indirect, EdgeType::Indirect) => true,
+            _ => false,
+        }
+    }
 }
 
 impl EdgeType {
     pub fn blame_term_idx(&self) -> Option<ENodeIdx> {
         match self {
-            EdgeType::Direct(kind) => kind.get_blame_node(),
+            EdgeType::Direct { kind, .. } => kind.get_blame_node(),
             _ => None,
         }
     }
+    pub fn is_direct(&self) -> bool {
+        matches!(self, EdgeType::Direct { .. })
+    }
 }
 
-#[derive(Clone, PartialEq)]
-pub struct EdgeData {
-    pub edge_type: EdgeType,
-    pub orig_graph_idx: Option<EdgeIndex>,
-}
-
-#[derive(PartialEq, Clone)]
+#[derive(Clone)]
 pub struct EdgeInfo {
-    pub edge_data: EdgeData,
+    pub edge_data: BlameKind,
+    pub orig_graph_idx: EdgeIndex,
     pub blame_term: String,
     pub from: NodeIndex,
     pub to: NodeIndex,
 }
 
-impl fmt::Debug for EdgeData {
+impl PartialEq for EdgeInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.orig_graph_idx == other.orig_graph_idx
+    }
+}
+
+impl fmt::Debug for EdgeType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.edge_type {
-            EdgeType::Direct(_) => write!(f, "direct edge"),
+        match self {
+            EdgeType::Direct { .. } => write!(f, "direct edge"),
             EdgeType::Indirect => write!(f, "indirect edge"),
         }
     }
 }
 
-#[derive(PartialEq, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct InstInfo {
     pub fingerprint: Fingerprint,
     pub inst_idx: InstIdx,
@@ -103,10 +119,16 @@ pub struct InstInfo {
     pub node_index: NodeIndex,
 }
 
+impl PartialEq for InstInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.inst_idx == other.inst_idx
+    }
+}
+
 #[derive(Default, Clone)]
 pub struct InstGraph {
-    orig_graph: Graph<NodeData, EdgeData>,
-    pub visible_graph: Graph<NodeData, EdgeData>,
+    orig_graph: Graph<NodeData, BlameKind>,
+    pub visible_graph: Graph<NodeData, EdgeType>,
     node_of_inst_idx: TiVec<InstIdx, NodeIndex>,
     cost_ranked_node_indices: Vec<NodeIndex>,
     branching_ranked_node_indices: Vec<NodeIndex>,
@@ -145,21 +167,15 @@ impl InstGraph {
         let prev_edge_count = self.visible_graph.edge_count();
         // retain all visible nodes
         let mut new_inst_graph = self.orig_graph.filter_map(
-            |_, node| {
-                if node.visible {
-                    Some(node.clone())
-                } else {
-                    None
-                }
-            },
-            |_, edge_data| Some(edge_data.clone()),
+            |_, node| Some(node).filter(|node| node.visible).cloned(),
+            |orig_graph_idx, edge_data| Some(EdgeType::Direct { kind: edge_data.clone(), orig_graph_idx }),
         );
         // remember all direct edges (will be added to the graph in the end)
         let direct_edges = new_inst_graph
             .raw_edges()
             .iter()
             .cloned()
-            .collect::<Vec<Edge<EdgeData>>>();
+            .collect::<Vec<Edge<EdgeType>>>();
         // nodes with missing children
         let out_set: Vec<NodeIndex> = new_inst_graph
             .node_indices()
@@ -193,10 +209,7 @@ impl InstGraph {
                     new_inst_graph.add_edge(
                         u,
                         v,
-                        EdgeData {
-                            edge_type: EdgeType::Indirect,
-                            orig_graph_idx: None,
-                        },
+                        EdgeType::Indirect,
                     );
                 }
             }
@@ -229,10 +242,7 @@ impl InstGraph {
                 new_inst_graph.add_edge(
                     source,
                     target,
-                    EdgeData {
-                        edge_type: EdgeType::Indirect,
-                        orig_graph_idx: None,
-                    },
+                    EdgeType::Indirect,
                 );
             }
         }
@@ -311,7 +321,7 @@ impl InstGraph {
 
     pub fn show_longest_path_through(&mut self, node: NodeIndex) -> Vec<NodeIndex> {
         // construct subtree rooted at selected node
-        let mut subtree_rooted_at_node: StableGraph<NodeData, EdgeData> =
+        let mut subtree_rooted_at_node: StableGraph<NodeData, BlameKind> =
             StableGraph::from(self.orig_graph.clone());
         for node in subtree_rooted_at_node.node_weights_mut() {
             node.visible = false;
@@ -447,7 +457,7 @@ impl InstGraph {
         }
     }
 
-    fn find_longest_paths(graph: &mut Graph<NodeData, EdgeData>) -> FxHashSet<NodeIndex> {
+    fn find_longest_paths(graph: &mut Graph<NodeData, EdgeType>) -> FxHashSet<NodeIndex> {
         // traverse this subtree in topological order to compute longest distances from node
         let mut topo = Topo::new(&*graph);
         while let Some(nx) = topo.next(&*graph) {
@@ -511,22 +521,23 @@ impl InstGraph {
     pub fn get_edge_info(
         &self,
         edge_index: EdgeIndex,
-        parser: std::rc::Rc<Z3Parser>,
+        parser: &Z3Parser,
         ignore_ids: bool,
     ) -> EdgeInfo {
         let edge_data = &self.orig_graph[edge_index];
         let ctxt = DisplayCtxt {
-            parser: &*parser,
+            parser,
 
             display_term_ids: !ignore_ids,
             display_quantifier_name: false,
             use_mathematical_symbols: true,
         };
-        let blame_term_idx = edge_data.edge_type.blame_term_idx().unwrap();
+        let blame_term_idx = edge_data.get_blame_node().unwrap();
         let blame_term = blame_term_idx.with(&ctxt).to_string();
         let (from, to) = self.orig_graph.edge_endpoints(edge_index).unwrap();
         EdgeInfo {
             edge_data: edge_data.clone(),
+            orig_graph_idx: edge_index,
             blame_term,
             from,
             to,
@@ -536,12 +547,12 @@ impl InstGraph {
     pub fn get_instantiation_info(
         &self,
         node_index: usize,
-        parser: std::rc::Rc<Z3Parser>,
+        parser: &Z3Parser,
         ignore_ids: bool,
     ) -> InstInfo {
         let NodeData { inst_idx, .. } = self.orig_graph[NodeIndex::new(node_index)];
         let ctxt = DisplayCtxt {
-            parser: &*parser,
+            parser,
 
             display_term_ids: !ignore_ids,
             display_quantifier_name: false,
@@ -601,13 +612,6 @@ impl InstGraph {
         let neighbours = self
             .orig_graph
             .edges_directed(node_idx, direction)
-            .filter(|e| {
-                if let EdgeType::Direct(_) = e.weight().edge_type {
-                    true
-                } else {
-                    false
-                }
-            })
             .map(|e| match direction {
                 Outgoing => e.target(),
                 Incoming => e.source(),
@@ -647,17 +651,12 @@ impl InstGraph {
             }
         }
         // precompute number of children and parents of each node
-        self.orig_graph = self.orig_graph.map(
-            |nidx, data| {
-                let child_count = self.orig_graph.neighbors_directed(nidx, Outgoing).count();
-                let parent_count = self.orig_graph.neighbors_directed(nidx, Incoming).count();
-                let mut new_data = data.clone();
-                new_data.child_count = child_count;
-                new_data.parent_count = parent_count;
-                new_data
-            },
-            |_, data| data.clone(),
-        );
+        for idx in self.orig_graph.node_indices() {
+            let child_count = self.orig_graph.neighbors_directed(idx, Outgoing).count();
+            let parent_count = self.orig_graph.neighbors_directed(idx, Incoming).count();
+            self.orig_graph.node_weight_mut(idx).unwrap().child_count = child_count;
+            self.orig_graph.node_weight_mut(idx).unwrap().parent_count = parent_count;
+        }
         // precompute the cost-rank of all nodes by sorting the node_indices by our cost-order
         // in descending order and then assigning the rank to each node
         // Our cost-order is defined as follows:
@@ -779,7 +778,7 @@ impl InstGraph {
             }
         }
         log!("Finished computing transitive closure");
-        self.visible_graph = self.orig_graph.clone();
+        self.visible_graph = self.orig_graph.map(|_, n| n.clone(), |orig_graph_idx, e| EdgeType::Direct { kind: e.clone(), orig_graph_idx })
     }
 
     fn add_node(&mut self, node_data: NodeData) {
@@ -800,14 +799,10 @@ impl InstGraph {
 
     fn add_edge(&mut self, from: InstIdx, to: InstIdx, blame: &BlameKind) {
         let (from, to) = (self.node_of_inst_idx[from], self.node_of_inst_idx[to]);
-        let edge = self.orig_graph.add_edge(
+        self.orig_graph.add_edge(
             from,
             to,
-            EdgeData {
-                edge_type: EdgeType::Direct(blame.clone()),
-                orig_graph_idx: None,
-            },
+            blame.clone(),
         );
-        self.orig_graph[edge].orig_graph_idx = Some(edge);
     }
 }

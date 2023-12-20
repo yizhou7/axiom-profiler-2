@@ -12,7 +12,7 @@ pub mod z3;
 
 /// Trait for a generic SMT solver trace parser. Intended to support different
 /// solvers or log formats.
-pub trait LogParser: Default + Debug {
+pub trait LogParser: Default {
     /// Can be used to allow for parsing entries across multiple lines.
     fn is_line_start(&mut self, _first_byte: u8) -> bool {
         true

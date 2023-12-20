@@ -2,7 +2,7 @@ use typed_index_collections::TiVec;
 
 use crate::items::StackIdx;
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default)]
 pub struct Stack {
     pub(super) stack: Vec<StackIdx>,
     pub(super) stack_frames: TiVec<StackIdx, StackFrame>,
@@ -60,10 +60,9 @@ impl Stack {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct StackFrame {
     pub active: bool,
-    // pub new_terms: Vec<(Option<TermIdx>, TermIdx)>,
 }
 
 impl StackFrame {
