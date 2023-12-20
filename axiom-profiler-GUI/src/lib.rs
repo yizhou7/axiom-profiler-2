@@ -22,13 +22,12 @@ pub mod results;
 mod utils;
 // mod select_dropdown;
 pub enum Msg {
-    LoadedBytes(String, Vec<u8>),
+    LoadedFile(String, Z3Parser),
     Files(Option<FileList>),
 }
 
 pub struct FileDataComponent {
-    files: Vec<String>,
-    parsers: Vec<ParserData>,
+    files: Vec<std::rc::Rc<Z3Parser>>,
     readers: Vec<FileReader>,
 }
 
@@ -39,7 +38,6 @@ impl Component for FileDataComponent {
     fn create(_ctx: &Context<Self>) -> Self {
         Self {
             files: Vec::new(),
-            parsers: Vec::new(),
             readers: Vec::new(),
         }
     }
@@ -50,60 +48,44 @@ impl Component for FileDataComponent {
                 let Some(files) = files else {
                     return false;
                 };
-                let mut changed = !self.files.is_empty() || !self.readers.is_empty();
+                let changed = !self.files.is_empty() || !self.readers.is_empty();
                 self.files.clear();
                 self.readers.clear();
                 log::info!("Files selected: {}", files.len());
                 for file in files.into_iter() {
                     let file_name = file.name();
-                    if true {
-                        // Old reader where all files are loaded as strings
-                        let task = {
+                    // Turn into stream
+                    let blob: &web_sys::Blob = file.as_ref();
+                    let stream = ReadableStream::from_raw(blob.stream().unchecked_into());
+                    match stream.try_into_async_read() {
+                        Ok(stream) => {
                             let link = ctx.link().clone();
-                            gloo_file::callbacks::read_as_bytes(&file, move |res| {
-                                link.send_message(Msg::LoadedBytes(
-                                    file_name,
-                                    res.expect("failed to read file"),
-                                ))
-                            })
-                        };
-                        self.readers.push(task);
-                    } else {
-                        // Turn into stream
-                        let blob: &web_sys::Blob = file.as_ref();
-                        let stream = ReadableStream::from_raw(blob.stream().unchecked_into());
-                        match stream.try_into_async_read() {
-                            Ok(stream) => {
-                                let parser = Z3Parser::from_async(stream.buffer());
-                                self.parsers.push(ParserData::new(parser));
-                                changed = true;
-                            }
-                            Err((_err, _stream)) => {
-                                let link = ctx.link().clone();
-                                let reader =
-                                    gloo_file::callbacks::read_as_bytes(file, move |res| {
-                                        link.send_message(Msg::LoadedBytes(
-                                            file_name,
-                                            res.expect("failed to read file"),
-                                        ))
-                                    });
-                                self.readers.push(reader);
-                            }
-                        };
-                    }
+                            let parser = Z3Parser::from_async(stream.buffer());
+                            wasm_bindgen_futures::spawn_local(async move {
+                                log::info!("Parsing: {file_name}");
+                                let parser = parser.process_all().await;
+                                link.send_message(Msg::LoadedFile(file_name, parser))
+                            });
+                        }
+                        Err((_err, _stream)) => {
+                            let link = ctx.link().clone();
+                            let reader =
+                                gloo_file::callbacks::read_as_bytes(file, move |res| {
+                                    log::info!("Loading to string: {file_name}");
+                                    let text_data = String::from_utf8(res.expect("failed to read file")).unwrap();
+                                    log::info!("Parsing: {file_name}");
+                                    let parser = Z3Parser::from_str(&text_data).process_all();
+                                    link.send_message(Msg::LoadedFile(file_name, parser))
+                                });
+                            self.readers.push(reader);
+                        }
+                    };
                 }
                 changed
             }
-            Msg::LoadedBytes(file_name, data) => {
-                log::info!("Processing: {}", file_name);
-                if true {
-                    // Old reader where all files are loaded as strings
-                    let text_data = String::from_utf8(data).unwrap();
-                    self.files.push(text_data);
-                } else {
-                    let parser = Z3Parser::from_async(data.into_async_cursor());
-                    self.parsers.push(ParserData::new(parser));
-                }
+            Msg::LoadedFile(file_name, parser) => {
+                log::info!("Processing: {file_name}");
+                self.files.push(std::rc::Rc::new(parser));
                 true
             }
         }
@@ -131,7 +113,7 @@ impl Component for FileDataComponent {
                     </div>
                 </div>
                 <div style="display: flex; ">
-                    { for self.files.iter().map(|f| Self::view_file(f))}
+                    { for self.files.iter().map(|f| Self::view_file(std::rc::Rc::clone(f)))}
                 </div>
             </div>
         }
@@ -139,23 +121,10 @@ impl Component for FileDataComponent {
 }
 
 impl FileDataComponent {
-    fn view_file(data: &str) -> Html {
+    fn view_file(data: std::rc::Rc<Z3Parser>) -> Html {
         log::debug!("Viewing file");
         html! {
-            <SVGResult trace_file_text={AttrValue::from(data.to_string())}/>
-        }
-    }
-}
-
-pub struct ParserData {
-    parser: AsyncParser<'static, Z3Parser>,
-    parsed: Option<Z3Parser>,
-}
-impl ParserData {
-    pub fn new(parser: AsyncParser<'static, Z3Parser>) -> Self {
-        Self {
-            parser,
-            parsed: None,
+            <SVGResult parser={data}/>
         }
     }
 }

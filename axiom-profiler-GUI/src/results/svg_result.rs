@@ -78,7 +78,7 @@ pub struct SVGResult {
 
 #[derive(Properties, PartialEq)]
 pub struct SVGProps {
-    pub trace_file_text: AttrValue,
+    pub parser: std::rc::Rc<Z3Parser>,
 }
 
 impl Component for SVGResult {
@@ -87,7 +87,7 @@ impl Component for SVGResult {
 
     fn create(ctx: &Context<Self>) -> Self {
         log::debug!("Creating SVGResult component");
-        let parser = Z3Parser::from_str(&ctx.props().trace_file_text).process_all();
+        let parser = std::rc::Rc::clone(&ctx.props().parser);
         let inst_graph = InstGraph::from(&parser);
         let (quant_count, non_quant_insts) = parser.quant_count_incl_theory_solving();
         let colour_map = QuantIdxToColourMap::from(quant_count, non_quant_insts);
@@ -102,7 +102,7 @@ impl Component for SVGResult {
             inst_graph.get_edge_info(edge, parser, ignore_ids)
         }});
         Self {
-            parser: Rc::new(parser),
+            parser,
             colour_map,
             inst_graph,
             svg_text: AttrValue::default(),
@@ -320,7 +320,7 @@ impl Component for SVGResult {
                         reset_graph={reset_graph.clone()}
                         render_graph={render_graph.clone()}
                         weak_link={self.filter_chain_link.clone()}
-                        dependency={ctx.props().trace_file_text.clone()}
+                        dependency={ctx.props().parser.as_ref() as *const _}
                     />
                 </ContextProvider<Vec<InstInfo>>>
                 {async_graph_and_filter_chain_warning}

@@ -36,7 +36,7 @@ impl Reducible for InputValue {
 #[derive(Properties, PartialEq)]
 pub struct UsizeInputProps {
     pub label: AttrValue,
-    pub dependency: AttrValue,
+    pub dependency: *const smt_log_parser::Z3Parser,
     pub input_value: UseReducerHandle<InputValue>,
     pub default_value: usize,
     pub placeholder: AttrValue,

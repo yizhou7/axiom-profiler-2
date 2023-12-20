@@ -27,7 +27,7 @@ pub struct FilterChainProps {
     pub apply_filter: Callback<Filter>,
     pub reset_graph: Callback<()>,
     pub render_graph: Callback<UserPermission>,
-    pub dependency: AttrValue,
+    pub dependency: *const smt_log_parser::Z3Parser,
     pub weak_link: WeakComponentLink<FilterChain>,
 }
 

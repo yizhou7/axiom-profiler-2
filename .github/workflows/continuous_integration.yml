@@ -7,14 +7,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - run: cargo fmt --all -- --check
+    - run: cargo fmt --workspace -- --check
 
   clippy:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
-    - run: cargo clippy --all -- -D warnings
+    - run: cargo clippy --workspace -- -D warnings
 
   test:
     # will wait for new cache on push to main branch, otherwise will run straight away with existing cache
@@ -35,7 +35,7 @@ jobs:
         key: logs-${{ steps.configure-z3-id.outputs.z3_v_clean }}-${{ hashFiles('smt-problems/**/*.smt2') }}
     - id: check-logs-cached
       run: test -d "logs"
-    - run: cargo test --all
+    - run: cargo test --workspace -- --nocapture
 
     # Failure
     - run: tar -czf failing_logs.tar.bz2 logs/

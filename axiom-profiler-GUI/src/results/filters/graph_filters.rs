@@ -92,7 +92,7 @@ impl Filter {
 #[derive(Properties, PartialEq)]
 pub struct GraphFilterProps {
     pub add_filters: Callback<Vec<Filter>>,
-    pub dependency: AttrValue,
+    pub dependency: *const smt_log_parser::Z3Parser,
 }
 
 #[function_component(GraphFilter)]
