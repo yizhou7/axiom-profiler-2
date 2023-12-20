@@ -497,8 +497,7 @@ impl Z3LogParser for Z3Parser {
         let scope = l.next()?.parse::<usize>().ok()?;
         // Return if there is unexpectedly more data
         Self::expect_completed(l)?;
-        self.stack.new_frame(scope);
-        Some(())
+        self.stack.new_frame(scope)
     }
 
     fn pop<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
@@ -506,10 +505,7 @@ impl Z3LogParser for Z3Parser {
         let scope = l.next()?.parse::<usize>().ok()?;
         // Return if there is unexpectedly more data
         Self::expect_completed(l)?;
-        for i in 0..num {
-            self.stack.pop_frame(scope - i);
-        }
-        Some(())
+        self.stack.pop_frames(num, scope)
     }
 }
 
