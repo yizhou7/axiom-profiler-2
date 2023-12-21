@@ -27,13 +27,13 @@ impl Terms {
     }
 
     #[must_use]
-    pub(super) fn parse_id(&self, strings: &mut StringTable, id: &str) -> Option<Result<TermIdx, TermId>> {
+    pub(super) fn parse_id(
+        &self,
+        strings: &mut StringTable,
+        id: &str,
+    ) -> Option<Result<TermIdx, TermId>> {
         let term_id = TermId::parse(strings, id)?;
-        Some(
-            self.term_id_map
-                .get_term(&term_id)
-                .ok_or_else(|| term_id),
-        )
+        Some(self.term_id_map.get_term(&term_id).ok_or_else(|| term_id))
     }
     #[must_use]
     pub(super) fn parse_existing_id(&self, strings: &mut StringTable, id: &str) -> Option<TermIdx> {
