@@ -17,7 +17,13 @@ use petgraph::dot::{Config, Dot};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use smt_log_parser::{
     items::{BlameKind, MatchKind},
-    parsers::z3::inst_graph::{EdgeInfo, EdgeType, InstGraph, InstInfo, VisibleGraphInfo},
+    parsers::{
+        z3::{
+            inst_graph::{EdgeInfo, EdgeType, InstGraph, InstInfo, VisibleGraphInfo},
+            z3parser::Z3Parser,
+        },
+        LogParser,
+    },
 };
 use std::num::NonZeroUsize;
 use viz_js::VizInstance;

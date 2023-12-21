@@ -3,10 +3,15 @@ use gloo::console::log;
 use indexmap::map::IndexMap;
 use material_yew::WeakComponentLink;
 use petgraph::graph::{EdgeIndex, NodeIndex};
+use smt_log_parser::parsers::z3::inst_graph::EdgeType;
 use smt_log_parser::{
     items::BlameKind,
-    parsers::z3::inst_graph::{EdgeInfo, InstInfo},
+    parsers::z3::{
+        inst_graph::{EdgeInfo, InstInfo},
+        z3parser::Z3Parser,
+    },
 };
+use std::rc::Rc;
 use web_sys::HtmlElement;
 use yew::prelude::*;
 
