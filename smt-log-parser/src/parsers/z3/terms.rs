@@ -59,6 +59,34 @@ impl Terms {
         };
         Ok(())
     }
+
+    pub(super) fn mk_generalized_term(&mut self) -> TermIdx {
+        let idx = self.terms.next_key();
+        let term = Term { 
+            id: None, 
+            kind: GeneralizedTerm, 
+            meaning: None, 
+            child_ids: Vec::new(), 
+        }; 
+        self.terms.push(term);
+        idx
+    }
+
+    pub(super) fn is_general_term(&self, t: TermIdx) -> bool {
+        t == self.terms.last_key().unwrap() 
+    }
+
+    pub(super) fn mk_generalized_term_with_children(&mut self, meaning: Option<Meaning>, children: Vec<TermIdx>) -> TermIdx {
+        let idx = self.terms.next_key();
+        let term = Term {
+            id: None,
+            kind: GeneralizedTerm,
+            meaning,
+            child_ids: children,
+        };
+        self.terms.push(term);
+        idx
+    }
 }
 
 impl std::ops::Index<TermIdx> for Terms {
