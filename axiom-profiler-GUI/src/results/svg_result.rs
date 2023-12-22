@@ -43,6 +43,7 @@ pub enum Msg {
     GetUserPermission,
     WorkerOutput(super::worker::WorkerOutput),
     UpdateSelectedNodes(Vec<InstInfo>),
+    SearchMatchingLoops,
 }
 
 #[derive(Default)]
@@ -137,6 +138,10 @@ impl Component for SVGResult {
                 } else {
                     false
                 }
+            }
+            Msg::SearchMatchingLoops => {
+                self.inst_graph.search_matching_loops();
+                false 
             }
             Msg::ResetGraph => {
                 log::debug!("Resetting graph");
@@ -335,6 +340,7 @@ impl Component for SVGResult {
         let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
         let render_graph = ctx.link().callback(Msg::RenderGraph);
         let update_selected_nodes = ctx.link().callback(Msg::UpdateSelectedNodes);
+        let search_matching_loops = ctx.link().callback(|_| Msg::SearchMatchingLoops);
         html! {
             <>
                 <div style="flex: 20%; height: 87vh; overflow-y: auto; ">
@@ -345,6 +351,7 @@ impl Component for SVGResult {
                         render_graph={render_graph.clone()}
                         weak_link={self.filter_chain_link.clone()}
                         dependency={ctx.props().parser.as_ptr()}
+                        search_matching_loops={search_matching_loops.clone()}
                     />
                 </ContextProvider<Vec<InstInfo>>>
                 {async_graph_and_filter_chain_warning}
