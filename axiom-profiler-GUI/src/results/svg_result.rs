@@ -145,6 +145,7 @@ impl Component for SVGResult {
             Msg::SearchMatchingLoops => {
                 self.inst_graph.search_matching_loops();
                 self.searched_matching_loops = true;
+                ctx.link().send_message(Msg::SelectNthMatchingLoop(0));
                 true
             }
             Msg::SelectNthMatchingLoop(n) => {
