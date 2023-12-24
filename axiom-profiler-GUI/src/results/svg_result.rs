@@ -45,6 +45,7 @@ pub enum Msg {
     UpdateSelectedNodes(Vec<InstInfo>),
     SearchMatchingLoops,
     SelectNthMatchingLoop(usize),
+    ShowMatchingLoopSubgraph,
 }
 
 #[derive(Default)]
@@ -156,6 +157,14 @@ impl Component for SVGResult {
                     .clone()
                     .unwrap()
                     .send_message(FilterChainMsg::AddFilters(vec![Filter::SelectNthMatchingLoop(n)]));
+                false
+            }
+            Msg::ShowMatchingLoopSubgraph => {
+                self.filter_chain_link
+                    .borrow()
+                    .clone()
+                    .unwrap()
+                    .send_message(FilterChainMsg::AddFilters(vec![Filter::ShowMatchingLoopSubgraph]));
                 false
             }
             Msg::ResetGraph => {
@@ -364,11 +373,14 @@ impl Component for SVGResult {
                     }
                 } else {
                     html! {
+                        <>
                         <Indexer 
                             label="Analyzed matching loops" 
                             index_consumer={ctx.link().callback(Msg::SelectNthMatchingLoop)}
                             max={self.matching_loop_count - 1}
                         />
+                        <button onclick={ctx.link().callback(|_| Msg::ShowMatchingLoopSubgraph)}>{"Show all matching loops"}</button>
+                        </>
                     }
                 }}
                 <ContextProvider<Vec<InstInfo>> context={self.selected_insts.clone()}>
