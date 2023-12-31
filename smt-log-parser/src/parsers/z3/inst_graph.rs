@@ -375,7 +375,7 @@ impl InstGraph {
                         subtree_rooted_at_node.node_weight(*pred).unwrap().max_depth;
                     pred_distance == curr_distance - 1
                 })
-                .last();
+                .next();
             if let Some(node) = pred {
                 visitor.push(node);
             }
@@ -393,7 +393,7 @@ impl InstGraph {
                     let pred_distance = self.orig_graph.node_weight(*pred).unwrap().max_depth;
                     pred_distance == curr_distance - 1
                 })
-                .last();
+                .next();
             if let Some(node) = pred {
                 visitor.push(node);
             }
