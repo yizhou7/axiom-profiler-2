@@ -86,15 +86,15 @@ impl Component for SVGResult {
         let (quant_count, non_quant_insts) = parser.quant_count_incl_theory_solving();
         let colour_map = QuantIdxToColourMap::from(quant_count, non_quant_insts);
         let get_node_info = Callback::from({
-            let inst_graph = inst_graph.clone();
+            let node_info_map = inst_graph.get_node_info_map();
             move |(node, ignore_ids, parser): (NodeIndex, bool, RcParser)| {
-                inst_graph.get_instantiation_info(node.index(), &parser, ignore_ids)
+                node_info_map.get_instantiation_info(node.index(), &parser, ignore_ids)
             }
         });
         let get_edge_info = Callback::from({
-            let inst_graph = inst_graph.clone();
+            let edge_info_map = inst_graph.get_edge_info_map();
             move |(edge, ignore_ids, parser): (EdgeIndex, bool, RcParser)| {
-                inst_graph.get_edge_info(edge, &parser, ignore_ids)
+                edge_info_map.get_edge_info(edge, &parser, ignore_ids)
             }
         });
         Self {
