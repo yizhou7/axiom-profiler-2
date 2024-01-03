@@ -1,9 +1,9 @@
-use fxhash::FxHashSet;
+use fxhash::{FxHashSet, FxHashMap};
 use gloo_console::log;
 use itertools::Itertools;
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableGraph;
-use petgraph::visit::{Bfs, IntoEdgeReferences, Topo};
+use petgraph::visit::{Bfs, IntoEdgeReferences, Topo, IntoEdges};
 use petgraph::{
     stable_graph::EdgeIndex,
     visit::{Dfs, EdgeRef},
@@ -518,84 +518,6 @@ impl InstGraph {
         }
     }
 
-    pub fn get_edge_info(
-        &self,
-        edge_index: EdgeIndex,
-        parser: &Z3Parser,
-        ignore_ids: bool,
-    ) -> EdgeInfo {
-        let edge_data = &self.orig_graph[edge_index];
-        let ctxt = DisplayCtxt {
-            parser,
-
-            display_term_ids: !ignore_ids,
-            display_quantifier_name: false,
-            use_mathematical_symbols: true,
-        };
-        let blame_term_idx = edge_data.get_blame_node().unwrap();
-        let blame_term = blame_term_idx.with(&ctxt).to_string();
-        let (from, to) = self.orig_graph.edge_endpoints(edge_index).unwrap();
-        EdgeInfo {
-            edge_data: edge_data.clone(),
-            orig_graph_idx: edge_index,
-            blame_term,
-            from,
-            to,
-        }
-    }
-
-    pub fn get_instantiation_info(
-        &self,
-        node_index: usize,
-        parser: &Z3Parser,
-        ignore_ids: bool,
-    ) -> InstInfo {
-        let NodeData { inst_idx, .. } = self.orig_graph[NodeIndex::new(node_index)];
-        let ctxt = DisplayCtxt {
-            parser,
-
-            display_term_ids: !ignore_ids,
-            display_quantifier_name: false,
-            use_mathematical_symbols: true,
-        };
-
-        let inst = &parser.insts[inst_idx];
-        let match_ = &parser.insts[inst.match_];
-        let pretty_blamed_terms = match_
-            .due_to_terms()
-            .map(|eidx| eidx.with(&ctxt).to_string())
-            .collect::<Vec<String>>();
-        let inst_info = InstInfo {
-            fingerprint: inst.fingerprint,
-            inst_idx,
-            resulting_term: inst
-                .get_resulting_term()
-                .map(|rt| rt.with(&ctxt).to_string()),
-            z3_gen: inst.z3_generation,
-            cost: inst.cost,
-            mkind: match_.kind.clone(),
-            quant_discovered: match_.kind.is_discovered(),
-            formula: match_.kind.with(&ctxt).to_string(),
-            pattern: match_.kind.pattern().map(|p| p.with(&ctxt).to_string()),
-            yields_terms: inst
-                .yields_terms
-                .iter()
-                .map(|&tidx| format!("{}", tidx.with(&ctxt)))
-                .collect(),
-            bound_terms: match_
-                .kind
-                .bound_terms(|e| e.with(&ctxt).to_string(), |t| t.with(&ctxt).to_string()),
-            blamed_terms: pretty_blamed_terms,
-            equality_expls: match_
-                .due_to_equalities()
-                .map(|eq| eq.with(&ctxt).to_string())
-                .collect(),
-            dep_instantiations: Vec::new(),
-            node_index: NodeIndex::new(node_index),
-        };
-        inst_info
-    }
-
     pub fn node_has_filtered_children(&self, node_idx: NodeIndex) -> bool {
         self.node_has_filtered_direct_neighbours(node_idx, Outgoing)
     }
@@ -796,5 +718,119 @@ impl InstGraph {
     fn add_edge(&mut self, from: InstIdx, to: InstIdx, blame: &BlameKind) {
         let (from, to) = (self.node_of_inst_idx[from], self.node_of_inst_idx[to]);
         self.orig_graph.add_edge(from, to, blame.clone());
+    }
+
+    pub fn get_node_info_map(&self) -> NodeInfoMap {
+        let mut node_info_map = FxHashMap::default();
+        for node_index in self.orig_graph.node_indices() {
+            let NodeData { inst_idx, .. } = self.orig_graph[node_index];
+            node_info_map.insert(node_index, inst_idx);
+        }
+        NodeInfoMap::from(node_info_map)
+    }
+
+    pub fn get_edge_info_map(&self) -> EdgeInfoMap {
+        let mut edge_info_map = FxHashMap::default(); 
+        for edge_index in self.orig_graph.edge_indices() {
+            let edge_data = &self.orig_graph[edge_index];
+            let (from, to) = self.orig_graph.edge_endpoints(edge_index).unwrap();
+            edge_info_map.insert(edge_index, (edge_data.clone(), (from, to)));
+        }
+        EdgeInfoMap::from(edge_info_map)
+    }
+}
+
+pub struct NodeInfoMap(FxHashMap<NodeIndex, InstIdx>); 
+
+impl NodeInfoMap {
+
+    fn from(map: FxHashMap<NodeIndex, InstIdx>) -> Self {
+        NodeInfoMap(map) 
+    }
+
+    pub fn get_instantiation_info(
+        &self,
+        node_index: usize,
+        parser: &Z3Parser,
+        ignore_ids: bool,
+    ) -> InstInfo {
+        let inst_idx = self.0.get(&NodeIndex::new(node_index)).unwrap();
+        let ctxt = DisplayCtxt {
+            parser,
+
+            display_term_ids: !ignore_ids,
+            display_quantifier_name: false,
+            use_mathematical_symbols: true,
+        };
+
+        let inst = &parser.insts[*inst_idx];
+        let match_ = &parser.insts[inst.match_];
+        let pretty_blamed_terms = match_
+            .due_to_terms()
+            .map(|eidx| eidx.with(&ctxt).to_string())
+            .collect::<Vec<String>>();
+        let inst_info = InstInfo {
+            fingerprint: inst.fingerprint,
+            inst_idx: *inst_idx,
+            resulting_term: inst
+                .get_resulting_term()
+                .map(|rt| rt.with(&ctxt).to_string()),
+            z3_gen: inst.z3_generation,
+            cost: inst.cost,
+            mkind: match_.kind.clone(),
+            quant_discovered: match_.kind.is_discovered(),
+            formula: match_.kind.with(&ctxt).to_string(),
+            pattern: match_.kind.pattern().map(|p| p.with(&ctxt).to_string()),
+            yields_terms: inst
+                .yields_terms
+                .iter()
+                .map(|&tidx| format!("{}", tidx.with(&ctxt)))
+                .collect(),
+            bound_terms: match_
+                .kind
+                .bound_terms(|e| e.with(&ctxt).to_string(), |t| t.with(&ctxt).to_string()),
+            blamed_terms: pretty_blamed_terms,
+            equality_expls: match_
+                .due_to_equalities()
+                .map(|eq| eq.with(&ctxt).to_string())
+                .collect(),
+            dep_instantiations: Vec::new(),
+            node_index: NodeIndex::new(node_index),
+        };
+        inst_info
+    }
+}
+
+pub struct EdgeInfoMap(FxHashMap<EdgeIndex, (BlameKind, (NodeIndex, NodeIndex))>); 
+
+impl EdgeInfoMap {
+
+    fn from(map: FxHashMap<EdgeIndex, (BlameKind, (NodeIndex, NodeIndex))>) -> Self {
+        EdgeInfoMap(map)
+    }
+
+    pub fn get_edge_info(
+        &self,
+        edge_index: EdgeIndex,
+        parser: &Z3Parser,
+        ignore_ids: bool,
+    ) -> EdgeInfo {
+        let (edge_data, (from, to)) = self.0.get(&edge_index).unwrap();
+        let ctxt = DisplayCtxt {
+            parser,
+
+            display_term_ids: !ignore_ids,
+            display_quantifier_name: false,
+            use_mathematical_symbols: true,
+        };
+        let blame_term_idx = edge_data.get_blame_node().unwrap();
+        let blame_term = blame_term_idx.with(&ctxt).to_string();
+        EdgeInfo {
+            edge_data: edge_data.clone(),
+            orig_graph_idx: edge_index,
+            blame_term,
+            from: *from,
+            to: *to,
+        }
     }
 }
