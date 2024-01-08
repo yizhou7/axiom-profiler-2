@@ -20,7 +20,7 @@ fn parse_all_logs() {
             // Some memory usage is still left over from previous loop iterations, so we'll need to subtract that.
             let start_mem = memory_stats::memory_stats().unwrap().physical_mem as u64;
             // TODO: optimize memory usage and reduce `max_mem`.
-            let max_mem = start_mem + file_size + file_size / 2 + 512*1024*1024;
+            let max_mem = start_mem + 2 * file_size + 1024*1024*1024;
             let now = Instant::now();
 
             parser.process_check_every(Duration::from_millis(100), |_, _| {
