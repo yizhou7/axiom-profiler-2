@@ -11,6 +11,7 @@ pub struct Terms {
     term_id_map: TermIdToIdxMap,
     terms: TiVec<TermIdx, Term>,
     meanings: FxHashMap<TermIdx, Meaning>
+    generalized_term_boundary: Option<TermIdx>,
 }
 
 impl Terms {
@@ -19,6 +20,7 @@ impl Terms {
             term_id_map: TermIdToIdxMap::new(strings),
             terms: TiVec::new(),
             meanings: FxHashMap::default(),
+            generalized_term_boundary: None,
         }
     }
 
@@ -60,23 +62,19 @@ impl Terms {
         Ok(())
     }
 
-    pub(super) fn mk_generalized_term(&mut self) -> TermIdx {
-        let idx = self.terms.next_key();
-        let term = Term { 
-            id: None, 
-            kind: GeneralizedTerm, 
-            meaning: None, 
-            child_ids: Vec::new(), 
-        }; 
-        self.terms.push(term);
-        idx
+    pub(super) fn set_generalized_term_boundary(&mut self) {
+        self.generalized_term_boundary = self.terms.last_key();
     }
 
     pub(super) fn is_general_term(&self, t: TermIdx) -> bool {
-        t == self.terms.last_key().unwrap() 
+        if let Some(boundary) = self.generalized_term_boundary {
+            t > boundary 
+        } else {
+            false
+        } 
     }
 
-    pub(super) fn mk_generalized_term_with_children(&mut self, meaning: Option<Meaning>, children: Vec<TermIdx>) -> TermIdx {
+    pub(super) fn mk_generalized_term(&mut self, meaning: Option<Meaning>, children: Vec<TermIdx>) -> TermIdx {
         let idx = self.terms.next_key();
         let term = Term {
             id: None,
