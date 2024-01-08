@@ -48,8 +48,8 @@ idx!(MatchIdx, "m{}");
 pub struct Term {
     pub id: TermId,
     pub kind: TermKind,
-    pub meaning: Option<Meaning>,
-    pub child_ids: Vec<TermIdx>,
+    // Reduces memory usage compared to a Vec
+    pub child_ids: Box<[TermIdx]>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -176,7 +176,7 @@ pub struct Instantiation {
     pub proof_id: Option<Result<TermIdx, TermId>>,
     pub z3_generation: Option<u32>,
     pub cost: f32,
-    pub yields_terms: Vec<ENodeIdx>,
+    pub yields_terms: Box<[ENodeIdx]>,
 }
 
 impl Instantiation {
@@ -188,7 +188,7 @@ impl Instantiation {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Match {
     pub kind: MatchKind,
-    pub blamed: Vec<BlameKind>,
+    pub blamed: Box<[BlameKind]>,
 }
 
 impl Match {
@@ -418,7 +418,7 @@ pub enum EqualityExpl {
     },
     Congruence {
         from: ENodeIdx,
-        arg_eqs: Vec<(TermIdx, TermIdx)>,
+        arg_eqs: Box<[(ENodeIdx, ENodeIdx)]>,
         to: ENodeIdx,
         // add dependent instantiations
     },
@@ -434,7 +434,7 @@ pub enum EqualityExpl {
     Unknown {
         kind: IString,
         from: ENodeIdx,
-        args: Vec<IString>,
+        args: Box<[IString]>,
         to: ENodeIdx,
     },
 }

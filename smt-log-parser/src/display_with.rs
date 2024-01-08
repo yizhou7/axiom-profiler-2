@@ -84,13 +84,15 @@ mod private {
 
     #[derive(Debug, Clone)]
     pub(super) struct DisplayData<'a> {
+        pub(super) term: TermIdx,
         children: &'a [TermIdx],
         quant: Vec<&'a Quantifier>,
         bind_power: u8,
     }
     impl<'a> DisplayData<'a> {
-        pub(super) fn new() -> Self {
+        pub(super) fn new(term: TermIdx) -> Self {
             Self {
+                term,
                 children: &[],
                 quant: Vec::new(),
                 bind_power: super::NO_BIND,
@@ -130,7 +132,7 @@ mod private {
         pub(super) fn children(&self) -> &'a [TermIdx] {
             self.children
         }
-        pub(super) fn find_quant(&self, idx: &mut usize) -> Option<&'a Quantifier> {
+        pub(super) fn find_quant(&self, idx: &mut usize) -> Option<&Quantifier> {
             self.quant
                 .iter()
                 .find(|q| {
@@ -161,7 +163,7 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for TermIdx {
         ctxt: &DisplayCtxt<'_>,
         _data: &mut (),
     ) -> fmt::Result {
-        let mut data = DisplayData::new();
+        let mut data = DisplayData::new(self);
         write!(f, "{}", ctxt.parser[self].with_data(ctxt, &mut data))
     }
 }
@@ -228,12 +230,12 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for &MatchKind {
 // Item defs
 ////////////
 
-impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Term {
+impl<'a: 'b, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a Term {
     fn fmt_with(
         self,
         f: &mut fmt::Formatter<'_>,
-        ctxt: &DisplayCtxt<'a>,
-        data: &mut DisplayData<'a>,
+        ctxt: &DisplayCtxt<'b>,
+        data: &mut DisplayData<'b>,
     ) -> fmt::Result {
         data.with_children(&self.child_ids, |data| {
             if ctxt.display_term_ids {
@@ -241,7 +243,7 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Term {
                 let id = self.id.id.map(|id| id.to_string()).unwrap_or_default();
                 write!(f, "[{namespace}#{id}]")?;
             }
-            if let Some(meaning) = &self.meaning {
+            if let Some(meaning) = ctxt.parser.meaning(data.term) {
                 write!(f, "{}", meaning.with_data(ctxt, data))?;
             } else {
                 write!(f, "{}", self.kind.with_data(ctxt, data))?;
@@ -251,12 +253,12 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Term {
     }
 }
 
-impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a TermKind {
+impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a TermKind {
     fn fmt_with(
         self,
         f: &mut fmt::Formatter<'_>,
-        ctxt: &DisplayCtxt<'a>,
-        data: &mut DisplayData<'a>,
+        ctxt: &DisplayCtxt<'b>,
+        data: &mut DisplayData<'b>,
     ) -> fmt::Result {
         match self {
             &TermKind::Var(mut idx) => {
@@ -276,12 +278,12 @@ enum ProofOrAppKind {
     OtherApp,
     Proof,
 }
-impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a ProofOrApp {
+impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a ProofOrApp {
     fn fmt_with(
         self,
         f: &mut fmt::Formatter<'_>,
-        ctxt: &DisplayCtxt<'a>,
-        data: &mut DisplayData<'a>,
+        ctxt: &DisplayCtxt<'b>,
+        data: &mut DisplayData<'b>,
     ) -> fmt::Result {
         let math = ctxt.use_mathematical_symbols;
         use ProofOrAppKind::*;
@@ -306,7 +308,8 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a ProofOrApp {
                 assert!(bind_power <= PREFIX_BIND);
                 assert_eq!(data.children().len(), 1);
                 let child = data.children()[0];
-                write!(f, "{name}{}", ctxt.parser[child].with_data(ctxt, data))
+                let child = &ctxt.parser[child];
+                write!(f, "{name}{}", child.with_data(ctxt, data))
             }),
             Inline => data.with_bind_power(INFIX_BIND, |data, bind_power| {
                 let need_brackets = bind_power >= INFIX_BIND;
