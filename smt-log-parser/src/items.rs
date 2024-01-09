@@ -53,7 +53,7 @@ pub struct Term {
     pub child_ids: Box<[TermIdx]>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Copy)]
+#[derive(Debug, Clone, Serialize, Deserialize, Copy, PartialEq)]
 pub enum TermKind {
     Var(usize),
     ProofOrApp(ProofOrApp),
@@ -61,7 +61,7 @@ pub enum TermKind {
     GeneralizedPrimitive,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Copy)]
+#[derive(Debug, Clone, Serialize, Deserialize, Copy, PartialEq)]
 pub struct ProofOrApp {
     pub is_proof: bool,
     pub name: IString,
