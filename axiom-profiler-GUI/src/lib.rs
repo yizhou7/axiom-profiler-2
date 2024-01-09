@@ -60,11 +60,16 @@ impl Component for FileDataComponent {
                     match stream.try_into_async_read() {
                         Ok(stream) => {
                             let link = ctx.link().clone();
-                            let parser = Z3Parser::from_async(stream.buffer());
+                            let mut parser = Z3Parser::from_async(stream.buffer());
                             wasm_bindgen_futures::spawn_local(async move {
                                 log::info!("Parsing: {file_name}");
-                                let parser = parser.process_all().await;
-                                link.send_message(Msg::LoadedFile(file_name, parser))
+                                let finished = parser.process_until(|_, state| state.bytes_read <= 1024 * 1024 * 1024).await;
+                                let finished = finished.is_none();
+                                if !finished {
+                                    // TODO: make this clear in the UI
+                                    log::info!("Stopped parsing at 1GB");
+                                }
+                                link.send_message(Msg::LoadedFile(file_name, parser.take_parser()))
                             });
                         }
                         Err((_err, _stream)) => {
@@ -74,8 +79,14 @@ impl Component for FileDataComponent {
                                 let text_data =
                                     String::from_utf8(res.expect("failed to read file")).unwrap();
                                 log::info!("Parsing: {file_name}");
-                                let parser = Z3Parser::from_str(&text_data).process_all();
-                                link.send_message(Msg::LoadedFile(file_name, parser))
+                                let mut parser = Z3Parser::from_str(&text_data);
+                                let finished = parser.process_until(|_, state| state.bytes_read <= 1024 * 1024 * 1024);
+                                let finished = finished.is_none();
+                                if !finished {
+                                    // TODO: make this clear in the UI
+                                    log::info!("Stopped parsing at 1GB");
+                                }
+                                link.send_message(Msg::LoadedFile(file_name, parser.take_parser()))
                             });
                             self.readers.push(reader);
                         }
