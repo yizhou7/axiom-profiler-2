@@ -39,6 +39,8 @@ fn parse_all_logs() {
                 );
                 true
             });
+            println!("Finished parsing in {:?}", now.elapsed());
+            println!();
             drop(parser);
         });
         t.join().unwrap();
