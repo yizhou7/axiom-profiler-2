@@ -128,6 +128,16 @@ mod private {
             self.bind_power = old;
             result
         }
+        pub(super) fn with_term<T>(
+            &mut self,
+            term: TermIdx,
+            f: impl FnOnce(&mut Self) -> T,
+        ) -> T {
+            let term = std::mem::replace(&mut self.term, term);
+            let result = f(self);
+            self.term = term;
+            result
+        }
 
         pub(super) fn children(&self) -> &'a [TermIdx] {
             self.children
@@ -246,7 +256,7 @@ impl<'a: 'b, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a Term 
         data.with_children(&self.child_ids, |data| {
             if ctxt.display_term_ids {
                 let namespace = &ctxt.parser.strings[self.id.namespace];
-                let id = self.id.id.map(|id| id.to_string()).unwrap_or_default();
+                let id = self.id.id.map(|id| (u32::from(id) - 1).to_string()).unwrap_or_default();
                 write!(f, "[{namespace}#{id}]")?;
             }
             if let Some(meaning) = ctxt.parser.meaning(data.term) {
@@ -275,6 +285,10 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a TermKind 
             TermKind::Quant(idx) => write!(f, "{}", ctxt.parser[*idx].with_data(ctxt, data)),
         }
     }
+}
+
+fn display_child<'a, 'b, 'c, 'd>(f: &mut fmt::Formatter<'_>, child: TermIdx, ctxt: &'a DisplayCtxt<'b>, data: &'c mut DisplayData<'b>) -> fmt::Result {
+    data.with_term(child, |data| write!(f, "{}", ctxt.parser[child].with_data(ctxt, data)))
 }
 
 enum ProofOrAppKind<'a> {
@@ -317,7 +331,9 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a ProofOrAp
                 assert!(bind_power <= PREFIX_BIND);
                 assert_eq!(data.children().len(), 1);
                 let child = data.children()[0];
-                write!(f, "{op}{}", ctxt.parser[child].with_data(ctxt, data))
+                write!(f, "{op}")?;
+                display_child(f, child, ctxt, data)
+                
             }),
             Inline(op) => data.with_bind_power(INFIX_BIND, |data, bind_power| {
                 let need_brackets = bind_power >= INFIX_BIND;
@@ -328,7 +344,7 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a ProofOrAp
                     if idx != 0 {
                         write!(f, " {op} ")?;
                     }
-                    write!(f, "{}", ctxt.parser[*child].with_data(ctxt, data))?;
+                    display_child(f, *child, ctxt, data)?;
                 }
                 if need_brackets {
                     write!(f, ")")?;
@@ -342,23 +358,13 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a ProofOrAp
                 }
                 assert_eq!(data.children().len(), 3);
                 let cond = data.children()[0];
-                write!(
-                    f,
-                    "{} {op1}",
-                    ctxt.parser[cond].with_data(ctxt, data)
-                )?;
+                display_child(f, cond, ctxt, data)?;
+                write!(f, " {op1} ")?;
                 let then = data.children()[1];
-                write!(
-                    f,
-                    " {} {op2}",
-                    ctxt.parser[then].with_data(ctxt, data)
-                )?;
+                display_child(f, then, ctxt, data)?;
+                write!(f, " {op2} ")?;
                 let else_ = data.children()[2];
-                write!(
-                    f,
-                    " {}",
-                    ctxt.parser[else_].with_data(ctxt, data)
-                )?;
+                display_child(f, else_, ctxt, data)?;
                 if need_brackets {
                     write!(f, ")")?;
                 }
@@ -371,7 +377,7 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a ProofOrAp
                     if idx != 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", ctxt.parser[*child].with_data(ctxt, data))?;
+                    display_child(f, *child, ctxt, data)?;
                 }
                 write!(f, "}}")
             }),
@@ -386,7 +392,7 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a ProofOrAp
                     if idx != 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{}", ctxt.parser[*child].with_data(ctxt, data))?;
+                    display_child(f, *child, ctxt, data)?;
                 }
                 write!(f, ")")
             }),
@@ -442,7 +448,8 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
                 };
                 write!(f, "{sep}")?;
                 for child in data.children() {
-                    write!(f, " {}", ctxt.parser[*child].with_data(ctxt, data))?;
+                    write!(f, " ")?;
+                    display_child(f, *child, ctxt, data)?;
                 }
                 if need_brackets {
                     write!(f, ")")?;

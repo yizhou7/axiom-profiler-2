@@ -80,11 +80,11 @@ impl Component for FileDataComponent {
                                     String::from_utf8(res.expect("failed to read file")).unwrap();
                                 log::info!("Parsing: {file_name}");
                                 let mut parser = Z3Parser::from_str(&text_data);
-                                let finished = parser.process_until(|_, state| state.bytes_read <= 1024 * 1024 * 1024);
+                                let finished = parser.process_until(|_, state| state.bytes_read <= 512 * 1024 * 1024);
                                 let finished = finished.is_none();
                                 if !finished {
                                     // TODO: make this clear in the UI
-                                    log::info!("Stopped parsing at 1GB");
+                                    log::info!("Stopped parsing at 0.5GB (use Chrome or Firefox to increase this limit to 1GB)");
                                 }
                                 link.send_message(Msg::LoadedFile(file_name, parser.take_parser()))
                             });
