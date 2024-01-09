@@ -1,4 +1,5 @@
 use fxhash::FxHashMap;
+use gloo_console::log;
 use typed_index_collections::TiVec;
 
 use crate::{
