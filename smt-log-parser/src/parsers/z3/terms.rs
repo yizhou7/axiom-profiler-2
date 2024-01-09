@@ -12,6 +12,7 @@ pub struct Terms {
     terms: TiVec<TermIdx, Term>,
     meanings: FxHashMap<TermIdx, Meaning>
     generalized_term_boundary: Option<TermIdx>,
+    wild_card_index: Option<TermIdx>,
 }
 
 impl Terms {
@@ -21,6 +22,7 @@ impl Terms {
             terms: TiVec::new(),
             meanings: FxHashMap::default(),
             generalized_term_boundary: None,
+            wild_card_index: None,
         }
     }
 
@@ -62,12 +64,20 @@ impl Terms {
         Ok(())
     }
 
-    pub(super) fn set_generalized_term_boundary(&mut self) {
-        self.generalized_term_boundary = self.terms.last_key();
+    pub(super) fn create_wild_card(&mut self) {
+        // log!(format!("There are {} non-general terms", self.terms.len()));
+        let wild_card = Term {
+            id: None,
+            kind: GeneralizedPrimitive,
+            child_ids: vec![],
+            meaning: None,
+        };
+        self.terms.push(wild_card);
+        self.wild_card_index = self.terms.last_key();
     }
 
     pub(super) fn is_general_term(&self, t: TermIdx) -> bool {
-        if let Some(boundary) = self.generalized_term_boundary {
+        if let Some(boundary) = self.wild_card_index {
             t > boundary 
         } else {
             false
@@ -83,6 +93,7 @@ impl Terms {
             child_ids: children,
         };
         self.terms.push(term);
+        // log!(format!("There are {} terms (including general terms)", self.terms.len()));
         idx
     }
 }
