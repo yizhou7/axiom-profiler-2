@@ -7,14 +7,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - run: cargo fmt --workspace -- --check
+    - run: cargo fmt --check
 
   clippy:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
-    - run: cargo clippy --workspace -- -D warnings
+    - run: cargo clippy -- -D warnings
 
   test:
     # will wait for new cache on push to main branch, otherwise will run straight away with existing cache
