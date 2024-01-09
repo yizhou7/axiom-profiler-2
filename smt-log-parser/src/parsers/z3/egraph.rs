@@ -19,14 +19,14 @@ impl EGraph {
         z3_generation: Option<u32>,
         stack: &Stack,
     ) -> ENodeIdx {
-        if created_by.is_none() && z3_generation.is_some() {
-            // TODO: why does this happen sometimes?
-            // debug_assert_eq!(
-            //     z3_generation.unwrap(),
-            //     0,
-            //     "enode with no creator has non-zero generation"
-            // );
-        }
+        // TODO: why does this happen sometimes?
+        // if created_by.is_none() && z3_generation.is_some() {
+        //     debug_assert_eq!(
+        //         z3_generation.unwrap(),
+        //         0,
+        //         "enode with no creator has non-zero generation"
+        //     );
+        // }
         let enode = self.enodes.push_and_get_key(ENode {
             frame: stack.active_frame(),
             created_by,
@@ -52,6 +52,10 @@ impl EGraph {
         } else {
             Some(enode)
         }
+    }
+
+    pub fn get_owner(&self, enode: ENodeIdx) -> TermIdx {
+        self.enodes[enode].owner
     }
 
     pub fn new_equality(&mut self, from: ENodeIdx, expl: EqualityExpl, stack: &Stack) {
@@ -98,20 +102,30 @@ impl EGraph {
         path
     }
 
-    pub fn get_equalities<'a: 'b, 'b>(&'a self, from: ENodeIdx, to: ENodeIdx, stack: &'b Stack) -> impl Iterator<Item = &'a EqualityExpl> + 'b {
-        let from = self.path_to_root(from, stack, 0);
-        let to = self.path_to_root(to, stack, 0);
-        assert_eq!(from[0], to[0]);
+    #[must_use]
+    pub fn get_equalities<'a: 'b, 'b>(&'a self, from: ENodeIdx, to: ENodeIdx, stack: &'b Stack, can_mismatch: impl Fn() -> bool) -> Option<impl Iterator<Item = &'a EqualityExpl> + 'b> {
+        let f_path = self.path_to_root(from, stack, 0);
+        let t_path = self.path_to_root(to, stack, 0);
         let mut shared = 1;
-        while shared < from.len() && shared < to.len() && from[shared] == to[shared] {
+        if f_path[0] != t_path[0] {
+            // Root may not always be the same from v4.12.3 onwards if `to` is an `ite` expression. See:
+            // https://github.com/Z3Prover/z3/commit/faf14012ba18d21c1fcddbdc321ac127f019fa03#diff-0a9ec50ded668e51578edc67ecfe32380336b9cbf12c5d297e2d3759a7a39847R2417-R2419
+            if !can_mismatch() {
+                return None;
+            }
+            // Return an empty iterator if the roots are different.
+            shared = f_path.len().max(t_path.len());
+        }
+        while shared < f_path.len() && shared < t_path.len() && f_path[shared] == t_path[shared] {
             shared += 1;
         }
-        let all = from.into_iter().skip(shared).rev().chain(to.into_iter().skip(shared));
-        all.map(|idx| &self.enodes[idx].get_equality(stack).unwrap().expl)
+        let all = f_path.into_iter().skip(shared).rev().chain(t_path.into_iter().skip(shared));
+        Some(all.map(|idx| &self.enodes[idx].get_equality(stack).unwrap().expl))
     }
 
-    pub fn blame_equalities(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, blamed: &mut Vec<BlameKind>) {
-        for eq in self.get_equalities(from, to, stack) {
+    #[must_use]
+    pub fn blame_equalities(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, blamed: &mut Vec<BlameKind>, can_mismatch: impl Fn() -> bool) -> Option<()> {
+        for eq in self.get_equalities(from, to, stack, can_mismatch)? {
             // TODO: figure out if this is all the blames we need.
             match eq {
                 EqualityExpl::Root { .. } => unreachable!(),
@@ -120,7 +134,8 @@ impl EGraph {
                 }
                 EqualityExpl::Congruence { arg_eqs, .. } => {
                     for (from, to) in arg_eqs.iter() {
-                        self.blame_equalities(*from, *to, stack, blamed);
+                        fn cannot_mismatch() -> bool { false }
+                        self.blame_equalities(*from, *to, stack, blamed, cannot_mismatch)?;
                     }
                 }
                 EqualityExpl::Theory { .. } => (),
@@ -128,6 +143,7 @@ impl EGraph {
                 EqualityExpl::Unknown { .. } => (),
             }
         }
+        Some(())
     }
 }
 

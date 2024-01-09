@@ -14,8 +14,8 @@ fn parse_all_logs() {
             let (metadata, mut parser) = Z3Parser::from_file(&filename).unwrap();
             let file_size = metadata.len();
 
-            // Gives 50 millis per MB (or 50 secs per GB)
-            let timeout = Duration::from_millis(500 + (file_size / 20_000));
+            // Gives 100 millis per MB (or 100 secs per GB)
+            let timeout = Duration::from_millis(500 + (file_size / 10_000));
             println!(
                 "Parsing {} ({} MB) with timeout of {timeout:?}",
                 filename.display(),

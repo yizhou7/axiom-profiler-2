@@ -50,14 +50,17 @@ impl Z3Parser {
     pub fn version_info(&self) -> Option<&VersionInfo> {
         self.version_info.as_ref()
     }
-    pub fn is_version(&self, version: semver::Version) -> bool {
-        self.version_info.as_ref().is_some_and(|v| v.version == version)
+    pub fn is_version(&self, major: u64, minor: u64, patch: u64) -> bool {
+        self.version_info.as_ref().is_some_and(|v| v.version == semver::Version::new(major, minor, patch))
+    }
+    pub fn is_ge_version(&self, major: u64, minor: u64, patch: u64) -> bool {
+        self.version_info.as_ref().is_some_and(|v| v.version >= semver::Version::new(major, minor, patch))
     }
 
     pub fn parse_existing_enode(&mut self, id: &str) -> Option<ENodeIdx> {
         let idx = self.terms.parse_existing_id(&mut self.strings, id)?;
         let enode = self.egraph.get_enode(idx, &self.stack);
-        if self.is_version(semver::Version::new(4, 12, 2)) && enode.is_none() {
+        if self.is_version(4, 12, 2) && enode.is_none() {
             // Very rarely in version 4.12.2, an `[attach-enode]` is not emitted. Create it here.
             // TODO: log somewhere when this happens.
             self.egraph.new_enode(None, idx, None, &self.stack);
@@ -293,8 +296,7 @@ impl Z3LogParser for Z3Parser {
     fn attach_enode<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Option<()> {
         let idx = self.terms.parse_existing_id(&mut self.strings, l.next()?);
         let Some(idx) = idx else {
-            const Z3_4_8_7: semver::Version = semver::Version::new(4, 8, 7);
-            if self.is_version(Z3_4_8_7) {
+            if self.is_version(4, 8, 7) {
                 // Z3 4.8.7 seems to have a bug where it can emit a non-existent term id here.
                 return Some(());
             } else {
@@ -404,7 +406,10 @@ impl Z3LogParser for Z3Parser {
                 let second_term = l.next()?.strip_suffix(')')?;
                 let from = self.parse_existing_enode(first_term)?;
                 let to = self.parse_existing_enode(second_term)?;
-                self.egraph.blame_equalities(from, to, &self.stack, &mut blamed);
+                // See comment in `EGraph::get_equalities`
+                let can_mismatch = || self.is_ge_version(4, 12, 3) &&
+                    self.terms[self.egraph.get_owner(to)].kind.app_name().is_some_and(|app| &self.strings[app] == "if");
+                self.egraph.blame_equalities(from, to, &self.stack, &mut blamed, can_mismatch)?;
             } else {
                 let term = self.parse_existing_enode(word)?;
                 blamed.push(BlameKind::Term { term })

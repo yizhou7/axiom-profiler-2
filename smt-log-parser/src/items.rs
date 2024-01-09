@@ -79,6 +79,12 @@ impl TermKind {
             _ => None,
         }
     }
+    pub fn app_name(&self) -> Option<IString> {
+        match self {
+            Self::ProofOrApp(ProofOrApp { is_proof: false, name }) => Some(*name),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -145,7 +151,7 @@ pub enum VarNames {
 impl VarNames {
     pub fn get_name<'a>(strings: &'a StringTable, this: &Option<Self>, idx: usize) -> Cow<'a, str> {
         match this {
-            Some(Self::NameAndType(names)) => Cow::Borrowed(strings.resolve(&names[idx].0)),
+            Some(Self::NameAndType(names)) => Cow::Borrowed(&strings[names[idx].0]),
             None | Some(Self::TypeOnly(_)) => Cow::Owned(format!("qvar_{idx}")),
         }
     }
@@ -153,10 +159,10 @@ impl VarNames {
         this.as_ref()
             .map(|this| {
                 let ty = match this {
-                    Self::TypeOnly(names) => &names[idx],
-                    Self::NameAndType(names) => &names[idx].1,
+                    Self::TypeOnly(names) => names[idx],
+                    Self::NameAndType(names) => names[idx].1,
                 };
-                format!(": {}", strings.resolve(ty))
+                format!(": {}", &strings[ty])
             })
             .unwrap_or_default()
     }

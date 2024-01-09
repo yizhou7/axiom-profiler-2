@@ -147,8 +147,10 @@ mod private {
     }
 }
 use private::*;
+// lower inside higher needs brackets around the lower
 const NO_BIND: u8 = 0;
 const QUANT_BIND: u8 = 3;
+const TERNARY_BIND: u8 = 7;
 const INFIX_BIND: u8 = 15;
 const PREFIX_BIND: u8 = 31;
 
@@ -190,10 +192,10 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for QuantIdx {
         if let Some(term) = quant.term {
             term.fmt_with(f, ctxt, data)
         } else {
-            let QuantKind::Other(name) = &quant.kind else {
+            let QuantKind::Other(name) = quant.kind else {
                 panic!()
             };
-            write!(f, "{}", ctxt.parser.strings.resolve(name))
+            write!(f, "{}", &ctxt.parser.strings[name])
         }
     }
 }
@@ -214,7 +216,7 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for &MatchKind {
                 write!(
                     f,
                     "[TheorySolving] {}#",
-                    ctxt.parser.strings.resolve(&axiom_id.namespace)
+                    &ctxt.parser.strings[axiom_id.namespace],
                 )?;
                 if let Some(id) = axiom_id.id {
                     write!(f, "{id}")?;
@@ -243,7 +245,7 @@ impl<'a: 'b, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a Term 
     ) -> fmt::Result {
         data.with_children(&self.child_ids, |data| {
             if ctxt.display_term_ids {
-                let namespace = ctxt.parser.strings.resolve(&self.id.namespace);
+                let namespace = &ctxt.parser.strings[self.id.namespace];
                 let id = self.id.id.map(|id| id.to_string()).unwrap_or_default();
                 write!(f, "[{namespace}#{id}]")?;
             }
@@ -275,12 +277,13 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a TermKind 
     }
 }
 
-enum ProofOrAppKind {
-    Unary,
-    Inline,
+enum ProofOrAppKind<'a> {
+    Unary(&'a str),
+    Inline(&'a str),
+    Ternary(&'a str, &'a str),
     Pattern,
-    OtherApp,
-    Proof,
+    OtherApp(&'a str),
+    Proof(&'a str),
 }
 impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a ProofOrApp {
     fn fmt_with(
@@ -291,41 +294,71 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a ProofOrAp
     ) -> fmt::Result {
         let math = ctxt.use_mathematical_symbols;
         use ProofOrAppKind::*;
-        let name = ctxt.parser.strings.resolve(&self.name);
-        let (name, kind) = match name {
-            name if self.is_proof => (name, Proof),
-            "not" => (if math { "¬" } else { "!" }, Unary),
-            "-" if data.children().len() == 1 => ("-", Unary),
+        let name = &ctxt.parser.strings[self.name];
+        let kind = match name {
+            name if self.is_proof => Proof(name),
+            "not" => Unary(if math { "¬" } else { "!" }),
+            "-" if data.children().len() == 1 => Unary("-"),
 
-            "and" => (if math { "∧" } else { "&&" }, Inline),
-            "or" => (if math { "∨" } else { "||" }, Inline),
-            "<=" => (if math { "≤" } else { "<=" }, Inline),
-            ">=" => (if math { "≥" } else { ">=" }, Inline),
-            op @ ("=" | "+" | "-" | "*" | "/" | "<" | ">") => (op, Inline),
+            "and" => Inline(if math { "∧" } else { "&&" }),
+            "or" => Inline(if math { "∨" } else { "||" }),
+            "<=" => Inline(if math { "≤" } else { "<=" }),
+            ">=" => Inline(if math { "≥" } else { ">=" }),
+            op @ ("=" | "+" | "-" | "*" | "/" | "<" | ">") => Inline(op),
 
-            "pattern" => ("pattern", Pattern),
+            "if" => Ternary("?", ":"),
 
-            name => (name, OtherApp),
+            "pattern" => Pattern,
+
+            name => OtherApp(name),
         };
         match kind {
-            Unary => data.with_bind_power(PREFIX_BIND, |data, bind_power| {
+            Unary(op) => data.with_bind_power(PREFIX_BIND, |data, bind_power| {
                 assert!(bind_power <= PREFIX_BIND);
                 assert_eq!(data.children().len(), 1);
                 let child = data.children()[0];
-                let child = &ctxt.parser[child];
-                write!(f, "{name}{}", child.with_data(ctxt, data))
+                write!(f, "{op}{}", ctxt.parser[child].with_data(ctxt, data))
             }),
-            Inline => data.with_bind_power(INFIX_BIND, |data, bind_power| {
+            Inline(op) => data.with_bind_power(INFIX_BIND, |data, bind_power| {
                 let need_brackets = bind_power >= INFIX_BIND;
                 if need_brackets {
                     write!(f, "(")?;
                 }
                 for (idx, child) in data.children().iter().enumerate() {
                     if idx != 0 {
-                        write!(f, " {name} ")?;
+                        write!(f, " {op} ")?;
                     }
                     write!(f, "{}", ctxt.parser[*child].with_data(ctxt, data))?;
                 }
+                if need_brackets {
+                    write!(f, ")")?;
+                }
+                Ok(())
+            }),
+            Ternary(op1, op2) => data.with_bind_power(TERNARY_BIND, |data, bind_power| {
+                let need_brackets = bind_power >= TERNARY_BIND;
+                if need_brackets {
+                    write!(f, "(")?;
+                }
+                assert_eq!(data.children().len(), 3);
+                let cond = data.children()[0];
+                write!(
+                    f,
+                    "{} {op1}",
+                    ctxt.parser[cond].with_data(ctxt, data)
+                )?;
+                let then = data.children()[1];
+                write!(
+                    f,
+                    " {} {op2}",
+                    ctxt.parser[then].with_data(ctxt, data)
+                )?;
+                let else_ = data.children()[2];
+                write!(
+                    f,
+                    " {}",
+                    ctxt.parser[else_].with_data(ctxt, data)
+                )?;
                 if need_brackets {
                     write!(f, ")")?;
                 }
@@ -342,7 +375,7 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a ProofOrAp
                 }
                 write!(f, "}}")
             }),
-            OtherApp | Proof => data.with_bind_power(NO_BIND, |data, _| {
+            OtherApp(name) | Proof(name) => data.with_bind_power(NO_BIND, |data, _| {
                 // BIND_POWER is highest
                 write!(f, "{name}")?;
                 if data.children().is_empty() {
@@ -368,8 +401,8 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Meaning {
         ctxt: &DisplayCtxt<'a>,
         _data: &mut DisplayData<'a>,
     ) -> fmt::Result {
-        let theory = ctxt.parser.strings.resolve(&self.theory);
-        let value = ctxt.parser.strings.resolve(&self.value);
+        let theory = &ctxt.parser.strings[self.theory];
+        let value = &ctxt.parser.strings[self.value];
         match theory {
             "arith" | "bv" => write!(f, "{value}"),
             theory => write!(f, "/{theory} {value}\\"),
@@ -434,12 +467,12 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a QuantKind {
         }
         if ctxt.display_quantifier_name {
             write!(f, "\"")?;
-            match self {
-                QuantKind::Other(kind) => write!(f, "{}", ctxt.parser.strings.resolve(kind))?,
+            match *self {
+                QuantKind::Other(kind) => write!(f, "{}", &ctxt.parser.strings[kind])?,
                 QuantKind::Lambda => write!(f, "<null>")?,
-                QuantKind::NamedQuant(name) => write!(f, "{}", ctxt.parser.strings.resolve(name))?,
+                QuantKind::NamedQuant(name) => write!(f, "{}", &ctxt.parser.strings[name])?,
                 QuantKind::UnnamedQuant { name, id } => {
-                    write!(f, "{}!{id}", ctxt.parser.strings.resolve(name))?
+                    write!(f, "{}!{id}", &ctxt.parser.strings[name])?
                 }
             };
             write!(f, "\" ")?;
