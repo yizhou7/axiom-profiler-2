@@ -58,7 +58,7 @@ impl EGraph {
         let enode = &mut self.enodes[from];
         let to = expl.to();
         let eq = Equality {
-            frame: stack.active_frame(),
+            _frame: stack.active_frame(),
             to,
             expl,
         };
@@ -149,15 +149,16 @@ pub struct ENode {
 }
 
 impl ENode {
-    pub fn get_equality(&self, stack: &Stack) -> Option<&Equality> {
-        // TODO: improve the performance of this.
-        self.equalities.iter().rev().find(|eq| eq.frame.map(|f| stack.stack_frames[f].active).unwrap_or(true))
+    pub fn get_equality(&self, _stack: &Stack) -> Option<&Equality> {
+        // TODO: why are we allowed to use equalities from popped stack frames?
+        // self.equalities.iter().rev().find(|eq| eq.frame.map(|f| stack.stack_frames[f].active).unwrap_or(true))
+        self.equalities.last()
     }
 }
 
 #[derive(Debug)]
 pub struct Equality {
-    frame: Option<StackIdx>,
+    _frame: Option<StackIdx>,
     pub to: ENodeIdx,
     pub expl: EqualityExpl,
 }
