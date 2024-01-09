@@ -292,7 +292,7 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a TermKind 
             }
             TermKind::ProofOrApp(poa) => write!(f, "{}", poa.with_data(ctxt, data)),
             TermKind::Quant(idx) => write!(f, "{}", ctxt.parser[*idx].with_data(ctxt, data)),
-            TermKind::GeneralizedTerm => write!(f, "[generalized]"),
+            TermKind::GeneralizedPrimitive => write!(f, "_"),
         }
     }
 }
