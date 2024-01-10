@@ -170,17 +170,25 @@ pub fn generalize(t1: TermIdx, t2: TermIdx, p: &mut Z3Parser) -> TermIdx {
         // if t2 is already generalized, no need to generalize further
         t2
     } else {
-        // if neither term is generalized, check the meanings and kinds and recurse over children 
-        if p[t1].meaning == p[t2].meaning && p[t1].kind == p[t2].kind {
+        // if neither term is generalized, check the meanings and kinds and recurse over children
+        let t1_meaning = p.meaning(t1);
+        let t2_meaning = p.meaning(t2);
+        if t1_meaning == t2_meaning && p[t1].kind == p[t2].kind {
             let mut children: Vec<TermIdx> = Vec::new();
-            for (c1, c2) in zip(p[t1].child_ids.clone(), p[t2].child_ids.clone()) {
+            let a = p[t1].child_ids.clone();
+            let b = p[t2].child_ids.clone();
+            for (c1, c2) in zip(Vec::from(a), Vec::from(b)) {
                 let child = generalize(c1, c2, p);
                 children.push(child)
             }
-            p.terms.mk_generalized_term(p[t1].meaning, p[t1].kind, children)
+            let idx = p.terms.mk_generalized_term(p[t1].kind, children);
+            if let Some(meaning) = p.meaning(t1) {
+                p.terms.new_meaning(idx, meaning.clone()).unwrap();
+            }
+            idx
         } else {
             // if meanings or kinds don't match up, need to generalize
-            p.terms.mk_generalized_term(None, crate::items::TermKind::GeneralizedPrimitive, vec![])
+            p.terms.mk_generalized_term(crate::items::TermKind::GeneralizedPrimitive, vec![])
         }
     }       
 }

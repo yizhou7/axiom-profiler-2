@@ -256,14 +256,11 @@ impl<'a: 'b, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a Term 
         data.with_children(&self.child_ids, |data| {
             if ctxt.display_term_ids {
                 match self.id {
-                    None => {
-                        assert!(matches!(self.kind, TermKind::GeneralizedTerm));
-                        write!(f, "")?;
-                    }
+                    None => write!(f, "")?,
                     Some(id) => {
                         let namespace = &ctxt.parser.strings[id.namespace];
                         let id = id.id.map(|id| (u32::from(id) - 1).to_string()).unwrap_or_default();
-                        write!(f, "[{namespace}#{id}]")?;
+                        write!(f, "[{namespace}#{id}]")?
                     }
                 }
 
