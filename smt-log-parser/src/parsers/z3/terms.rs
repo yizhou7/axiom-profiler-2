@@ -68,7 +68,7 @@ impl Terms {
     }
 
     pub(super) fn create_wild_card(&mut self) {
-        log!(format!("There are {} non-general terms", self.terms.len()));
+        // log!(format!("There are {} non-general terms", self.terms.len()));
         let wild_card = Term {
             id: None,
             kind: GeneralizedPrimitive,
@@ -80,7 +80,7 @@ impl Terms {
     }
 
     pub(super) fn mk_generalized_term(&mut self, kind: TermKind, children: Vec<TermIdx>) -> TermIdx {
-        log!(format!("There are {} terms (including general terms)", self.terms.len()));
+        // log!(format!("There are {} terms (including general terms)", self.terms.len()));
         let term = Term {
             id: None,
             kind,
