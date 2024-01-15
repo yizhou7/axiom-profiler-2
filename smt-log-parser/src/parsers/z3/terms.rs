@@ -3,14 +3,17 @@ use typed_index_collections::TiVec;
 
 use crate::{
     Error, Result,
-    items::{Term, TermId, TermIdToIdxMap, TermIdx, StringTable, Meaning, QuantIdx}
+    items::{StringTable, Term, TermId, TermIdToIdxMap, TermIdx, TermKind, Meaning, QuantIdx}
 };
 
 #[derive(Debug)]
 pub struct Terms {
     term_id_map: TermIdToIdxMap,
     terms: TiVec<TermIdx, Term>,
-    meanings: FxHashMap<TermIdx, Meaning>
+    meanings: FxHashMap<TermIdx, Meaning>,
+    parsed_terms: Option<TermIdx>,
+
+    synthetic_terms: FxHashMap<(Term, Option<Meaning>), TermIdx>,
 }
 
 impl Terms {
@@ -19,13 +22,19 @@ impl Terms {
             term_id_map: TermIdToIdxMap::new(strings),
             terms: TiVec::new(),
             meanings: FxHashMap::default(),
+            parsed_terms: None,
+
+            synthetic_terms: FxHashMap::default(),
         }
     }
 
-    pub(super) fn new_term(&mut self, id: TermId, term: Term) -> Result<TermIdx> {
+    pub(super) fn new_term(&mut self, term: Term) -> Result<TermIdx> {
         self.terms.raw.try_reserve(1)?;
+        let id = term.id;
         let idx = self.terms.push_and_get_key(term);
-        self.term_id_map.register_term(id, idx)?;
+        if let Some(id) = id {
+            self.term_id_map.register_term(id, idx)?;
+        }
         Ok(idx)
     }
 
@@ -58,6 +67,26 @@ impl Terms {
             },
         };
         Ok(())
+    }
+
+    pub(super) fn end_of_file(&mut self) {
+        self.parsed_terms = Some(self.terms.next_key());
+    }
+
+    pub(super) fn new_synthetic_term(&mut self, kind: TermKind, children: Vec<TermIdx>, meaning: Option<Meaning>) -> TermIdx {
+        let term = Term {
+            id: None,
+            kind,
+            child_ids: children.into_boxed_slice(),
+        };
+        let term = self.synthetic_terms.entry((term, meaning));
+        *term.or_insert_with_key(|(term, meaning)| {
+            let term = self.terms.push_and_get_key(term.clone());
+            if let Some(meaning) = meaning {
+                self.meanings.insert(term, *meaning);
+            }
+            term
+        })
     }
 }
 

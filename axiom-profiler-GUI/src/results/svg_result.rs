@@ -1,6 +1,6 @@
 use crate::{
-    results::graph_info::{GraphInfo, Msg as GraphInfoMsg},
-    RcParser,
+    results::{graph_info::{GraphInfo, Msg as GraphInfoMsg}, filters::graph_filters::FilterOutput},
+    RcParser, utils::indexer::Indexer,
 };
 
 use self::colours::HSVColour;
@@ -17,7 +17,13 @@ use petgraph::dot::{Config, Dot};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use smt_log_parser::{
     items::{BlameKind, MatchKind},
-    parsers::z3::inst_graph::{EdgeInfo, EdgeType, InstGraph, InstInfo, VisibleGraphInfo},
+    parsers::{
+        z3::{
+            inst_graph::{EdgeInfo, EdgeType, InstGraph, InstInfo, VisibleGraphInfo},
+            z3parser::Z3Parser,
+        },
+        LogParser,
+    },
 };
 use std::num::NonZeroUsize;
 use viz_js::VizInstance;
@@ -37,6 +43,9 @@ pub enum Msg {
     GetUserPermission,
     WorkerOutput(super::worker::WorkerOutput),
     UpdateSelectedNodes(Vec<InstInfo>),
+    SearchMatchingLoops,
+    SelectNthMatchingLoop(usize),
+    ShowMatchingLoopSubgraph,
 }
 
 #[derive(Default)]
@@ -68,6 +77,8 @@ pub struct SVGResult {
     get_node_info: Callback<(NodeIndex, bool, RcParser), InstInfo>,
     get_edge_info: Callback<(EdgeIndex, bool, RcParser), EdgeInfo>,
     selected_insts: Vec<InstInfo>,
+    searched_matching_loops: bool,
+    matching_loop_count: usize,
 }
 
 #[derive(Properties, PartialEq)]
@@ -82,19 +93,19 @@ impl Component for SVGResult {
     fn create(ctx: &Context<Self>) -> Self {
         log::debug!("Creating SVGResult component");
         let parser = RcParser::clone(&ctx.props().parser);
-        let inst_graph = InstGraph::from(&parser);
-        let (quant_count, non_quant_insts) = parser.quant_count_incl_theory_solving();
+        let inst_graph = InstGraph::from(&parser.borrow());
+        let (quant_count, non_quant_insts) = parser.borrow().quant_count_incl_theory_solving();
         let colour_map = QuantIdxToColourMap::from(quant_count, non_quant_insts);
         let get_node_info = Callback::from({
             let node_info_map = inst_graph.get_node_info_map();
             move |(node, ignore_ids, parser): (NodeIndex, bool, RcParser)| {
-                node_info_map.get_instantiation_info(node.index(), &parser, ignore_ids)
+                node_info_map.get_instantiation_info(node.index(), &parser.borrow(), ignore_ids)
             }
         });
         let get_edge_info = Callback::from({
             let edge_info_map = inst_graph.get_edge_info_map();
             move |(edge, ignore_ids, parser): (EdgeIndex, bool, RcParser)| {
-                edge_info_map.get_edge_info(edge, &parser, ignore_ids)
+                edge_info_map.get_edge_info(edge, &parser.borrow(), ignore_ids)
             }
         });
         Self {
@@ -113,6 +124,8 @@ impl Component for SVGResult {
             get_node_info,
             get_edge_info,
             selected_insts: Vec::new(),
+            searched_matching_loops: false,
+            matching_loop_count: 0,
         }
     }
 
@@ -121,16 +134,47 @@ impl Component for SVGResult {
             Msg::WorkerOutput(_out) => false,
             Msg::ApplyFilter(filter) => {
                 log::debug!("Applying filter {}", filter);
-                if let Some(ref path) = filter.apply(&mut self.inst_graph) {
-                    self.insts_info_link
-                        .borrow()
-                        .clone()
-                        .unwrap()
-                        .send_message(GraphInfoMsg::SelectNodes(path.clone()));
-                    false
-                } else {
-                    false
+                match filter.apply(&mut self.inst_graph, &mut self.parser.borrow_mut()) {
+                    FilterOutput::LongestPath(path) => {
+                        self.insts_info_link
+                            .borrow()
+                            .clone()
+                            .unwrap()
+                            .send_message(GraphInfoMsg::SelectNodes(path));
+                        false
+                    }
+                    FilterOutput::MatchingLoopGeneralizedTerms(gen_terms) => {
+                        self.insts_info_link
+                            .borrow()
+                            .clone()
+                            .unwrap()
+                            .send_message(GraphInfoMsg::ShowGeneralizedTerms(gen_terms));
+                        false
+                    }
+                    FilterOutput::None => false
                 }
+            }
+            Msg::SearchMatchingLoops => {
+                self.matching_loop_count = self.inst_graph.search_matching_loops();
+                self.searched_matching_loops = true;
+                ctx.link().send_message(Msg::SelectNthMatchingLoop(0));
+                true
+            }
+            Msg::SelectNthMatchingLoop(n) => {
+                self.filter_chain_link
+                    .borrow()
+                    .clone()
+                    .unwrap()
+                    .send_message(FilterChainMsg::AddFilters(vec![Filter::SelectNthMatchingLoop(n)]));
+                false
+            }
+            Msg::ShowMatchingLoopSubgraph => {
+                self.filter_chain_link
+                    .borrow()
+                    .clone()
+                    .unwrap()
+                    .send_message(FilterChainMsg::AddFilters(vec![Filter::ShowMatchingLoopSubgraph]));
+                false
             }
             Msg::ResetGraph => {
                 log::debug!("Resetting graph");
@@ -332,13 +376,28 @@ impl Component for SVGResult {
         html! {
             <>
                 <div style="flex: 20%; height: 87vh; overflow-y: auto; ">
+                {if !self.searched_matching_loops {
+                    html! {
+                        <button onclick={ctx.link().callback(|_| Msg::SearchMatchingLoops)}>{"Search matching loops"}</button>
+                    }
+                } else {
+                    html! {
+                        <>
+                        <Indexer 
+                            label="Analyzed matching loops" 
+                            index_consumer={ctx.link().callback(Msg::SelectNthMatchingLoop)}
+                            max={self.matching_loop_count - 1}
+                        />
+                        <button onclick={ctx.link().callback(|_| Msg::ShowMatchingLoopSubgraph)}>{"Show all matching loops"}</button>
+                        </>
+                    }
+                }}
                 <ContextProvider<Vec<InstInfo>> context={self.selected_insts.clone()}>
                     <FilterChain
                         apply_filter={apply_filter.clone()}
                         reset_graph={reset_graph.clone()}
                         render_graph={render_graph.clone()}
                         weak_link={self.filter_chain_link.clone()}
-                        dependency={ctx.props().parser.as_ptr()}
                     />
                 </ContextProvider<Vec<InstInfo>>>
                 {async_graph_and_filter_chain_warning}

@@ -3,10 +3,15 @@ use gloo::console::log;
 use indexmap::map::IndexMap;
 use material_yew::WeakComponentLink;
 use petgraph::graph::{EdgeIndex, NodeIndex};
+use smt_log_parser::parsers::z3::inst_graph::EdgeType;
 use smt_log_parser::{
     items::BlameKind,
-    parsers::z3::inst_graph::{EdgeInfo, InstInfo},
+    parsers::z3::{
+        inst_graph::{EdgeInfo, InstInfo},
+        z3parser::Z3Parser,
+    },
 };
+use std::rc::Rc;
 use web_sys::HtmlElement;
 use yew::prelude::*;
 
@@ -20,6 +25,7 @@ pub struct GraphInfo {
     selected_edges: IndexMap<EdgeIndex, EdgeInfo>,
     selected_edges_ref: NodeRef,
     ignore_term_ids: bool,
+    generalized_terms: Vec<String>,
 }
 
 pub enum Msg {
@@ -30,6 +36,7 @@ pub enum Msg {
     SelectNodes(Vec<NodeIndex>),
     DeselectAll,
     ToggleIgnoreTermIds,
+    ShowGeneralizedTerms(Vec<String>),
 }
 
 #[derive(Properties, PartialEq)]
@@ -60,6 +67,7 @@ impl Component for GraphInfo {
             selected_edges: IndexMap::new(),
             selected_edges_ref: NodeRef::default(),
             ignore_term_ids: true,
+            generalized_terms: Vec::new(),
         }
     }
 
@@ -181,6 +189,10 @@ impl Component for GraphInfo {
                 }
                 true
             }
+            Msg::ShowGeneralizedTerms(terms) => {
+                self.generalized_terms = terms;
+                true
+            }
         }
     }
 
@@ -231,6 +243,9 @@ impl Component for GraphInfo {
         let on_node_select = ctx.link().callback(Msg::UserSelectedNode);
         let on_edge_select = ctx.link().callback(Msg::UserSelectedEdge);
         let deselect_all = ctx.link().callback(|_| Msg::DeselectAll);
+        let generalized_terms = self.generalized_terms.iter().map(|term| html! {
+            <li>{term}</li>
+        });
         html! {
             <>
             <GraphContainer
@@ -240,7 +255,11 @@ impl Component for GraphInfo {
                 deselect_all={&deselect_all}
                 selected_nodes={self.selected_nodes.keys().cloned().collect::<Vec<NodeIndex>>()}
             />
-            <div style="flex: 30%; height: 87vh; overflow: auto; position: relative;">
+            <div style="flex: 30%; height: 87vh; overflow: auto;">
+                <div style="position: sticky; top: 0px; left: 0px">
+                    <label for="term_expander">{"Ignore term IDs "}</label>
+                    <input type="checkbox" checked={self.ignore_term_ids} onclick={toggle} id="term_expander" />
+                </div>
                 <h2>{"Information about selected nodes:"}</h2>
                 <div ref={self.selected_nodes_ref.clone()}>
                     <SelectedNodesInfo selected_nodes={self.selected_nodes.values().cloned().collect::<Vec<InstInfo>>()} on_click={on_node_click} />
@@ -249,9 +268,9 @@ impl Component for GraphInfo {
                 <div ref={self.selected_edges_ref.clone()}>
                     <SelectedEdgesInfo selected_edges={self.selected_edges.values().cloned().collect::<Vec<EdgeInfo>>()} on_click={on_edge_click} />
                 </div>
+                <h2>{"Information about displayed matching loop:"}</h2>
                 <div>
-                    <label for="term_expander">{"Ignore term IDs "}</label>
-                    <input type="checkbox" checked={self.ignore_term_ids} onclick={toggle} id="term_expander" />
+                    <ul>{for generalized_terms}</ul>
                 </div>
             </div>
 

@@ -1,6 +1,5 @@
 use fxhash::{FxHashSet, FxHashMap};
 use gloo_console::log;
-use itertools::Itertools;
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableGraph;
 use petgraph::visit::{Bfs, IntoEdgeReferences, Topo, IntoEdges};
@@ -12,11 +11,13 @@ use petgraph::{
 use petgraph::{Direction, Graph};
 use roaring::bitmap::RoaringBitmap;
 use std::fmt;
+use std::iter::zip;
 use typed_index_collections::TiVec;
 
 use crate::display_with::{DisplayCtxt, DisplayWithCtxt};
-use crate::items::{BlameKind, ENodeIdx, Fingerprint, InstIdx, MatchKind};
+use crate::items::{BlameKind, ENodeIdx, Fingerprint, InstIdx, MatchKind, Term, TermIdx, QuantIdx, TermKind};
 
+use super::terms::Terms;
 use super::z3parser::Z3Parser;
 
 const MIN_MATCHING_LOOP_LENGTH: usize = 3;
@@ -140,6 +141,9 @@ pub struct InstGraph {
     cost_ranked_node_indices: Vec<NodeIndex>,
     branching_ranked_node_indices: Vec<NodeIndex>,
     tr_closure: Vec<RoaringBitmap>,
+    matching_loop_subgraph: Graph<NodeData, EdgeType>,
+    matching_loop_end_nodes: Vec<NodeIndex>, // these are sorted by maximal depth in descending order 
+    generalized_terms: TiVec<usize, Option<Vec<String>>>,
 }
 
 enum InstOrder {
@@ -152,6 +156,30 @@ pub struct VisibleGraphInfo {
     pub edge_count: usize,
     pub node_count_decreased: bool,
     pub edge_count_decreased: bool,
+}
+
+impl Terms {
+    pub fn generalize(&mut self, t1: TermIdx, t2: TermIdx) -> TermIdx {
+        if t1 == t2 {
+            // if terms are equal, no need to generalize
+            t1
+        } else if let TermKind::GeneralizedPrimitive = self[t1].kind {
+            // if t1 is already generalized, no need to generalize further
+            t1
+        } else if let TermKind::GeneralizedPrimitive = self[t2].kind {
+            // if t2 is already generalized, no need to generalize further
+            t2
+        } else if self.meaning(t1) == self.meaning(t2) && self[t1].kind == self[t2].kind {
+            // if neither term is generalized, check the meanings and kinds and recurse over children
+            let a = self[t1].child_ids.clone();
+            let b = self[t2].child_ids.clone();
+            let children = zip(Vec::from(a), Vec::from(b)).map(|(c1, c2)| self.generalize(c1, c2)).collect();
+            self.new_synthetic_term(self[t1].kind, children, self.meaning(t1).copied())
+        } else {
+            // if meanings or kinds don't match up, need to generalize
+            self.new_synthetic_term(crate::items::TermKind::GeneralizedPrimitive, vec![], None)
+        }       
+    }
 }
 
 impl InstGraph {
@@ -427,7 +455,7 @@ impl InstGraph {
     //     }
     // }
 
-    pub fn show_matching_loops(&mut self) {
+    pub fn search_matching_loops(&mut self) -> usize {
         let quants: FxHashSet<_> = self
             .orig_graph
             .node_weights()
@@ -455,10 +483,126 @@ impl InstGraph {
                 self.orig_graph[node].visible = true;
             }
         }
+        self.retain_visible_nodes_and_reconnect();
+        self.matching_loop_subgraph = self.visible_graph.clone();
+        // for displaying the nth longest matching loop later on, we want to compute the end nodes of all the matching loops
+        // and sort them by max-depth in descending order
+        Self::compute_longest_distances_from_roots(&mut self.matching_loop_subgraph);
+        // compute end-nodes of matching loops 
+        self.matching_loop_end_nodes = self.matching_loop_subgraph 
+            .node_indices()
+            // only keep end-points of matching loops, i.e., nodes without any children in the matching loop subgraph
+            .filter(|nx| self.matching_loop_subgraph.neighbors_directed(*nx, Outgoing).count() == 0)
+            .collect();
+        // sort the matching loop end-nodes by the max-depth
+        self.matching_loop_end_nodes.sort_unstable_by(|node_a, node_b| {
+            let max_depth_node_a = self.matching_loop_subgraph.node_weight(*node_a).unwrap().max_depth;
+            let max_depth_node_b = self.matching_loop_subgraph.node_weight(*node_b).unwrap().max_depth;
+            if max_depth_node_a < max_depth_node_b {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Less
+            }
+        });
+        // return the total number of potential matching loops
+        let nr_matching_loop_end_nodes = self.matching_loop_end_nodes.len();
+        self.generalized_terms.resize(nr_matching_loop_end_nodes, None);
+        nr_matching_loop_end_nodes
     }
 
-    fn find_longest_paths(graph: &mut Graph<NodeData, EdgeType>) -> FxHashSet<NodeIndex> {
-        // traverse this subtree in topological order to compute longest distances from node
+    pub fn show_nth_matching_loop(&mut self, n: usize, p: &mut Z3Parser) -> Vec<String> {
+        self.reset_visibility_to(false);
+        // relies on the fact that we have previously sorted self.matching_loop_end_nodes by max_depth in descending order in 
+        // search_matching_loops
+        let end_node_of_nth_matching_loop = self.matching_loop_end_nodes.get(n);
+        if let Some(&node) = end_node_of_nth_matching_loop {
+            // start a reverse-DFS from node and mark all the nodes as visible along the way
+            // during the reverse-DFS collect information needed to compute the generalized terms later on
+            // we abstract the edges over the from- and to-quantifiers as well as the trigger, i.e.,
+            // two edges (a,b) and (c,d) are the same abstract edge iff 
+            // - a and c correspond to an instantiation of the same quantifier
+            // - and b and d correspond to an instantiation of the same quantifier 
+            // - and b and d used the same trigger
+            let mut abstract_edge_blame_terms: FxHashMap<(QuantIdx, QuantIdx, TermIdx), Vec<TermIdx>> = FxHashMap::default(); 
+            let mut dfs = Dfs::new(petgraph::visit::Reversed(&self.matching_loop_subgraph), node);
+            while let Some(nx) = dfs.next(petgraph::visit::Reversed(&self.matching_loop_subgraph)) {
+                let orig_index = self.matching_loop_subgraph.node_weight(nx).unwrap().orig_graph_idx;
+                self.orig_graph[orig_index].visible = true;
+                // add all direct dependencies which have BlameKind::Term to the correct bin in abstract_edges
+                // such that later on we can generalize over each all edges in a matching loop that have 
+                // identical from- and to-quantifiers
+                // (*)
+                // avoid unnecessary recomputation if we have already computed the generalized terms 
+                if let None = &self.generalized_terms[n] {
+                    log!(format!("Computation I for matching loop #{}", n));
+                    if let Some(to_quant) = self.matching_loop_subgraph.node_weight(nx).unwrap().mkind.quant_idx() {
+                        for incoming_edge in self.matching_loop_subgraph.edges_directed(nx, Incoming) {
+                            let from = incoming_edge.source(); 
+                            if let Some(from_quant) = self.matching_loop_subgraph.node_weight(from).unwrap().mkind.quant_idx() {
+                                if let Some(blame_term) = incoming_edge.weight().blame_term_idx() {
+                                    let blame_term_idx = p[blame_term].owner; 
+                                    if let Some(trigger) = self.matching_loop_subgraph.node_weight(nx).unwrap().mkind.pattern() {
+                                        if let Some(blame_terms) = abstract_edge_blame_terms.get_mut(&(from_quant, to_quant, trigger)) {
+                                            blame_terms.push(blame_term_idx);
+                                        } else {
+                                            abstract_edge_blame_terms.insert((from_quant, to_quant, trigger), vec![blame_term_idx]);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(generalized_terms) = &self.generalized_terms[n] {
+                // check if we have already computed the generalized terms for the n-th matching loop
+                generalized_terms.clone()
+            } else {
+                log!(format!("Computation II for matching loop #{}", n));
+                // if not, compute the generalized terms for each bucket in abstract_edge_blame_terms
+                let mut generalized_terms: Vec<String> = Vec::new();
+                for blame_terms in abstract_edge_blame_terms.values() {
+                    // let generalized_term = blame_terms.iter().reduce(|&t1, &t2| generalize(t1, t2, p)).unwrap();
+                    if let Some(t1) = blame_terms.get(0) {
+                        let mut gen_term = *t1;
+                        for &t2 in &blame_terms[1..] {
+                            gen_term = p.terms.generalize(gen_term, t2);
+                            // let ctxt = DisplayCtxt {
+                            //     parser: p,
+                            //     display_term_ids: false,
+                            //     display_quantifier_name: false,
+                            //     use_mathematical_symbols: true,
+                            // };
+                            // log!(format!("Generalized term {} and {}", gen_term.with(&ctxt), t2.with(&ctxt)));
+                        }
+                        let ctxt = DisplayCtxt {
+                            parser: p,
+                            display_term_ids: false,
+                            display_quantifier_name: false,
+                            use_mathematical_symbols: true,
+                        };
+                        let pretty_gen_term = gen_term.with(&ctxt).to_string();
+                        generalized_terms.push(pretty_gen_term);
+                    }
+                }
+                self.generalized_terms[n] = Some(generalized_terms.clone());
+                generalized_terms
+            }
+            // after generalizing over the terms for each abstract edge, store the key-value pair (n, MatchingLoopInfo) in the 
+            // InstGraph such that we don't need to recompute the generalization => can check if the value is already in the map at (*)
+        } else {
+            Vec::new() 
+        }
+    }
+
+    pub fn show_matching_loop_subgraph(&mut self) {
+        self.reset_visibility_to(false);
+        for node in self.matching_loop_subgraph.node_weights() {
+            self.orig_graph[node.orig_graph_idx].visible = true;
+        }
+    }
+
+    fn compute_longest_distances_from_roots(graph: &mut Graph<NodeData, EdgeType>) {
         let mut topo = Topo::new(&*graph);
         while let Some(nx) = topo.next(&*graph) {
             let parents = graph.neighbors_directed(nx, Incoming);
@@ -471,20 +615,21 @@ impl InstGraph {
                 graph[nx].max_depth = 0;
             }
         }
-        let furthest_away_nodes = graph
+    }
+
+    fn find_longest_paths(graph: &mut Graph<NodeData, EdgeType>) -> FxHashSet<NodeIndex> {
+        // traverse this subtree in topological order to compute longest distances from root nodes
+        Self::compute_longest_distances_from_roots(graph);
+        let furthest_away_end_nodes = graph
             .node_indices()
+            // only want to keep end nodes of longest paths, i.e., nodes without any children 
+            .filter(|nx| graph.neighbors_directed(*nx, Outgoing).count() == 0)
             // only want to show matching loops of length at least 3, hence only keep nodes with depth at least 2
-            .filter(|nx| graph.node_weight(*nx).unwrap().max_depth >= MIN_MATCHING_LOOP_LENGTH - 1)
-            .max_set_by(|node_a, node_b| {
-                graph
-                    .node_weight(*node_a)
-                    .unwrap()
-                    .max_depth
-                    .cmp(&graph.node_weight(*node_b).unwrap().max_depth)
-            });
+            .filter(|nx| graph.node_weight(*nx).unwrap().max_depth >= MIN_MATCHING_LOOP_LENGTH - 1) 
+            .collect();
         // backtrack longest paths from furthest away nodes in subgraph until we reach a root
         let mut matching_loop_nodes: FxHashSet<NodeIndex> = FxHashSet::default();
-        let mut visitor: Vec<NodeIndex> = furthest_away_nodes;
+        let mut visitor: Vec<NodeIndex> = furthest_away_end_nodes;
         let mut visited: FxHashSet<_> = FxHashSet::default();
         while let Some(curr) = visitor.pop() {
             matching_loop_nodes.insert(graph.node_weight(curr).unwrap().orig_graph_idx);
