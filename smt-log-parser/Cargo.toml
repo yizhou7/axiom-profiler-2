@@ -6,12 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-regex = "1"
 futures = "0.3"
 serde = { version = "1.0.183", features = ["derive"] }
-serde_json = "1.0.105"
 petgraph = "0.6.4"
-implicit-clone = "0.4.1"
 wasm-timer = "0.2"
 semver = "1.0"
 typed-index-collections = { version = "3.1", features = ["serde"] }
@@ -19,7 +16,6 @@ fxhash = "0.2"
 duplicate = "1.0"
 gloo-console = "0.3.0"
 roaring = "0.10"
-itertools = "0.12.0"
 lasso = { version = "0.7", features = ["serialize"] }
 
 [dev-dependencies]

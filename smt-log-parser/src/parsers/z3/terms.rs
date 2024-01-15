@@ -1,10 +1,9 @@
 use fxhash::FxHashMap;
-use gloo_console::log;
 use typed_index_collections::TiVec;
 
 use crate::{
     Error, Result,
-    items::{StringTable, Term, TermId, TermIdToIdxMap, TermIdx, TermKind::{GeneralizedPrimitive, self}, Meaning, QuantIdx}
+    items::{StringTable, Term, TermId, TermIdToIdxMap, TermIdx, TermKind, Meaning, QuantIdx}
 };
 
 #[derive(Debug)]
@@ -12,9 +11,9 @@ pub struct Terms {
     term_id_map: TermIdToIdxMap,
     terms: TiVec<TermIdx, Term>,
     meanings: FxHashMap<TermIdx, Meaning>,
-    generalized_term_boundary: Option<TermIdx>,
-    wild_card_index: Option<TermIdx>,
-    term_to_term_idx_map: FxHashMap<Term, TermIdx>,
+    parsed_terms: Option<TermIdx>,
+
+    synthetic_terms: FxHashMap<(Term, Option<Meaning>), TermIdx>,
 }
 
 impl Terms {
@@ -23,16 +22,19 @@ impl Terms {
             term_id_map: TermIdToIdxMap::new(strings),
             terms: TiVec::new(),
             meanings: FxHashMap::default(),
-            generalized_term_boundary: None,
-            wild_card_index: None,
-            term_to_term_idx_map: FxHashMap::default(),
+            parsed_terms: None,
+
+            synthetic_terms: FxHashMap::default(),
         }
     }
 
-    pub(super) fn new_term(&mut self, id: TermId, term: Term) -> Result<TermIdx> {
+    pub(super) fn new_term(&mut self, term: Term) -> Result<TermIdx> {
         self.terms.raw.try_reserve(1)?;
+        let id = term.id;
         let idx = self.terms.push_and_get_key(term);
-        self.term_id_map.register_term(id, idx)?;
+        if let Some(id) = id {
+            self.term_id_map.register_term(id, idx)?;
+        }
         Ok(idx)
     }
 
@@ -67,33 +69,24 @@ impl Terms {
         Ok(())
     }
 
-    pub(super) fn create_wild_card(&mut self) {
-        // log!(format!("There are {} non-general terms", self.terms.len()));
-        let wild_card = Term {
-            id: None,
-            kind: GeneralizedPrimitive,
-            child_ids: Default::default(),
-        };
-        self.terms.push(wild_card.clone());
-        self.wild_card_index = self.terms.last_key();
-        self.term_to_term_idx_map.insert(wild_card, self.wild_card_index.unwrap());
+    pub(super) fn end_of_file(&mut self) {
+        self.parsed_terms = Some(self.terms.next_key());
     }
 
-    pub(super) fn mk_generalized_term(&mut self, kind: TermKind, children: Vec<TermIdx>) -> TermIdx {
-        // log!(format!("There are {} terms (including general terms)", self.terms.len()));
+    pub(super) fn new_synthetic_term(&mut self, kind: TermKind, children: Vec<TermIdx>, meaning: Option<Meaning>) -> TermIdx {
         let term = Term {
             id: None,
             kind,
             child_ids: children.into_boxed_slice(),
         };
-        if let Some(term_idx) = self.term_to_term_idx_map.get(&term) {
-            *term_idx
-        } else {
-            let idx = self.terms.next_key();
-            self.terms.push(term.clone());
-            self.term_to_term_idx_map.insert(term, idx);
-            idx
-        }
+        let term = self.synthetic_terms.entry((term, meaning));
+        *term.or_insert_with_key(|(term, meaning)| {
+            let term = self.terms.push_and_get_key(term.clone());
+            if let Some(meaning) = meaning {
+                self.meanings.insert(term, *meaning);
+            }
+            term
+        })
     }
 }
 

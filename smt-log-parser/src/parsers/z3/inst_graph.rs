@@ -1,7 +1,5 @@
-use futures::StreamExt;
 use fxhash::{FxHashSet, FxHashMap};
 use gloo_console::log;
-use itertools::Itertools;
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableGraph;
 use petgraph::visit::{Bfs, IntoEdgeReferences, Topo, IntoEdges};
@@ -19,6 +17,7 @@ use typed_index_collections::TiVec;
 use crate::display_with::{DisplayCtxt, DisplayWithCtxt};
 use crate::items::{BlameKind, ENodeIdx, Fingerprint, InstIdx, MatchKind, Term, TermIdx, QuantIdx, TermKind};
 
+use super::terms::Terms;
 use super::z3parser::Z3Parser;
 
 const MIN_MATCHING_LOOP_LENGTH: usize = 3;
@@ -159,38 +158,28 @@ pub struct VisibleGraphInfo {
     pub edge_count_decreased: bool,
 }
 
-pub fn generalize(t1: TermIdx, t2: TermIdx, p: &mut Z3Parser) -> TermIdx {
-    if t1 == t2 {
-        // if terms are equal, no need to generalize
-        t1
-    } else if let TermKind::GeneralizedPrimitive = p[t1].kind {
-        // if t1 is already generalized, no need to generalize further
-        t1
-    } else if let TermKind::GeneralizedPrimitive = p[t2].kind {
-        // if t2 is already generalized, no need to generalize further
-        t2
-    } else {
-        // if neither term is generalized, check the meanings and kinds and recurse over children
-        let t1_meaning = p.meaning(t1);
-        let t2_meaning = p.meaning(t2);
-        if t1_meaning == t2_meaning && p[t1].kind == p[t2].kind {
-            let mut children: Vec<TermIdx> = Vec::new();
-            let a = p[t1].child_ids.clone();
-            let b = p[t2].child_ids.clone();
-            for (c1, c2) in zip(Vec::from(a), Vec::from(b)) {
-                let child = generalize(c1, c2, p);
-                children.push(child)
-            }
-            let idx = p.terms.mk_generalized_term(p[t1].kind, children);
-            if let Some(meaning) = p.meaning(t1) {
-                p.terms.new_meaning(idx, meaning.clone()).unwrap();
-            }
-            idx
+impl Terms {
+    pub fn generalize(&mut self, t1: TermIdx, t2: TermIdx) -> TermIdx {
+        if t1 == t2 {
+            // if terms are equal, no need to generalize
+            t1
+        } else if let TermKind::GeneralizedPrimitive = self[t1].kind {
+            // if t1 is already generalized, no need to generalize further
+            t1
+        } else if let TermKind::GeneralizedPrimitive = self[t2].kind {
+            // if t2 is already generalized, no need to generalize further
+            t2
+        } else if self.meaning(t1) == self.meaning(t2) && self[t1].kind == self[t2].kind {
+            // if neither term is generalized, check the meanings and kinds and recurse over children
+            let a = self[t1].child_ids.clone();
+            let b = self[t2].child_ids.clone();
+            let children = zip(Vec::from(a), Vec::from(b)).map(|(c1, c2)| self.generalize(c1, c2)).collect();
+            self.new_synthetic_term(self[t1].kind, children, self.meaning(t1).copied())
         } else {
             // if meanings or kinds don't match up, need to generalize
-            p.terms.mk_generalized_term(crate::items::TermKind::GeneralizedPrimitive, vec![])
-        }
-    }       
+            self.new_synthetic_term(crate::items::TermKind::GeneralizedPrimitive, vec![], None)
+        }       
+    }
 }
 
 impl InstGraph {
@@ -575,9 +564,9 @@ impl InstGraph {
                 for blame_terms in abstract_edge_blame_terms.values() {
                     // let generalized_term = blame_terms.iter().reduce(|&t1, &t2| generalize(t1, t2, p)).unwrap();
                     if let Some(t1) = blame_terms.get(0) {
-                        let mut gen_term = t1.clone();
+                        let mut gen_term = *t1;
                         for &t2 in &blame_terms[1..] {
-                            gen_term = generalize(gen_term, t2, p);
+                            gen_term = p.terms.generalize(gen_term, t2);
                             // let ctxt = DisplayCtxt {
                             //     parser: p,
                             //     display_term_ids: false,

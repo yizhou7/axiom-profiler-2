@@ -221,7 +221,7 @@ impl Z3LogParser for Z3Parser {
             kind: TermKind::Quant(qidx),
             child_ids,
         };
-        let tidx = self.terms.new_term(full_id, term)?;
+        let tidx = self.terms.new_term(term)?;
         let q = Quantifier {
             num_vars,
             kind: quant_name,
@@ -250,7 +250,7 @@ impl Z3LogParser for Z3Parser {
             kind,
             child_ids: Default::default(),
         };
-        self.terms.new_term(full_id, term)?;
+        self.terms.new_term(term)?;
         Ok(())
     }
 
@@ -272,7 +272,7 @@ impl Z3LogParser for Z3Parser {
             kind,
             child_ids,
         };
-        self.terms.new_term(full_id, term)?;
+        self.terms.new_term(term)?;
         Ok(())
     }
 
@@ -525,9 +525,9 @@ impl Z3LogParser for Z3Parser {
     }
 
     fn eof(&mut self) {
+        self.terms.end_of_file();
         // TODO: this shouldn't be done here.
         self.compute_costs();
-        self.terms.create_wild_card();
     }
 
     fn push<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
