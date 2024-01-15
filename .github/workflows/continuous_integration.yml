@@ -47,6 +47,7 @@ jobs:
       with:
         name: "logs_z3_v${{ matrix.z3version }}"
         path: failing_logs.tar.bz2
+        retention-days: 1
 
 
   generate_log:
