@@ -23,7 +23,9 @@ jobs:
       fail-fast: false
       matrix:
         z3version: ['4.8.7', '4.8.17', '4.11.2', '4.12.2', '4.12.4']
-    runs-on: ubuntu-latest
+    # Use macOS runner since it has double the RAM of the other runners (14GB vs 7GB)
+    # https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#supported-runners-and-hardware-resources
+    runs-on: macos-latest
 
     steps:
     - uses: actions/checkout@v4
@@ -35,7 +37,7 @@ jobs:
         key: logs-${{ steps.configure-z3-id.outputs.z3_v_clean }}-${{ hashFiles('smt-problems/**/*.smt2') }}
     - id: check-logs-cached
       run: ls -la logs
-    - run: cargo test --workspace -- --nocapture
+    - run: SLP_MEMORY_LIMIT_GB=13 cargo test --workspace -- --nocapture
 
     # Failure
     - run: tar -czf failing_logs.tar.bz2 logs/

@@ -24,3 +24,4 @@ lasso = { version = "0.7", features = ["serialize"] }
 
 [dev-dependencies]
 memory-stats = "1.1.0"
+cap = "0.1.2"

@@ -1,9 +1,17 @@
 use std::time::{Duration, Instant};
+use cap::Cap;
 
 use smt_log_parser::{LogParser, Z3Parser};
 
+#[global_allocator]
+static ALLOCATOR: Cap<std::alloc::System> = Cap::new(std::alloc::System, usize::max_value());
+
 #[test]
 fn parse_all_logs() {
+    let mem = std::env::var("SLP_MEMORY_LIMIT_GB").ok().and_then(|mem| mem.parse().ok());
+    // Default to limit of 16GiB.
+    let mem = mem.unwrap_or(16) * 1024 * 1024 * 1024;
+    ALLOCATOR.set_limit(mem).unwrap();
     std::env::set_var("SLP_TEST_MODE", "true");
 
     let mut all_logs: Vec<_> = std::fs::read_dir("../logs").unwrap().map(|r| r.unwrap()).collect();
