@@ -59,7 +59,7 @@ impl<T: Z3LogParser + Default> LogParser for T {
                 eprintln!("Error parsing line {line_no} ({err:?}): {line:?}");
                 let fatal = err.as_fatal();
                 if std::env::var("SLP_TEST_MODE").is_ok() {
-                    assert!(fatal.is_some());
+                    panic!();
                 }
                 match fatal {
                     Some(err) => Err(err),
