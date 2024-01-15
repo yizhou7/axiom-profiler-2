@@ -1,9 +1,12 @@
+use crate::FResult;
+use crate::FatalError;
+
 pub use self::wrapper_async_parser::*;
 pub use self::wrapper_stream_parser::*;
 use futures::{AsyncBufRead, AsyncBufReadExt, AsyncRead};
 use std::fmt::Debug;
 use std::fs::{File, Metadata};
-use std::io::{BufRead, BufReader, Result};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::time::Duration;
 use wasm_timer::Instant;
@@ -20,7 +23,7 @@ pub trait LogParser: Default {
 
     /// Process a single line of the log file. Return `true` if parsing should
     /// continue, or `false` if parsing should stop.
-    fn process_line(&mut self, line: &str, line_no: usize) -> bool;
+    fn process_line(&mut self, line: &str, line_no: usize) -> FResult<bool>;
 
     fn end_of_file(&mut self);
 
@@ -59,7 +62,7 @@ pub trait LogParser: Default {
     /// `from_string(fs::read_to_string(self)?)`. This approach to parsing is
     /// ~5% slower, but should use only ~50% as much memory due to not having
     /// the entire loaded String in memory.
-    fn from_file<P: AsRef<Path>>(p: P) -> Result<(Metadata, StreamParser<'static, Self>)> {
+    fn from_file<P: AsRef<Path>>(p: P) -> std::io::Result<(Metadata, StreamParser<'static, Self>)> {
         let (meta, reader) = p.read_open()?;
         Ok((meta, reader.into_parser()))
     }
@@ -94,7 +97,7 @@ pub trait FileRead: AsRef<Path> + Sized {
     /// Opens a file and returns a buffered reader and the file's metadata. A
     /// more memory efficient alternative to
     /// `fs::read_to_string(self)?.into_cursor()`.
-    fn read_open(self) -> Result<(Metadata, BufReader<File>)> {
+    fn read_open(self) -> std::io::Result<(Metadata, BufReader<File>)> {
         let file = File::open(self)?;
         let metadata = file.metadata()?;
         let reader = BufReader::new(file);
@@ -138,6 +141,19 @@ impl<T: AsRef<[u8]> + Unpin> AsyncCursorRead for T {}
 ////////////////////
 // Parser Execution
 ////////////////////
+
+#[derive(Debug)]
+pub enum ParseState {
+    Paused(ReaderState),
+    Completed { end_of_stream: bool },
+    Error(FatalError),
+}
+
+impl ParseState {
+    pub fn is_timeout(&self) -> bool {
+        matches!(self, Self::Paused(..))
+    }
+}
 
 /// Progress information for a parser.
 #[derive(Debug, Clone, Copy, Default)]
@@ -199,9 +215,9 @@ mod wrapper {
         /// Parse the the input while calling the `predicate` callback after
         /// each line. Keep parsing until the callback returns `false` or we
         /// reach the end of the input. If we stopped due to the callback,
-        /// return the current progress as `Some`. Otherwise, if we are at the
-        /// end, return `None`. After this function returns, use
-        /// [`parser`](Self::parser) to retrieve the parser state.
+        /// return the current progress as `ParseState::Paused`. After this
+        /// function returns, use [`parser`](Self::parser) to retrieve the
+        /// parser state.
         ///
         /// The `predicate` callback should aim to return quickly since **it is
         /// called between each line!** If heavier processing is required
@@ -210,9 +226,9 @@ mod wrapper {
         pub async fn process_until(
             &mut self,
             mut predicate: impl FnMut(&Parser, ReaderState) -> bool,
-        ) -> Option<ReaderState> {
+        ) -> ParseState {
             let Some(reader) = self.reader.as_mut() else {
-                return None;
+                return ParseState::Completed { end_of_stream: true };
             };
             let mut buf = String::new();
             while predicate(&self.parser, self.reader_state) {
@@ -236,28 +252,38 @@ mod wrapper {
                     }
                 }
                 // Parse line
-                if bytes_read == 0 || !self.parser.process_line(&buf, self.reader_state.lines_read)
-                {
+                let state = if bytes_read == 0 {
+                    Some(ParseState::Completed { end_of_stream: true })
+                } else {
+                    self.reader_state.bytes_read += bytes_read;
+                    self.reader_state.lines_read += 1;
+                    match self.parser.process_line(&buf, self.reader_state.lines_read) {
+                        Ok(true) => None,
+                        Ok(false) =>
+                            Some(ParseState::Paused(self.reader_state)),
+                        Err(err) =>
+                            Some(ParseState::Error(err)),
+                    }
+                };
+                if let Some(state) = state {
+                    drop(self.reader.take()); // Release file handle/free up memory
                     self.parser.end_of_file();
-                    self.reader.take(); // Release file handle/free up memory
-                    return None;
+                    return state;
                 }
-                self.reader_state.bytes_read += bytes_read;
-                self.reader_state.lines_read += 1;
             }
-            Some(self.reader_state)
+            ParseState::Paused(self.reader_state)
         }
         /// Parse the the input while calling the `predicate` callback every
         /// `delta` time. Keep parsing until the callback returns `false` or we
         /// reach the end of the input. If we stopped due to the callback,
-        /// return the current progress as `Some`. Otherwise, if we are at the
-        /// end, return `None`. After this function returns, use
-        /// [`parser`](Self::parser) to retrieve the parser state.
+        /// return the current progress as `ParseState::Paused`. After this
+        /// function returns, use [`parser`](Self::parser) to retrieve the
+        /// parser state.
         pub async fn process_check_every(
             &mut self,
             delta: Duration,
             mut predicate: impl FnMut(&Parser, ReaderState) -> bool,
-        ) -> Option<ReaderState> {
+        ) -> ParseState {
             // Calling `Instant::now` between each line can get expensive, so
             // we'll try to avoid it. We will try to check every
             // `MAX_LINES_PER_TIME_VARIATION * time_left`, ensuring that we
@@ -326,14 +352,17 @@ mod wrapper {
         /// Parse the entire file as a stream. Using [`process_all_timeout`]
         /// instead is recommended as this method will cause the process to hang
         /// if given a very large file.
-        pub async fn process_all(mut self) -> Parser {
-            add_await([self.process_until(|_, _| true)]);
-            self.parser
+        pub async fn process_all(mut self) -> FResult<Parser> {
+            match add_await([self.process_until(|_, _| true)]) {
+                ParseState::Paused(_) => unreachable!(),
+                ParseState::Completed { .. } => Ok(self.parser),
+                ParseState::Error(err) => Err(err),
+            }
         }
         /// Try to parse everything, but stop after a given timeout. The result
-        /// tuple contains `Some(read_info)` if the timeout was reached, and the
-        /// parser state at the end (i.e. the state is complete only if `None`
-        /// was returned).
+        /// tuple contains `ParseState::Paused(read_info)` if the timeout was
+        /// reached, and the parser state at the end (i.e. the state is complete
+        /// only if `ParseState::Completed` was returned).
         ///
         /// Parsing cannot be resumed if the timeout is reached. If you need
         /// support for resuming, use [`process_check_every`] or
@@ -341,7 +370,7 @@ mod wrapper {
         pub async fn process_all_timeout(
             mut self,
             timeout: Duration,
-        ) -> (Option<ReaderState>, Parser) {
+        ) -> (ParseState, Parser) {
             let result = add_await([self.process_check_every(timeout, |_, _| false)]);
             (result, self.parser)
         }

@@ -1,7 +1,10 @@
 use fxhash::FxHashMap;
 use typed_index_collections::TiVec;
 
-use crate::items::{Term, TermId, TermIdToIdxMap, TermIdx, StringTable, Meaning};
+use crate::{
+    Error, Result,
+    items::{Term, TermId, TermIdToIdxMap, TermIdx, StringTable, Meaning, QuantIdx}
+};
 
 #[derive(Debug)]
 pub struct Terms {
@@ -19,32 +22,34 @@ impl Terms {
         }
     }
 
-    pub(super) fn new_term(&mut self, id: TermId, term: Term) -> TermIdx {
-        let idx = self.terms.next_key();
-        self.terms.push(term);
-        self.term_id_map.register_term(id, idx);
-        idx
+    pub(super) fn new_term(&mut self, id: TermId, term: Term) -> Result<TermIdx> {
+        self.terms.raw.try_reserve(1)?;
+        let idx = self.terms.push_and_get_key(term);
+        self.term_id_map.register_term(id, idx)?;
+        Ok(idx)
     }
 
-    #[must_use]
     pub(super) fn parse_id(
         &self,
         strings: &mut StringTable,
         id: &str,
-    ) -> Option<Result<TermIdx, TermId>> {
+    ) -> Result<std::result::Result<TermIdx, TermId>> {
         let term_id = TermId::parse(strings, id)?;
-        Some(self.term_id_map.get_term(&term_id).ok_or_else(|| term_id))
+        Ok(self.term_id_map.get_term(&term_id).ok_or_else(|| term_id))
     }
-    #[must_use]
-    pub(super) fn parse_existing_id(&self, strings: &mut StringTable, id: &str) -> Option<TermIdx> {
-        self.parse_id(strings, id).and_then(|r| r.ok())
+    pub(super) fn parse_existing_id(&self, strings: &mut StringTable, id: &str) -> Result<TermIdx> {
+        self.parse_id(strings, id)?.map_err(Error::UnknownId)
     }
 
     pub fn meaning(&self, tidx: TermIdx) -> Option<&Meaning> {
         self.meanings.get(&tidx)
     }
+    pub(super) fn quant(&self, quant: TermIdx) -> Result<QuantIdx> {
+        self[quant].kind.quant_idx().ok_or_else(|| Error::UnknownQuantifierIdx(quant))
+    }
 
-    pub(super) fn new_meaning(&mut self, term: TermIdx, meaning: Meaning) {
+    pub(super) fn new_meaning(&mut self, term: TermIdx, meaning: Meaning) -> Result<()> {
+        self.meanings.try_reserve(1)?;
         use std::collections::hash_map::Entry;
         match self.meanings.entry(term) {
             Entry::Occupied(old) => assert_eq!(old.get(), &meaning),
@@ -52,6 +57,7 @@ impl Terms {
                 empty.insert(meaning);
             },
         };
+        Ok(())
     }
 }
 

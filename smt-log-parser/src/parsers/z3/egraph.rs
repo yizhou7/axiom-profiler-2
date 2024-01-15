@@ -1,7 +1,10 @@
 use fxhash::FxHashMap;
 use typed_index_collections::TiVec;
 
-use crate::items::{ENodeIdx, EqualityExpl, InstIdx, StackIdx, TermIdx, BlameKind};
+use crate::{
+    Result,
+    items::{ENodeIdx, EqualityExpl, InstIdx, StackIdx, TermIdx, BlameKind}, Error
+};
 
 use super::stack::Stack;
 
@@ -18,7 +21,7 @@ impl EGraph {
         term: TermIdx,
         z3_generation: Option<u32>,
         stack: &Stack,
-    ) -> ENodeIdx {
+    ) -> Result<ENodeIdx> {
         // TODO: why does this happen sometimes?
         // if created_by.is_none() && z3_generation.is_some() {
         //     debug_assert_eq!(
@@ -27,6 +30,7 @@ impl EGraph {
         //         "enode with no creator has non-zero generation"
         //     );
         // }
+        self.enodes.raw.try_reserve(1)?;
         let enode = self.enodes.push_and_get_key(ENode {
             frame: stack.active_frame(),
             created_by,
@@ -34,23 +38,24 @@ impl EGraph {
             z3_generation,
             equalities: Vec::new(),
         });
+        self.term_to_enode.try_reserve(1)?;
         let _old = self.term_to_enode.insert(term, enode);
         // TODO: why does this happen sometimes?
         // if let Some(old) = old {
         //     assert!(self.enodes[old].frame.is_some());
         //     assert!(!stack.stack_frames[self.enodes[old].frame.unwrap()].active);
         // }
-        enode
+        Ok(enode)
     }
 
-    pub fn get_enode(&self, term: TermIdx, stack: &Stack) -> Option<ENodeIdx> {
-        let enode = *self.term_to_enode.get(&term)?;
+    pub fn get_enode(&self, term: TermIdx, stack: &Stack) -> Result<ENodeIdx> {
+        let enode = *self.term_to_enode.get(&term).ok_or_else(|| Error::UnknownEnode(term))?;
         let frame = self.enodes[enode].frame;
         // This cannot be an enode if it points to a popped stack frame
         if frame.is_some_and(|f| !stack.stack_frames[f].active) {
-            None
+            Err(Error::EnodePoppedFrame(frame.unwrap()))
         } else {
-            Some(enode)
+            Ok(enode)
         }
     }
 
@@ -58,7 +63,7 @@ impl EGraph {
         self.enodes[enode].owner
     }
 
-    pub fn new_equality(&mut self, from: ENodeIdx, expl: EqualityExpl, stack: &Stack) {
+    pub fn new_equality(&mut self, from: ENodeIdx, expl: EqualityExpl, stack: &Stack) -> Result<()> {
         let enode = &mut self.enodes[from];
         let to = expl.to();
         let eq = Equality {
@@ -66,6 +71,7 @@ impl EGraph {
             to,
             expl,
         };
+        enode.equalities.try_reserve(1)?;
         enode.equalities.push(eq);
         // TODO: is ok to simply ignore the old equality, or should we also blame it later on?
         // let (new, others) = enode.equalities.split_last().unwrap();
@@ -87,6 +93,7 @@ impl EGraph {
         //         panic!();
         //     }
         // }
+        Ok(())
     }
 
     pub fn path_to_root(&self, from: ENodeIdx, stack: &Stack, depth: usize) -> Vec<ENodeIdx> {
@@ -102,8 +109,7 @@ impl EGraph {
         path
     }
 
-    #[must_use]
-    pub fn get_equalities<'a: 'b, 'b>(&'a self, from: ENodeIdx, to: ENodeIdx, stack: &'b Stack, can_mismatch: impl Fn() -> bool) -> Option<impl Iterator<Item = &'a EqualityExpl> + 'b> {
+    pub fn get_equalities<'a: 'b, 'b>(&'a self, from: ENodeIdx, to: ENodeIdx, stack: &'b Stack, can_mismatch: impl Fn() -> bool) -> Result<impl Iterator<Item = &'a EqualityExpl> + 'b> {
         let f_path = self.path_to_root(from, stack, 0);
         let t_path = self.path_to_root(to, stack, 0);
         let mut shared = 1;
@@ -111,7 +117,7 @@ impl EGraph {
             // Root may not always be the same from v4.12.3 onwards if `to` is an `ite` expression. See:
             // https://github.com/Z3Prover/z3/commit/faf14012ba18d21c1fcddbdc321ac127f019fa03#diff-0a9ec50ded668e51578edc67ecfe32380336b9cbf12c5d297e2d3759a7a39847R2417-R2419
             if !can_mismatch() {
-                return None;
+                return Err(Error::EnodeRootMismatch(from, to));
             }
             // Return an empty iterator if the roots are different.
             shared = f_path.len().max(t_path.len());
@@ -120,11 +126,10 @@ impl EGraph {
             shared += 1;
         }
         let all = f_path.into_iter().skip(shared).rev().chain(t_path.into_iter().skip(shared));
-        Some(all.map(|idx| &self.enodes[idx].get_equality(stack).unwrap().expl))
+        Ok(all.map(|idx| &self.enodes[idx].get_equality(stack).unwrap().expl))
     }
 
-    #[must_use]
-    pub fn blame_equalities(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, blamed: &mut Vec<BlameKind>, can_mismatch: impl Fn() -> bool) -> Option<()> {
+    pub fn blame_equalities(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, blamed: &mut Vec<BlameKind>, can_mismatch: impl Fn() -> bool) -> Result<()> {
         for eq in self.get_equalities(from, to, stack, can_mismatch)? {
             // TODO: figure out if this is all the blames we need.
             match eq {
@@ -143,7 +148,7 @@ impl EGraph {
                 EqualityExpl::Unknown { .. } => (),
             }
         }
-        Some(())
+        Ok(())
     }
 }
 

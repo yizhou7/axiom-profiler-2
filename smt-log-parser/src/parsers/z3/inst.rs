@@ -1,7 +1,7 @@
 use fxhash::FxHashMap;
 use typed_index_collections::TiVec;
 
-use crate::items::{Fingerprint, InstIdx, Instantiation, Match, MatchIdx};
+use crate::{items::{Fingerprint, InstIdx, Instantiation, Match, MatchIdx}, Result};
 
 #[derive(Debug, Default)]
 pub struct Insts {
@@ -14,24 +14,28 @@ pub struct Insts {
 }
 
 impl Insts {
-    pub fn new_match(&mut self, fingerprint: Fingerprint, match_: Match) -> MatchIdx {
+    pub fn new_match(&mut self, fingerprint: Fingerprint, match_: Match) -> Result<MatchIdx> {
         self.has_theory_solving_inst |= match_.kind.quant_idx().is_none();
+        
+        self.matches.raw.try_reserve(1)?;
         let idx = self.matches.push_and_get_key(match_);
         // Can remove a duplicate fingerprint if that one was never instantiated.
+        self.fingerprint_to_match.try_reserve(1)?;
         self.fingerprint_to_match.insert(fingerprint, (idx, None));
-        idx
+        Ok(idx)
     }
 
-    pub fn new_inst(&mut self, fingerprint: Fingerprint, mut inst: Instantiation) -> InstIdx {
+    pub fn new_inst(&mut self, fingerprint: Fingerprint, mut inst: Instantiation) -> Result<InstIdx> {
         let (match_idx, inst_idx) = self
             .fingerprint_to_match
             .get_mut(&fingerprint)
             .expect(&format!("{:x}", fingerprint.0));
         inst.match_ = *match_idx;
+        self.insts.raw.try_reserve(1)?;
         let idx = self.insts.push_and_get_key(inst);
         debug_assert!(inst_idx.is_none(), "duplicate fingerprint");
         *inst_idx = Some(idx);
-        idx
+        Ok(idx)
     }
 
     pub fn has_theory_solving_inst(&self) -> bool {

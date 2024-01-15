@@ -35,7 +35,7 @@ fn main() {
         let elapsed_time = time.elapsed();
         println!(
             "{} parsing after {} seconds (timeout {timeout:?})\n",
-            if timeout.is_some() { "Timeout" } else { "Finished" }, elapsed_time.as_secs_f32()
+            if timeout.is_timeout() { "Timeout" } else { "Finished" }, elapsed_time.as_secs_f32()
         );
         // result.save_output_to_files(&settings, &time);
         // let render_engine = GraphVizRender;

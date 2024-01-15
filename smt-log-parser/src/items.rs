@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt;
 use std::num::NonZeroU32;
+use crate::{Result, Error};
 
 pub type StringTable = lasso::Rodeo<lasso::Spur, fxhash::FxBuildHasher>;
 pub type IString = lasso::Spur;
@@ -66,9 +67,8 @@ pub struct ProofOrApp {
 }
 
 impl TermKind {
-    #[must_use]
-    pub(crate) fn parse_var(value: &str) -> Option<TermKind> {
-        value.parse::<usize>().map(TermKind::Var).ok()
+    pub(crate) fn parse_var(value: &str) -> Result<TermKind> {
+        value.parse::<usize>().map(TermKind::Var).map_err(Error::InvalidVar)
     }
     pub(crate) fn parse_proof_app(is_proof: bool, name: IString) -> Self {
         Self::ProofOrApp(ProofOrApp { is_proof, name })
@@ -179,7 +179,7 @@ impl VarNames {
 pub struct Instantiation {
     pub match_: MatchIdx,
     pub fingerprint: Fingerprint,
-    pub proof_id: Option<Result<TermIdx, TermId>>,
+    pub proof_id: Option<std::result::Result<TermIdx, TermId>>,
     pub z3_generation: Option<u32>,
     pub cost: f32,
     pub yields_terms: Box<[ENodeIdx]>,
@@ -309,11 +309,10 @@ impl BlameKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Fingerprint(pub u64);
 impl Fingerprint {
-    #[must_use]
-    pub fn parse(value: &str) -> Option<Self> {
+    pub fn parse(value: &str) -> Result<Self> {
         u64::from_str_radix(value.strip_prefix("0x").unwrap_or(value), 16)
             .map(Self)
-            .ok()
+            .map_err(Error::InvalidFingerprint)
     }
     pub fn is_zero(&self) -> bool {
         self.0 == 0
@@ -341,16 +340,16 @@ impl TermId {
     /// Splits an ID string into namespace and ID number.
     /// 0 is used for identifiers without a number
     /// (usually for theory-solving 'quantifiers' such as "basic#", "arith#")
-    #[must_use]
-    pub fn parse(strings: &mut StringTable, value: &str) -> Option<Self> {
-        let hash_idx = value.find('#')?;
+    pub fn parse(strings: &mut StringTable, value: &str) -> Result<Self> {
+        let hash_idx = value.bytes().position(|b| b == b'#');
+        let hash_idx = hash_idx.ok_or_else(|| Error::InvalidIdHash(value.to_string()))?;
         let namespace = strings.get_or_intern(&value[..hash_idx]);
         let id = &value[hash_idx + 1..];
         let id = match id {
             "" => None,
-            id => Some(NonZeroU32::new(id.parse::<u32>().ok()? + 1)?),
+            id => Some(NonZeroU32::new(id.parse::<u32>().map_err(Error::InvalidIdNumber)?.checked_add(1).unwrap()).unwrap()),
         };
-        Some(Self { namespace, id })
+        Ok(Self { namespace, id })
     }
     pub fn order(&self) -> u32 {
         self.id.map(|id| id.get()).unwrap_or_default()
@@ -375,24 +374,28 @@ impl TermIdToIdxMap {
             namespace_map: FxHashMap::default(),
         }
     }
-    fn get_vec_mut(&mut self, namespace: IString) -> &mut Vec<Option<TermIdx>> {
+    fn get_vec_mut(&mut self, namespace: IString) -> Result<&mut Vec<Option<TermIdx>>>{
         if self.empty_string == namespace {
             // Special handling of common case for empty namespace
-            &mut self.empty_namespace
+            Ok(&mut self.empty_namespace)
         } else {
-            self.namespace_map.entry(namespace).or_default()
+            self.namespace_map.try_reserve(1)?;
+            Ok(self.namespace_map.entry(namespace).or_default())
         }
     }
-    pub fn register_term(&mut self, id: TermId, idx: TermIdx) {
+    pub fn register_term(&mut self, id: TermId, idx: TermIdx) -> Result<()> {
         let id_idx = id.order() as usize;
-        let vec = self.get_vec_mut(id.namespace);
+        let vec = self.get_vec_mut(id.namespace)?;
         if id_idx >= vec.len() {
-            vec.resize(id_idx + 1, None);
+            let new_len = id_idx + 1;
+            vec.try_reserve(new_len - vec.len())?;
+            vec.resize(new_len, None);
         }
         // The `id` of two different terms may clash and so we may remove
         // a `TermIdx` from the map. This is fine since we want future uses of
         // `id` to refer to the new term and not the old one.
         vec[id_idx].replace(idx);
+        Ok(())
     }
     fn get_vec(&self, namespace: IString) -> Option<&Vec<Option<TermIdx>>> {
         if self.empty_string == namespace {
