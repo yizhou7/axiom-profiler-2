@@ -64,8 +64,7 @@ impl Component for FileDataComponent {
                             wasm_bindgen_futures::spawn_local(async move {
                                 log::info!("Parsing: {file_name}");
                                 let finished = parser.process_until(|_, state| state.bytes_read <= 1024 * 1024 * 1024).await;
-                                let finished = finished.is_none();
-                                if !finished {
+                                if finished.is_timeout() {
                                     // TODO: make this clear in the UI
                                     log::info!("Stopped parsing at 1GB");
                                 }
@@ -81,8 +80,7 @@ impl Component for FileDataComponent {
                                 log::info!("Parsing: {file_name}");
                                 let mut parser = Z3Parser::from_str(&text_data);
                                 let finished = parser.process_until(|_, state| state.bytes_read <= 512 * 1024 * 1024);
-                                let finished = finished.is_none();
-                                if !finished {
+                                if finished.is_timeout() {
                                     // TODO: make this clear in the UI
                                     log::info!("Stopped parsing at 0.5GB (use Chrome or Firefox to increase this limit to 1GB)");
                                 }
