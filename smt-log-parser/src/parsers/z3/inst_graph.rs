@@ -42,7 +42,7 @@ pub struct InstNode {
 
 #[derive(Clone)]
 pub struct EqualityNode {
-    orig_graph_idx: NodeIndex,
+    pub orig_graph_idx: NodeIndex,
     visible: bool,
     child_count: usize,
     parent_count: usize,
@@ -843,11 +843,30 @@ impl InstGraph {
                 topo_ord: 0,
             });
             // then add all edges to previous nodes
-            for (kind, from) in match_
+            // for (kind, from) in match_
+            let (blame_deps, eq_deps): (Vec<_>, Vec<_>) = match_
                 .due_to_enodes()
                 .filter_map(|(kind, e)| parser[e].created_by.map(|c| (kind, c)))
+                .partition(|(kind, _)| match kind {
+                    BlameKind::Term { .. } => true,
+                    _ => false,
+                });
+            for (kind, from) in blame_deps
             {
                 self.add_edge(from, inst_idx, kind);
+            }
+            for (kind, from) in eq_deps {
+                // here add an equality-node, eq_node
+                self.add_eq_node(EqualityNode {
+                    orig_graph_idx: NodeIndex::default(),
+                    visible: true,
+                    child_count: 0,
+                    parent_count: 0,
+                    min_depth: None,
+                    max_depth: 0,
+                    topo_ord: 0,
+                })
+                // and equality edges (from, eq_node) and (eq_node, inst_idx)
             }
         }
         // precompute number of children and parents of each node
@@ -992,6 +1011,11 @@ impl InstGraph {
         // Also, using StableGraph where node-indices stay stable across removals
         // is not viable here since StableGraph does not implement NodeCompactIndexable
         // which is needed for petgraph::algo::tred::dag_to_toposorted_adjacency_list
+        self.orig_graph[node].set_orig_graph_idx_to(node);
+    }
+
+    fn add_eq_node(&mut self, node_data: EqualityNode) {
+        let node = self.orig_graph.add_node(Node::Equality(node_data));
         self.orig_graph[node].set_orig_graph_idx_to(node);
     }
 

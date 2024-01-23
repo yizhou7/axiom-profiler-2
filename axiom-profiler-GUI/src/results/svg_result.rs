@@ -19,7 +19,7 @@ use smt_log_parser::{
     items::{BlameKind, MatchKind},
     parsers::{
         z3::{
-            inst_graph::{EdgeInfo, EdgeType, InstGraph, InstInfo, VisibleGraphInfo},
+            inst_graph::{EdgeInfo, EdgeType, InstGraph, InstInfo, Node, VisibleGraphInfo},
             z3parser::Z3Parser,
         },
         LogParser,
@@ -247,26 +247,39 @@ impl Component for SVGResult {
                                 }
                             ),
                             &|_, (_, node_data)| {
-                                format!("id=node{} label=\"{}\" style=\"{}\" shape={} fillcolor=\"{}\" fontcolor=black gradientangle=90",
-                                        node_data.orig_graph_idx().index(),
-                                        node_data.orig_graph_idx().index(),
-                                        if node_data.inner_inst().unwrap().mkind.is_mbqi() { "filled,dashed" } else { "filled" },
-                                        // match (self.inst_graph.node_has_filtered_children(node_data.orig_graph_idx), 
-                                        //        self.inst_graph.node_has_filtered_parents(node_data.orig_graph_idx)) {
-                                        //     (false, false) => format!("{}", self.colour_map.get(&node_data.quant_idx, 0.7)),
-                                        //     (false, true) => format!("{}:{}", self.colour_map.get(&node_data.quant_idx, 1.0), self.colour_map.get(&node_data.quant_idx, 0.1)),
-                                        //     (true, false) => format!("{}:{}", self.colour_map.get(&node_data.quant_idx, 0.1), self.colour_map.get(&node_data.quant_idx, 1.0)),
-                                        //     (true, true) => format!("{}", self.colour_map.get(&node_data.quant_idx, 0.3)),
-                                        // },
-                                        match (self.inst_graph.node_has_filtered_children(node_data.orig_graph_idx()),
-                                               self.inst_graph.node_has_filtered_parents(node_data.orig_graph_idx())) {
-                                            (false, false) => "box",
-                                            (false, true) => "house",
-                                            (true, false) => "invhouse",
-                                            (true, true) => "diamond",
-                                        },
-                                        self.colour_map.get(&node_data.inner_inst().unwrap().mkind, NODE_COLOUR_SATURATION),
-                                    )
+                                match node_data {
+                                    Node::Inst(inst) => {
+                                        format!("id=node{} label=\"{}\" class={} style=\"{}\" shape={} fillcolor=\"{}\" fontcolor=black gradientangle=90",
+                                            inst.orig_graph_idx.index(),
+                                            inst.orig_graph_idx.index(),
+                                            "inst",
+                                            if inst.mkind.is_mbqi() { "filled,dashed" } else { "filled" },
+                                            // match (self.inst_graph.node_has_filtered_children(node_data.orig_graph_idx), 
+                                            //        self.inst_graph.node_has_filtered_parents(node_data.orig_graph_idx)) {
+                                            //     (false, false) => format!("{}", self.colour_map.get(&node_data.quant_idx, 0.7)),
+                                            //     (false, true) => format!("{}:{}", self.colour_map.get(&node_data.quant_idx, 1.0), self.colour_map.get(&node_data.quant_idx, 0.1)),
+                                            //     (true, false) => format!("{}:{}", self.colour_map.get(&node_data.quant_idx, 0.1), self.colour_map.get(&node_data.quant_idx, 1.0)),
+                                            //     (true, true) => format!("{}", self.colour_map.get(&node_data.quant_idx, 0.3)),
+                                            // },
+                                            match (self.inst_graph.node_has_filtered_children(inst.orig_graph_idx),
+                                                self.inst_graph.node_has_filtered_parents(inst.orig_graph_idx)) {
+                                                (false, false) => "box",
+                                                (false, true) => "house",
+                                                (true, false) => "invhouse",
+                                                (true, true) => "diamond",
+                                            },
+                                            self.colour_map.get(&inst.mkind, NODE_COLOUR_SATURATION),
+                                        )
+                                    },
+                                    Node::Equality(eq) => {
+                                        format!("id=node{} label=\"{}\" class={}",
+                                            eq.orig_graph_idx.index(),
+                                            eq.orig_graph_idx.index(),
+                                            "eq"
+                                        )
+                                    },
+                                }
+                                
                             },
                         )
                     );
