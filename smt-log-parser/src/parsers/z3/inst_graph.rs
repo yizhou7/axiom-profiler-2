@@ -857,7 +857,7 @@ impl InstGraph {
             }
             for (kind, from) in eq_deps {
                 // here add an equality-node, eq_node
-                self.add_eq_node(EqualityNode {
+                let eq_node_idx = self.add_eq_node(EqualityNode {
                     orig_graph_idx: NodeIndex::default(),
                     visible: true,
                     child_count: 0,
@@ -865,8 +865,9 @@ impl InstGraph {
                     min_depth: None,
                     max_depth: 0,
                     topo_ord: 0,
-                })
+                });
                 // and equality edges (from, eq_node) and (eq_node, inst_idx)
+                self.add_eq_edges(from, eq_node_idx, inst_idx, kind);
             }
         }
         // precompute number of children and parents of each node
@@ -1014,14 +1015,21 @@ impl InstGraph {
         self.orig_graph[node].set_orig_graph_idx_to(node);
     }
 
-    fn add_eq_node(&mut self, node_data: EqualityNode) {
+    fn add_eq_node(&mut self, node_data: EqualityNode) -> NodeIndex {
         let node = self.orig_graph.add_node(Node::Equality(node_data));
         self.orig_graph[node].set_orig_graph_idx_to(node);
+        node
     }
 
     fn add_edge(&mut self, from: InstIdx, to: InstIdx, blame: &BlameKind) {
         let (from, to) = (self.node_of_inst_idx[from], self.node_of_inst_idx[to]);
         self.orig_graph.add_edge(from, to, blame.clone());
+    }
+
+    fn add_eq_edges(&mut self, from: InstIdx, eq: NodeIndex, to: InstIdx, blame: &BlameKind) {
+        let (from, to) = (self.node_of_inst_idx[from], self.node_of_inst_idx[to]);
+        self.orig_graph.update_edge(from, eq, blame.clone());
+        self.orig_graph.update_edge(eq, to, blame.clone());
     }
 
     pub fn get_node_info_map(&self) -> NodeInfoMap {
