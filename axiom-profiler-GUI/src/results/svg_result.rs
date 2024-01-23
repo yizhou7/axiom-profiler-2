@@ -19,7 +19,7 @@ use smt_log_parser::{
     items::{BlameKind, MatchKind},
     parsers::{
         z3::{
-            inst_graph::{EdgeInfo, EdgeType, InstGraph, InstInfo, Node, VisibleGraphInfo},
+            inst_graph::{EdgeInfo, EdgeType, InstGraph, InstInfo, Node, NodeInfo, VisibleGraphInfo},
             z3parser::Z3Parser,
         },
         LogParser,
@@ -42,7 +42,7 @@ pub enum Msg {
     ResetGraph,
     GetUserPermission,
     WorkerOutput(super::worker::WorkerOutput),
-    UpdateSelectedNodes(Vec<InstInfo>),
+    UpdateSelectedNodes(Vec<NodeInfo>),
     SearchMatchingLoops,
     // SelectNthMatchingLoop(usize),
     ShowMatchingLoopSubgraph,
@@ -74,9 +74,9 @@ pub struct SVGResult {
     graph_dim: GraphDimensions,
     worker: Option<Box<dyn yew_agent::Bridge<Worker>>>,
     async_graph_and_filter_chain: bool,
-    get_node_info: Callback<(NodeIndex, bool, RcParser), InstInfo>,
+    get_node_info: Callback<(NodeIndex, bool, RcParser), NodeInfo>,
     get_edge_info: Callback<(EdgeIndex, bool, RcParser), EdgeInfo>,
-    selected_insts: Vec<InstInfo>,
+    selected_nodes: Vec<NodeInfo>,
     searched_matching_loops: bool,
     matching_loop_count: usize,
 }
@@ -123,7 +123,7 @@ impl Component for SVGResult {
             async_graph_and_filter_chain: false,
             get_node_info,
             get_edge_info,
-            selected_insts: Vec::new(),
+            selected_nodes: Vec::new(),
             searched_matching_loops: false,
             matching_loop_count: 0,
         }
@@ -249,10 +249,9 @@ impl Component for SVGResult {
                             &|_, (_, node_data)| {
                                 match node_data {
                                     Node::Inst(inst) => {
-                                        format!("id=node{} label=\"{}\" class={} style=\"{}\" shape={} fillcolor=\"{}\" fontcolor=black gradientangle=90",
+                                        format!("id=node{} label=\"{}\" style=\"{}\" shape={} fillcolor=\"{}\" fontcolor=black gradientangle=90",
                                             inst.orig_graph_idx.index(),
                                             inst.orig_graph_idx.index(),
-                                            "inst",
                                             if inst.mkind.is_mbqi() { "filled,dashed" } else { "filled" },
                                             // match (self.inst_graph.node_has_filtered_children(node_data.orig_graph_idx), 
                                             //        self.inst_graph.node_has_filtered_parents(node_data.orig_graph_idx)) {
@@ -272,10 +271,9 @@ impl Component for SVGResult {
                                         )
                                     },
                                     Node::Equality(eq) => {
-                                        format!("id=node{} label=\"{}\" class={}",
+                                        format!("id=node{} label=\"{}\"",
                                             eq.orig_graph_idx.index(),
                                             eq.orig_graph_idx.index(),
-                                            "eq"
                                         )
                                     },
                                 }
@@ -367,7 +365,7 @@ impl Component for SVGResult {
                 }
             }
             Msg::UpdateSelectedNodes(nodes) => {
-                self.selected_insts = nodes;
+                self.selected_nodes = nodes;
                 true
             }
         }
@@ -405,14 +403,14 @@ impl Component for SVGResult {
                         // </>
                     }
                 }}
-                <ContextProvider<Vec<InstInfo>> context={self.selected_insts.clone()}>
+                <ContextProvider<Vec<NodeInfo>> context={self.selected_nodes.clone()}>
                     <FilterChain
                         apply_filter={apply_filter.clone()}
                         reset_graph={reset_graph.clone()}
                         render_graph={render_graph.clone()}
                         weak_link={self.filter_chain_link.clone()}
                     />
-                </ContextProvider<Vec<InstInfo>>>
+                </ContextProvider<Vec<NodeInfo>>>
                 {async_graph_and_filter_chain_warning}
                 {node_and_edge_count_preview}
                 </div>

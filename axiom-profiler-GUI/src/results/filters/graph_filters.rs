@@ -4,7 +4,7 @@ use gloo::console::log;
 use petgraph::{stable_graph::NodeIndex, Direction};
 use smt_log_parser::{
     items::QuantIdx,
-    parsers::z3::inst_graph::{InstGraph, InstInfo, InstNode}, Z3Parser,
+    parsers::z3::inst_graph::{InstGraph, InstInfo, InstNode, NodeInfo}, Z3Parser,
 };
 use std::fmt::Display;
 use yew::prelude::*;
@@ -111,8 +111,8 @@ pub struct GraphFilters {
     max_instantiations: usize,
     max_branching: usize,
     max_depth: usize,
-    selected_insts: Vec<InstInfo>,
-    _selected_insts_listener: ContextHandle<Vec<InstInfo>>,
+    selected_nodes: Vec<NodeInfo>,
+    _selected_nodes_listener: ContextHandle<Vec<NodeInfo>>,
 }
 
 #[derive(Properties, PartialEq)]
@@ -125,7 +125,7 @@ pub enum Msg {
     SetMaxInsts(usize),
     SetMaxBranching(usize),
     SetMaxDepth(usize),
-    SelectedInstsUpdated(Vec<InstInfo>),
+    SelectedInstsUpdated(Vec<NodeInfo>),
 }
 
 impl Component for GraphFilters {
@@ -150,8 +150,8 @@ impl Component for GraphFilters {
                 self.max_depth = to;
                 true
             }
-            Msg::SelectedInstsUpdated(selected_insts) => {
-                self.selected_insts = selected_insts;
+            Msg::SelectedInstsUpdated(selected_nodes) => {
+                self.selected_nodes = selected_nodes;
                 true
             }
         }
@@ -159,7 +159,7 @@ impl Component for GraphFilters {
 
     fn create(ctx: &Context<Self>) -> Self {
         log!("Creating GraphFilters component");
-        let (selected_insts, _selected_insts_listener) = ctx
+        let (selected_nodes, _selected_nodes_listener) = ctx
             .link()
             .context(ctx.link().callback(Msg::SelectedInstsUpdated))
             .expect("No context provided");
@@ -168,8 +168,8 @@ impl Component for GraphFilters {
             max_instantiations: DEFAULT_NODE_COUNT,
             max_branching: usize::MAX,
             max_depth: usize::MAX,
-            selected_insts,
-            _selected_insts_listener,
+            selected_nodes,
+            _selected_nodes_listener,
         }
     }
     fn view(&self, ctx: &Context<Self>) -> Html {
@@ -236,9 +236,9 @@ impl Component for GraphFilters {
                     />
                     <button onclick={add_max_depth_filter}>{"Add"}</button>
                 </div>
-                {if !self.selected_insts.is_empty() {
+                {if !self.selected_nodes.is_empty() {
                     html! {
-                        <NodeActions selected_nodes={self.selected_insts.clone()} action={ctx.props().add_filters.clone()} />
+                        <NodeActions selected_nodes={self.selected_nodes.clone()} action={ctx.props().add_filters.clone()} />
                     }
                 } else {
                     html! {}

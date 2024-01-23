@@ -49,6 +49,7 @@ pub struct EqualityNode {
     min_depth: Option<usize>,
     max_depth: usize,
     topo_ord: usize,
+    equality: ENodeIdx,
 }
 
 #[derive(Clone)]
@@ -203,20 +204,7 @@ impl EdgeType {
     }
 }
 
-#[derive(Clone)]
-pub struct EdgeInfo {
-    pub edge_data: BlameKind,
-    pub orig_graph_idx: EdgeIndex,
-    pub blame_term: String,
-    pub from: NodeIndex,
-    pub to: NodeIndex,
-}
 
-impl PartialEq for EdgeInfo {
-    fn eq(&self, other: &Self) -> bool {
-        self.orig_graph_idx == other.orig_graph_idx
-    }
-}
 
 impl fmt::Debug for EdgeType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -224,31 +212,6 @@ impl fmt::Debug for EdgeType {
             EdgeType::Direct { .. } => write!(f, "direct edge"),
             EdgeType::Indirect => write!(f, "indirect edge"),
         }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct InstInfo {
-    pub fingerprint: Fingerprint,
-    pub inst_idx: InstIdx,
-    pub resulting_term: Option<String>,
-    pub z3_gen: Option<u32>,
-    pub cost: f32,
-    pub mkind: MatchKind,
-    pub quant_discovered: bool,
-    pub formula: String,
-    pub pattern: Option<String>,
-    pub yields_terms: Vec<String>,
-    pub bound_terms: Vec<String>,
-    pub blamed_terms: Vec<String>,
-    pub equality_expls: Vec<String>,
-    pub dep_instantiations: Vec<NodeIndex>,
-    pub node_index: NodeIndex,
-}
-
-impl PartialEq for InstInfo {
-    fn eq(&self, other: &Self) -> bool {
-        self.inst_idx == other.inst_idx
     }
 }
 
@@ -856,18 +819,22 @@ impl InstGraph {
                 self.add_edge(from, inst_idx, kind);
             }
             for (kind, from) in eq_deps {
-                // here add an equality-node, eq_node
-                let eq_node_idx = self.add_eq_node(EqualityNode {
-                    orig_graph_idx: NodeIndex::default(),
-                    visible: true,
-                    child_count: 0,
-                    parent_count: 0,
-                    min_depth: None,
-                    max_depth: 0,
-                    topo_ord: 0,
-                });
-                // and equality edges (from, eq_node) and (eq_node, inst_idx)
-                self.add_eq_edges(from, eq_node_idx, inst_idx, kind);
+
+                if let BlameKind::Equality { eq } = kind {
+                    // here add an equality-node, eq_node
+                    let eq_node_idx = self.add_eq_node(EqualityNode {
+                        orig_graph_idx: NodeIndex::default(),
+                        visible: true,
+                        child_count: 0,
+                        parent_count: 0,
+                        min_depth: None,
+                        max_depth: 0,
+                        topo_ord: 0,
+                        equality: *eq,
+                    });
+                    // and equality edges (from, eq_node) and (eq_node, inst_idx)
+                    self.add_eq_edges(from, eq_node_idx, inst_idx, kind);
+                }
             }
         }
         // precompute number of children and parents of each node
@@ -1034,13 +1001,18 @@ impl InstGraph {
 
     pub fn get_node_info_map(&self) -> NodeInfoMap {
         let mut node_info_map = FxHashMap::default();
+        let mut eq_info_map = FxHashMap::default();
         for node_index in self.orig_graph.node_indices() {
             if let Node::Inst(ref inst) = self.orig_graph[node_index] {
                 let InstNode { inst_idx, .. } = inst;
                 node_info_map.insert(node_index, *inst_idx);
+            } else {
+                if let Node::Equality(eq) = &self.orig_graph[node_index] {
+                    eq_info_map.insert(node_index, eq.equality);
+                }
             }
         }
-        NodeInfoMap::from(node_info_map)
+        NodeInfoMap::from(node_info_map, eq_info_map)
     }
 
     pub fn get_edge_info_map(&self) -> EdgeInfoMap {
@@ -1054,12 +1026,71 @@ impl InstGraph {
     }
 }
 
-pub struct NodeInfoMap(FxHashMap<NodeIndex, InstIdx>); 
+#[derive(Clone, Debug)]
+pub struct InstInfo {
+    pub fingerprint: Fingerprint,
+    pub inst_idx: InstIdx,
+    pub resulting_term: Option<String>,
+    pub z3_gen: Option<u32>,
+    pub cost: f32,
+    pub mkind: MatchKind,
+    pub quant_discovered: bool,
+    pub formula: String,
+    pub pattern: Option<String>,
+    pub yields_terms: Vec<String>,
+    pub bound_terms: Vec<String>,
+    pub blamed_terms: Vec<String>,
+    pub equality_expls: Vec<String>,
+    pub dep_instantiations: Vec<NodeIndex>,
+    pub node_index: NodeIndex,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct EqualityInfo {
+    pub equality: String,
+    pub node_index: NodeIndex,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum NodeInfo {
+    Inst(InstInfo),
+    Equality(EqualityInfo),
+}
+
+impl NodeInfo {
+    pub fn node_index(&self) -> NodeIndex {
+        match self {
+            NodeInfo::Inst(inst) => inst.node_index,
+            NodeInfo::Equality(eq) => eq.node_index,
+        }
+    }
+
+    pub fn mkind(&self) -> Option<&MatchKind> {
+        match self {
+            NodeInfo::Inst(inst) => Some(&inst.mkind),
+            NodeInfo::Equality(_) => None,
+        }
+    }
+}
+
+impl PartialEq for InstInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.inst_idx == other.inst_idx
+    }
+}
+
+pub struct NodeInfoMap{
+    inst_info_map: FxHashMap<NodeIndex, InstIdx>,
+    eq_info_map: FxHashMap<NodeIndex, ENodeIdx>
+} 
 
 impl NodeInfoMap {
 
-    fn from(map: FxHashMap<NodeIndex, InstIdx>) -> Self {
-        NodeInfoMap(map) 
+    fn from(inst_info_map: FxHashMap<NodeIndex, InstIdx>, eq_info_map: FxHashMap<NodeIndex, ENodeIdx>) -> Self {
+        NodeInfoMap {
+            inst_info_map,
+            eq_info_map,
+        } 
     }
 
     pub fn get_instantiation_info(
@@ -1067,8 +1098,7 @@ impl NodeInfoMap {
         node_index: usize,
         parser: &Z3Parser,
         ignore_ids: bool,
-    ) -> InstInfo {
-        let inst_idx = self.0.get(&NodeIndex::new(node_index)).unwrap();
+    ) -> NodeInfo {
         let ctxt = DisplayCtxt {
             parser,
 
@@ -1076,42 +1106,66 @@ impl NodeInfoMap {
             display_quantifier_name: false,
             use_mathematical_symbols: true,
         };
+        if let Some(inst_idx) = self.inst_info_map.get(&NodeIndex::new(node_index)) {
+            let inst = &parser.insts[*inst_idx];
+            let match_ = &parser.insts[inst.match_];
+            let pretty_blamed_terms = match_
+                .due_to_terms()
+                .map(|eidx| eidx.with(&ctxt).to_string())
+                .collect::<Vec<String>>();
+            let inst_info = InstInfo {
+                fingerprint: inst.fingerprint,
+                inst_idx: *inst_idx,
+                resulting_term: inst
+                    .get_resulting_term()
+                    .map(|rt| rt.with(&ctxt).to_string()),
+                z3_gen: inst.z3_generation,
+                cost: inst.cost,
+                mkind: match_.kind.clone(),
+                quant_discovered: match_.kind.is_discovered(),
+                formula: match_.kind.with(&ctxt).to_string(),
+                pattern: match_.kind.pattern().map(|p| p.with(&ctxt).to_string()),
+                yields_terms: inst
+                    .yields_terms
+                    .iter()
+                    .map(|&tidx| format!("{}", tidx.with(&ctxt)))
+                    .collect(),
+                bound_terms: match_
+                    .kind
+                    .bound_terms(|e| e.with(&ctxt).to_string(), |t| t.with(&ctxt).to_string()),
+                blamed_terms: pretty_blamed_terms,
+                equality_expls: match_
+                    .due_to_equalities()
+                    .map(|eq| eq.with(&ctxt).to_string())
+                    .collect(),
+                dep_instantiations: Vec::new(),
+                node_index: NodeIndex::new(node_index),
+            };
+            NodeInfo::Inst(inst_info)
+        } else {
+            let eq_enode_idx = self.eq_info_map.get(&NodeIndex::new(node_index)).unwrap();
+            let pretty_equality = parser[*eq_enode_idx].owner.with(&ctxt).to_string();
+            let eq_info = EqualityInfo {
+                equality: pretty_equality,
+                node_index: NodeIndex::new(node_index),
+            };
+            NodeInfo::Equality(eq_info)
+        }
+    }
+}
 
-        let inst = &parser.insts[*inst_idx];
-        let match_ = &parser.insts[inst.match_];
-        let pretty_blamed_terms = match_
-            .due_to_terms()
-            .map(|eidx| eidx.with(&ctxt).to_string())
-            .collect::<Vec<String>>();
-        let inst_info = InstInfo {
-            fingerprint: inst.fingerprint,
-            inst_idx: *inst_idx,
-            resulting_term: inst
-                .get_resulting_term()
-                .map(|rt| rt.with(&ctxt).to_string()),
-            z3_gen: inst.z3_generation,
-            cost: inst.cost,
-            mkind: match_.kind.clone(),
-            quant_discovered: match_.kind.is_discovered(),
-            formula: match_.kind.with(&ctxt).to_string(),
-            pattern: match_.kind.pattern().map(|p| p.with(&ctxt).to_string()),
-            yields_terms: inst
-                .yields_terms
-                .iter()
-                .map(|&tidx| format!("{}", tidx.with(&ctxt)))
-                .collect(),
-            bound_terms: match_
-                .kind
-                .bound_terms(|e| e.with(&ctxt).to_string(), |t| t.with(&ctxt).to_string()),
-            blamed_terms: pretty_blamed_terms,
-            equality_expls: match_
-                .due_to_equalities()
-                .map(|eq| eq.with(&ctxt).to_string())
-                .collect(),
-            dep_instantiations: Vec::new(),
-            node_index: NodeIndex::new(node_index),
-        };
-        inst_info
+#[derive(Clone)]
+pub struct EdgeInfo {
+    pub edge_data: BlameKind,
+    pub orig_graph_idx: EdgeIndex,
+    pub blame_term: String,
+    pub from: NodeIndex,
+    pub to: NodeIndex,
+}
+
+impl PartialEq for EdgeInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.orig_graph_idx == other.orig_graph_idx
     }
 }
 
