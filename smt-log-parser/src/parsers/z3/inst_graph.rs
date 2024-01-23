@@ -23,7 +23,7 @@ use super::z3parser::Z3Parser;
 const MIN_MATCHING_LOOP_LENGTH: usize = 3;
 
 #[derive(Clone)]
-pub struct NodeData {
+pub struct InstNode {
     // pub line_nr: usize,
     pub is_theory_inst: bool,
     cost: f32,
@@ -40,9 +40,128 @@ pub struct NodeData {
     topo_ord: usize,
 }
 
-impl fmt::Debug for NodeData {
+#[derive(Clone)]
+pub struct EqualityNode {
+    orig_graph_idx: NodeIndex,
+    visible: bool,
+    child_count: usize,
+    parent_count: usize,
+    min_depth: Option<usize>,
+    max_depth: usize,
+    topo_ord: usize,
+}
+
+#[derive(Clone)]
+pub enum Node {
+    Inst(InstNode),
+    Equality(EqualityNode),
+}
+
+impl Node {
+    pub fn inner_inst(&self) -> Option<&InstNode> {
+        match self {
+            Node::Inst(inst) => Some(inst),
+            _ => None,
+        } 
+    }
+    fn inner_mut_inst(&mut self) -> Option<&mut InstNode> {
+        match self {
+            Node::Inst(inst) => Some(inst),
+            _ => None,
+        } 
+    }
+    fn visible(&self) -> bool {
+        match self {
+            Node::Inst(inst) => inst.visible,
+            Node::Equality(eq) => eq.visible,
+        }
+    }
+    fn child_count(&self) -> usize {
+        match self {
+            Node::Inst(inst) => inst.child_count,
+            Node::Equality(eq) => eq.child_count,
+        }
+    }
+    fn set_child_count_to(&mut self, child_count: usize) {
+        match self {
+            Node::Inst(inst) => inst.child_count = child_count,
+            Node::Equality(eq) => eq.child_count = child_count,
+        } 
+    }
+    fn parent_count(&self) -> usize {
+        match self {
+            Node::Inst(inst) => inst.parent_count,
+            Node::Equality(eq) => eq.parent_count,
+        }
+    }
+    fn set_parent_count_to(&mut self, parent_count: usize) {
+        match self {
+            Node::Inst(inst) => inst.parent_count = parent_count,
+            Node::Equality(eq) => eq.parent_count = parent_count,
+        } 
+    }
+    fn topo_ord(&self) -> usize {
+        match self {
+            Node::Inst(inst) => inst.topo_ord,
+            Node::Equality(eq) => eq.topo_ord,
+        }
+    }
+    fn set_topo_ord_to(&mut self, topo_ord: usize) {
+        match self {
+            Node::Inst(inst) => inst.topo_ord = topo_ord,
+            Node::Equality(eq) => eq.topo_ord = topo_ord,
+        }
+    }
+    fn set_visibility_to(&mut self, visibility: bool) {
+        match self {
+            Node::Inst(inst) => inst.visible = visibility,
+            Node::Equality(eq) => eq.visible = visibility,
+        }
+    }
+    fn max_depth(&self) -> usize {
+        match self {
+            Node::Inst(inst) => inst.max_depth,
+            Node::Equality(eq) => eq.max_depth,
+        }
+    }
+    fn min_depth(&self) -> Option<usize> {
+        match self {
+            Node::Inst(inst) => inst.min_depth,
+            Node::Equality(eq) => eq.min_depth,
+        }
+    }
+    fn set_max_depth_to(&mut self, max_depth: usize) {
+        match self {
+            Node::Inst(inst) => inst.max_depth = max_depth,
+            Node::Equality(eq) => eq.max_depth = max_depth,
+        }
+    }
+    fn set_min_depth_to(&mut self, min_depth: Option<usize>) {
+        match self {
+            Node::Inst(inst) => inst.min_depth = min_depth,
+            Node::Equality(eq) => eq.min_depth = min_depth,
+        }
+    }
+    pub fn orig_graph_idx(&self) -> NodeIndex {
+        match self {
+            Node::Inst(inst) => inst.orig_graph_idx,
+            Node::Equality(eq) => eq.orig_graph_idx,
+        }
+    }
+    fn set_orig_graph_idx_to(&mut self, orig_graph_idx: NodeIndex) {
+        match self {
+            Node::Inst(inst) => inst.orig_graph_idx = orig_graph_idx,
+            Node::Equality(eq) => eq.orig_graph_idx = orig_graph_idx,
+        }
+    }
+}
+
+impl fmt::Debug for Node {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.inst_idx)
+        match self {
+            Node::Inst(inst) => write!(f, "{}", inst.inst_idx),
+            Node::Equality(eq) => write!(f, ""),
+        }
     }
 }
 
@@ -135,13 +254,13 @@ impl PartialEq for InstInfo {
 
 #[derive(Default, Clone)]
 pub struct InstGraph {
-    orig_graph: Graph<NodeData, BlameKind>,
-    pub visible_graph: Graph<NodeData, EdgeType>,
+    orig_graph: Graph<Node, BlameKind>,
+    pub visible_graph: Graph<Node, EdgeType>,
     node_of_inst_idx: TiVec<InstIdx, NodeIndex>,
     cost_ranked_node_indices: Vec<NodeIndex>,
     branching_ranked_node_indices: Vec<NodeIndex>,
     tr_closure: Vec<RoaringBitmap>,
-    matching_loop_subgraph: Graph<NodeData, EdgeType>,
+    matching_loop_subgraph: Graph<Node, EdgeType>,
     matching_loop_end_nodes: Vec<NodeIndex>, // these are sorted by maximal depth in descending order 
     generalized_terms: TiVec<usize, Option<Vec<String>>>,
 }
@@ -189,10 +308,21 @@ impl InstGraph {
         inst_graph
     }
 
-    pub fn retain_nodes(&mut self, retain: impl Fn(&NodeData) -> bool) {
+    pub fn retain_nodes(&mut self, retain: impl Fn(&InstNode) -> bool) {
         for node in self.orig_graph.node_weights_mut() {
-            if !retain(node) {
-                node.visible = false;
+            if let Node::Inst(inst) = node {
+                if !retain(inst) {
+                    inst.visible = false;
+                }
+            }
+        }
+        for nx in self.orig_graph.node_indices() {
+            let parent_count = self.orig_graph.neighbors_directed(nx, Incoming).filter(|p| self.orig_graph[*p].visible()).count();
+            let child_count = self.orig_graph.neighbors_directed(nx, Outgoing).filter(|p| self.orig_graph[*p].visible()).count();
+            if let Some(Node::Equality(eq)) = self.orig_graph.node_weight_mut(nx) {
+                if parent_count == 0 || child_count == 0 {
+                    eq.visible = false;
+                }
             }
         }
     }
@@ -202,7 +332,7 @@ impl InstGraph {
         let prev_edge_count = self.visible_graph.edge_count();
         // retain all visible nodes
         let mut new_inst_graph = self.orig_graph.filter_map(
-            |_, node| Some(node).filter(|node| node.visible).cloned(),
+            |_, node| Some(node).filter(|node| node.visible()).cloned(),
             |orig_graph_idx, edge_data| {
                 Some(EdgeType::Direct {
                     kind: edge_data.clone(),
@@ -219,7 +349,7 @@ impl InstGraph {
             .node_indices()
             .filter(|node| {
                 let new_child_count = new_inst_graph.neighbors_directed(*node, Outgoing).count();
-                let old_child_count = new_inst_graph.node_weight(*node).unwrap().child_count;
+                let old_child_count = new_inst_graph.node_weight(*node).unwrap().child_count();
                 new_child_count < old_child_count
             })
             .collect();
@@ -228,15 +358,15 @@ impl InstGraph {
             .node_indices()
             .filter(|node| {
                 new_inst_graph.neighbors_directed(*node, Incoming).count()
-                    < new_inst_graph.node_weight(*node).unwrap().parent_count
+                    < new_inst_graph.node_weight(*node).unwrap().parent_count()
             })
             .collect();
         // add all edges (u,v) in out_set x in_set to the new_inst_graph where v is reachable from u in the original graph
         // and (u,v) is not an edge in the original graph, i.e., all indirect edges
         for &u in &out_set {
             for &v in &in_set {
-                let old_u = new_inst_graph.node_weight(u).unwrap().orig_graph_idx;
-                let old_v = new_inst_graph.node_weight(v).unwrap().orig_graph_idx;
+                let old_u = new_inst_graph.node_weight(u).unwrap().orig_graph_idx();
+                let old_v = new_inst_graph.node_weight(v).unwrap().orig_graph_idx();
                 if old_u != old_v
                     && !self.orig_graph.contains_edge(old_u, old_v)
                     && self.tr_closure_contains_edge(old_u, old_v)
@@ -286,7 +416,7 @@ impl InstGraph {
     }
 
     fn tr_closure_contains_edge(&self, from: NodeIndex, to: NodeIndex) -> bool {
-        let topo_ord_from = self.orig_graph.node_weight(from).unwrap().topo_ord;
+        let topo_ord_from = self.orig_graph.node_weight(from).unwrap().topo_ord();
         let from_bitset = &self.tr_closure[topo_ord_from];
         from_bitset.contains(to.index() as u32)
     }
@@ -307,7 +437,7 @@ impl InstGraph {
         let visible_nodes: Vec<NodeIndex> = self
             .orig_graph
             .node_indices()
-            .filter(|n| self.orig_graph.node_weight(*n).unwrap().visible)
+            .filter(|n| self.orig_graph.node_weight(*n).unwrap().visible())
             .collect();
         if let Some(nth_highest_ranked_visible_node) = ranked_node_indices
             .iter()
@@ -315,52 +445,54 @@ impl InstGraph {
             .take(n)
             .last()
         {
-            let nth_largest_rank = self
+            let nth_largest_ranked_node = self
                 .orig_graph
                 .node_weight(*nth_highest_ranked_visible_node)
                 .unwrap()
                 .clone();
-            // among the visible nodes keep those whose cost-rank
-            // is larger than the cost rank of the n-th costliest
-            match order {
-                InstOrder::Branching => self.retain_nodes(|node| {
-                    node.visible && node.branching_rank <= nth_largest_rank.branching_rank
-                }),
-                InstOrder::Cost => self.retain_nodes(|node| {
-                    node.visible && node.cost_rank <= nth_largest_rank.cost_rank
-                }),
-            }
+            if let Node::Inst(nth_largest_rank) = nth_largest_ranked_node {
+                // among the visible nodes keep those whose cost-rank
+                // is larger than the cost rank of the n-th costliest
+                match order {
+                    InstOrder::Branching => self.retain_nodes(|node| {
+                        node.visible && node.branching_rank <= nth_largest_rank.branching_rank
+                    }),
+                    InstOrder::Cost => self.retain_nodes(|node| {
+                        node.visible && node.cost_rank <= nth_largest_rank.cost_rank
+                    }),
+                }
+            } 
         }
     }
 
     pub fn visit_descendants(&mut self, root: NodeIndex, retain: bool) {
         let mut dfs = Dfs::new(&self.orig_graph, root);
         while let Some(nx) = dfs.next(&self.orig_graph) {
-            self.orig_graph[nx].visible = retain;
+            self.orig_graph[nx].set_visibility_to(retain);
         }
     }
 
     pub fn visit_ancestors(&mut self, node: NodeIndex, retain: bool) {
         let mut dfs = Dfs::new(petgraph::visit::Reversed(&self.orig_graph), node);
         while let Some(nx) = dfs.next(petgraph::visit::Reversed(&self.orig_graph)) {
-            self.orig_graph[nx].visible = retain;
+            self.orig_graph[nx].set_visibility_to(retain);
         }
     }
 
     pub fn show_longest_path_through(&mut self, node: NodeIndex) -> Vec<NodeIndex> {
         // construct subtree rooted at selected node
-        let mut subtree_rooted_at_node: StableGraph<NodeData, BlameKind> =
+        let mut subtree_rooted_at_node: StableGraph<Node, BlameKind> =
             StableGraph::from(self.orig_graph.clone());
         for node in subtree_rooted_at_node.node_weights_mut() {
-            node.visible = false;
+            node.set_visibility_to(false);
         }
         let mut dfs = Dfs::new(&subtree_rooted_at_node, node);
         while let Some(nx) = dfs.next(&subtree_rooted_at_node) {
-            subtree_rooted_at_node[nx].visible = true;
+            subtree_rooted_at_node[nx].set_visibility_to(true);
         }
         subtree_rooted_at_node = subtree_rooted_at_node.filter_map(
             |_, node_data| {
-                if node_data.visible {
+                if node_data.visible() {
                     Some(node_data.clone())
                 } else {
                     None
@@ -373,17 +505,17 @@ impl InstGraph {
         while let Some(nx) = topo.next(&subtree_rooted_at_node) {
             let parents = subtree_rooted_at_node.neighbors_directed(nx, Incoming);
             let max_parent_depth = parents
-                .map(|nx| subtree_rooted_at_node.node_weight(nx).unwrap().max_depth)
+                .map(|nx| subtree_rooted_at_node.node_weight(nx).unwrap().max_depth())
                 .max();
             if let Some(depth) = max_parent_depth {
-                subtree_rooted_at_node[nx].max_depth = depth + 1;
+                subtree_rooted_at_node[nx].set_max_depth_to(depth + 1);
             }
         }
         let furthest_away_node_idx = subtree_rooted_at_node
             .node_weights()
-            .max_by(|node_a, node_b| node_a.max_depth.cmp(&node_b.max_depth))
+            .max_by(|node_a, node_b| node_a.max_depth().cmp(&node_b.max_depth()))
             .unwrap()
-            .orig_graph_idx;
+            .orig_graph_idx();
         // backtrack a longest path from furthest away node in subgraph until we reach the root
         // with respect to the subgraph, i.e., node
         // self.backtrack(Some(&subtree_rooted_at_node), furthest_away_node_idx);
@@ -394,13 +526,13 @@ impl InstGraph {
         }
         while let Some(curr) = visitor.pop() {
             longest_path.push(curr);
-            self.orig_graph[curr].visible = true;
-            let curr_distance = subtree_rooted_at_node.node_weight(curr).unwrap().max_depth;
+            self.orig_graph[curr].set_visibility_to(true);
+            let curr_distance = subtree_rooted_at_node.node_weight(curr).unwrap().max_depth();
             let pred = subtree_rooted_at_node
                 .neighbors_directed(curr, Incoming)
                 .filter(|pred| {
                     let pred_distance =
-                        subtree_rooted_at_node.node_weight(*pred).unwrap().max_depth;
+                        subtree_rooted_at_node.node_weight(*pred).unwrap().max_depth();
                     pred_distance == curr_distance - 1
                 })
                 .next();
@@ -412,13 +544,13 @@ impl InstGraph {
         visitor.push(node);
         while let Some(curr) = visitor.pop() {
             longest_path.push(curr);
-            self.orig_graph[curr].visible = true;
-            let curr_distance = self.orig_graph.node_weight(curr).unwrap().max_depth;
+            self.orig_graph[curr].set_visibility_to(true);
+            let curr_distance = self.orig_graph.node_weight(curr).unwrap().max_depth();
             let pred = self
                 .orig_graph
                 .neighbors_directed(curr, Incoming)
                 .filter(|pred| {
-                    let pred_distance = self.orig_graph.node_weight(*pred).unwrap().max_depth;
+                    let pred_distance = self.orig_graph.node_weight(*pred).unwrap().max_depth();
                     pred_distance == curr_distance - 1
                 })
                 .next();
@@ -459,6 +591,7 @@ impl InstGraph {
         let quants: FxHashSet<_> = self
             .orig_graph
             .node_weights()
+            .filter_map(|node| if let Node::Inst(inst) = node { Some(inst) } else { None })
             .flat_map(|node| node.mkind.quant_idx())
             .collect();
         let mut matching_loop_nodes_per_quant: Vec<FxHashSet<NodeIndex>> = Vec::new();
@@ -480,7 +613,7 @@ impl InstGraph {
         self.reset_visibility_to(false);
         for matching_loop in matching_loop_nodes_per_quant {
             for node in matching_loop {
-                self.orig_graph[node].visible = true;
+                self.orig_graph[node].set_visibility_to(true);
             }
         }
         self.retain_visible_nodes_and_reconnect();
@@ -496,8 +629,8 @@ impl InstGraph {
             .collect();
         // sort the matching loop end-nodes by the max-depth
         self.matching_loop_end_nodes.sort_unstable_by(|node_a, node_b| {
-            let max_depth_node_a = self.matching_loop_subgraph.node_weight(*node_a).unwrap().max_depth;
-            let max_depth_node_b = self.matching_loop_subgraph.node_weight(*node_b).unwrap().max_depth;
+            let max_depth_node_a = self.matching_loop_subgraph.node_weight(*node_a).unwrap().max_depth();
+            let max_depth_node_b = self.matching_loop_subgraph.node_weight(*node_b).unwrap().max_depth();
             if max_depth_node_a < max_depth_node_b {
                 std::cmp::Ordering::Greater
             } else {
@@ -510,114 +643,114 @@ impl InstGraph {
         nr_matching_loop_end_nodes
     }
 
-    pub fn show_nth_matching_loop(&mut self, n: usize, p: &mut Z3Parser) -> Vec<String> {
-        self.reset_visibility_to(false);
-        // relies on the fact that we have previously sorted self.matching_loop_end_nodes by max_depth in descending order in 
-        // search_matching_loops
-        let end_node_of_nth_matching_loop = self.matching_loop_end_nodes.get(n);
-        if let Some(&node) = end_node_of_nth_matching_loop {
-            // start a reverse-DFS from node and mark all the nodes as visible along the way
-            // during the reverse-DFS collect information needed to compute the generalized terms later on
-            // we abstract the edges over the from- and to-quantifiers as well as the trigger, i.e.,
-            // two edges (a,b) and (c,d) are the same abstract edge iff 
-            // - a and c correspond to an instantiation of the same quantifier
-            // - and b and d correspond to an instantiation of the same quantifier 
-            // - and b and d used the same trigger
-            let mut abstract_edge_blame_terms: FxHashMap<(QuantIdx, QuantIdx, TermIdx), Vec<TermIdx>> = FxHashMap::default(); 
-            let mut dfs = Dfs::new(petgraph::visit::Reversed(&self.matching_loop_subgraph), node);
-            while let Some(nx) = dfs.next(petgraph::visit::Reversed(&self.matching_loop_subgraph)) {
-                let orig_index = self.matching_loop_subgraph.node_weight(nx).unwrap().orig_graph_idx;
-                self.orig_graph[orig_index].visible = true;
-                // add all direct dependencies which have BlameKind::Term to the correct bin in abstract_edges
-                // such that later on we can generalize over each all edges in a matching loop that have 
-                // identical from- and to-quantifiers
-                // (*)
-                // avoid unnecessary recomputation if we have already computed the generalized terms 
-                if let None = &self.generalized_terms[n] {
-                    log!(format!("Computation I for matching loop #{}", n));
-                    if let Some(to_quant) = self.matching_loop_subgraph.node_weight(nx).unwrap().mkind.quant_idx() {
-                        for incoming_edge in self.matching_loop_subgraph.edges_directed(nx, Incoming) {
-                            let from = incoming_edge.source(); 
-                            if let Some(from_quant) = self.matching_loop_subgraph.node_weight(from).unwrap().mkind.quant_idx() {
-                                if let Some(blame_term) = incoming_edge.weight().blame_term_idx() {
-                                    let blame_term_idx = p[blame_term].owner; 
-                                    if let Some(trigger) = self.matching_loop_subgraph.node_weight(nx).unwrap().mkind.pattern() {
-                                        if let Some(blame_terms) = abstract_edge_blame_terms.get_mut(&(from_quant, to_quant, trigger)) {
-                                            blame_terms.push(blame_term_idx);
-                                        } else {
-                                            abstract_edge_blame_terms.insert((from_quant, to_quant, trigger), vec![blame_term_idx]);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if let Some(generalized_terms) = &self.generalized_terms[n] {
-                // check if we have already computed the generalized terms for the n-th matching loop
-                generalized_terms.clone()
-            } else {
-                log!(format!("Computation II for matching loop #{}", n));
-                // if not, compute the generalized terms for each bucket in abstract_edge_blame_terms
-                let mut generalized_terms: Vec<String> = Vec::new();
-                for blame_terms in abstract_edge_blame_terms.values() {
-                    // let generalized_term = blame_terms.iter().reduce(|&t1, &t2| generalize(t1, t2, p)).unwrap();
-                    if let Some(t1) = blame_terms.get(0) {
-                        let mut gen_term = *t1;
-                        for &t2 in &blame_terms[1..] {
-                            gen_term = p.terms.generalize(gen_term, t2);
-                            // let ctxt = DisplayCtxt {
-                            //     parser: p,
-                            //     display_term_ids: false,
-                            //     display_quantifier_name: false,
-                            //     use_mathematical_symbols: true,
-                            // };
-                            // log!(format!("Generalized term {} and {}", gen_term.with(&ctxt), t2.with(&ctxt)));
-                        }
-                        let ctxt = DisplayCtxt {
-                            parser: p,
-                            display_term_ids: false,
-                            display_quantifier_name: false,
-                            use_mathematical_symbols: true,
-                        };
-                        let pretty_gen_term = gen_term.with(&ctxt).to_string();
-                        generalized_terms.push(pretty_gen_term);
-                    }
-                }
-                self.generalized_terms[n] = Some(generalized_terms.clone());
-                generalized_terms
-            }
-            // after generalizing over the terms for each abstract edge, store the key-value pair (n, MatchingLoopInfo) in the 
-            // InstGraph such that we don't need to recompute the generalization => can check if the value is already in the map at (*)
-        } else {
-            Vec::new() 
-        }
-    }
+    // pub fn show_nth_matching_loop(&mut self, n: usize, p: &mut Z3Parser) -> Vec<String> {
+    //     self.reset_visibility_to(false);
+    //     // relies on the fact that we have previously sorted self.matching_loop_end_nodes by max_depth in descending order in 
+    //     // search_matching_loops
+    //     let end_node_of_nth_matching_loop = self.matching_loop_end_nodes.get(n);
+    //     if let Some(&node) = end_node_of_nth_matching_loop {
+    //         // start a reverse-DFS from node and mark all the nodes as visible along the way
+    //         // during the reverse-DFS collect information needed to compute the generalized terms later on
+    //         // we abstract the edges over the from- and to-quantifiers as well as the trigger, i.e.,
+    //         // two edges (a,b) and (c,d) are the same abstract edge iff 
+    //         // - a and c correspond to an instantiation of the same quantifier
+    //         // - and b and d correspond to an instantiation of the same quantifier 
+    //         // - and b and d used the same trigger
+    //         let mut abstract_edge_blame_terms: FxHashMap<(QuantIdx, QuantIdx, TermIdx), Vec<TermIdx>> = FxHashMap::default(); 
+    //         let mut dfs = Dfs::new(petgraph::visit::Reversed(&self.matching_loop_subgraph), node);
+    //         while let Some(nx) = dfs.next(petgraph::visit::Reversed(&self.matching_loop_subgraph)) {
+    //             let orig_index = self.matching_loop_subgraph.node_weight(nx).unwrap().orig_graph_idx();
+    //             self.orig_graph[orig_index].set_visibility_to(true);
+    //             // add all direct dependencies which have BlameKind::Term to the correct bin in abstract_edges
+    //             // such that later on we can generalize over each all edges in a matching loop that have 
+    //             // identical from- and to-quantifiers
+    //             // (*)
+    //             // avoid unnecessary recomputation if we have already computed the generalized terms 
+    //             if let None = &self.generalized_terms[n] {
+    //                 log!(format!("Computation I for matching loop #{}", n));
+    //                 if let Some(to_quant) = self.matching_loop_subgraph.node_weight(nx).unwrap().mkind.quant_idx() {
+    //                     for incoming_edge in self.matching_loop_subgraph.edges_directed(nx, Incoming) {
+    //                         let from = incoming_edge.source(); 
+    //                         if let Some(from_quant) = self.matching_loop_subgraph.node_weight(from).unwrap().mkind.quant_idx() {
+    //                             if let Some(blame_term) = incoming_edge.weight().blame_term_idx() {
+    //                                 let blame_term_idx = p[blame_term].owner; 
+    //                                 if let Some(trigger) = self.matching_loop_subgraph.node_weight(nx).unwrap().mkind.pattern() {
+    //                                     if let Some(blame_terms) = abstract_edge_blame_terms.get_mut(&(from_quant, to_quant, trigger)) {
+    //                                         blame_terms.push(blame_term_idx);
+    //                                     } else {
+    //                                         abstract_edge_blame_terms.insert((from_quant, to_quant, trigger), vec![blame_term_idx]);
+    //                                     }
+    //                                 }
+    //                             }
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //         if let Some(generalized_terms) = &self.generalized_terms[n] {
+    //             // check if we have already computed the generalized terms for the n-th matching loop
+    //             generalized_terms.clone()
+    //         } else {
+    //             log!(format!("Computation II for matching loop #{}", n));
+    //             // if not, compute the generalized terms for each bucket in abstract_edge_blame_terms
+    //             let mut generalized_terms: Vec<String> = Vec::new();
+    //             for blame_terms in abstract_edge_blame_terms.values() {
+    //                 // let generalized_term = blame_terms.iter().reduce(|&t1, &t2| generalize(t1, t2, p)).unwrap();
+    //                 if let Some(t1) = blame_terms.get(0) {
+    //                     let mut gen_term = *t1;
+    //                     for &t2 in &blame_terms[1..] {
+    //                         gen_term = p.terms.generalize(gen_term, t2);
+    //                         // let ctxt = DisplayCtxt {
+    //                         //     parser: p,
+    //                         //     display_term_ids: false,
+    //                         //     display_quantifier_name: false,
+    //                         //     use_mathematical_symbols: true,
+    //                         // };
+    //                         // log!(format!("Generalized term {} and {}", gen_term.with(&ctxt), t2.with(&ctxt)));
+    //                     }
+    //                     let ctxt = DisplayCtxt {
+    //                         parser: p,
+    //                         display_term_ids: false,
+    //                         display_quantifier_name: false,
+    //                         use_mathematical_symbols: true,
+    //                     };
+    //                     let pretty_gen_term = gen_term.with(&ctxt).to_string();
+    //                     generalized_terms.push(pretty_gen_term);
+    //                 }
+    //             }
+    //             self.generalized_terms[n] = Some(generalized_terms.clone());
+    //             generalized_terms
+    //         }
+    //         // after generalizing over the terms for each abstract edge, store the key-value pair (n, MatchingLoopInfo) in the 
+    //         // InstGraph such that we don't need to recompute the generalization => can check if the value is already in the map at (*)
+    //     } else {
+    //         Vec::new() 
+    //     }
+    // }
 
     pub fn show_matching_loop_subgraph(&mut self) {
         self.reset_visibility_to(false);
         for node in self.matching_loop_subgraph.node_weights() {
-            self.orig_graph[node.orig_graph_idx].visible = true;
+            self.orig_graph[node.orig_graph_idx()].set_visibility_to(true);
         }
     }
 
-    fn compute_longest_distances_from_roots(graph: &mut Graph<NodeData, EdgeType>) {
+    fn compute_longest_distances_from_roots(graph: &mut Graph<Node, EdgeType>) {
         let mut topo = Topo::new(&*graph);
         while let Some(nx) = topo.next(&*graph) {
             let parents = graph.neighbors_directed(nx, Incoming);
             let max_parent_depth = parents
-                .map(|nx| graph.node_weight(nx).unwrap().max_depth)
+                .map(|nx| graph.node_weight(nx).unwrap().max_depth())
                 .max();
             if let Some(depth) = max_parent_depth {
-                graph[nx].max_depth = depth + 1;
+                graph[nx].set_max_depth_to(depth + 1);
             } else {
-                graph[nx].max_depth = 0;
+                graph[nx].set_max_depth_to(0);
             }
         }
     }
 
-    fn find_longest_paths(graph: &mut Graph<NodeData, EdgeType>) -> FxHashSet<NodeIndex> {
+    fn find_longest_paths(graph: &mut Graph<Node, EdgeType>) -> FxHashSet<NodeIndex> {
         // traverse this subtree in topological order to compute longest distances from root nodes
         Self::compute_longest_distances_from_roots(graph);
         let furthest_away_end_nodes = graph
@@ -625,17 +758,17 @@ impl InstGraph {
             // only want to keep end nodes of longest paths, i.e., nodes without any children 
             .filter(|nx| graph.neighbors_directed(*nx, Outgoing).count() == 0)
             // only want to show matching loops of length at least 3, hence only keep nodes with depth at least 2
-            .filter(|nx| graph.node_weight(*nx).unwrap().max_depth >= MIN_MATCHING_LOOP_LENGTH - 1) 
+            .filter(|nx| graph.node_weight(*nx).unwrap().max_depth() >= MIN_MATCHING_LOOP_LENGTH - 1) 
             .collect();
         // backtrack longest paths from furthest away nodes in subgraph until we reach a root
         let mut matching_loop_nodes: FxHashSet<NodeIndex> = FxHashSet::default();
         let mut visitor: Vec<NodeIndex> = furthest_away_end_nodes;
         let mut visited: FxHashSet<_> = FxHashSet::default();
         while let Some(curr) = visitor.pop() {
-            matching_loop_nodes.insert(graph.node_weight(curr).unwrap().orig_graph_idx);
-            let curr_distance = graph.node_weight(curr).unwrap().max_depth;
+            matching_loop_nodes.insert(graph.node_weight(curr).unwrap().orig_graph_idx());
+            let curr_distance = graph.node_weight(curr).unwrap().max_depth();
             let preds = graph.neighbors_directed(curr, Incoming).filter(|pred| {
-                let pred_distance = graph.node_weight(*pred).unwrap().max_depth;
+                let pred_distance = graph.node_weight(*pred).unwrap().max_depth();
                 pred_distance == curr_distance - 1
             });
             for pred in preds {
@@ -649,7 +782,7 @@ impl InstGraph {
 
     pub fn reset_visibility_to(&mut self, visibility: bool) {
         for node in self.orig_graph.node_weights_mut() {
-            node.visible = visibility;
+            node.set_visibility_to(visibility);
         }
     }
 
@@ -659,7 +792,7 @@ impl InstGraph {
             .neighbors_directed(node, direction)
             .collect();
         for neighbour in neighbour_indices {
-            self.orig_graph.node_weight_mut(neighbour).unwrap().visible = true;
+            self.orig_graph.node_weight_mut(neighbour).unwrap().set_visibility_to(true);
         }
     }
 
@@ -684,7 +817,7 @@ impl InstGraph {
                     Incoming => e.source(),
                 });
         let (visible_neighbours, hidden_neighbours): (Vec<NodeIndex>, Vec<NodeIndex>) =
-            neighbours.partition(|n| self.orig_graph.node_weight(*n).unwrap().visible);
+            neighbours.partition(|n| self.orig_graph.node_weight(*n).unwrap().visible());
         let nr_visible_neighbours = visible_neighbours.len();
         let nr_hidden_neighbours = hidden_neighbours.len();
         nr_visible_neighbours < nr_hidden_neighbours + nr_visible_neighbours
@@ -694,7 +827,7 @@ impl InstGraph {
         for (inst_idx, inst) in parser.insts.insts.iter_enumerated() {
             let match_ = &parser.insts[inst.match_];
             // add new node to graph
-            self.add_node(NodeData {
+            self.add_inst_node(InstNode {
                 is_theory_inst: match_.kind.is_discovered(),
                 cost: inst.cost,
                 inst_idx,
@@ -721,8 +854,8 @@ impl InstGraph {
         for idx in self.orig_graph.node_indices() {
             let child_count = self.orig_graph.neighbors_directed(idx, Outgoing).count();
             let parent_count = self.orig_graph.neighbors_directed(idx, Incoming).count();
-            self.orig_graph.node_weight_mut(idx).unwrap().child_count = child_count;
-            self.orig_graph.node_weight_mut(idx).unwrap().parent_count = parent_count;
+            self.orig_graph.node_weight_mut(idx).unwrap().set_child_count_to(child_count);
+            self.orig_graph.node_weight_mut(idx).unwrap().set_parent_count_to(parent_count);
         }
         // precompute the cost-rank of all nodes by sorting the node_indices by our cost-order
         // in descending order and then assigning the rank to each node
@@ -730,10 +863,10 @@ impl InstGraph {
         // inst_b > inst_a iff (cost_b > cost_a or (cost_b = cost_a and line_nr_b < line_nr_a))
         // This is a total order since the line numbers are always guaranteed to be distinct
         // integers.
-        let mut cost_ranked_node_indices: Vec<NodeIndex> = self.orig_graph.node_indices().collect();
+        let mut cost_ranked_node_indices: Vec<NodeIndex> = self.orig_graph.node_indices().filter(|nx| if let Node::Inst(_) = self.orig_graph[*nx] { true } else { false }).collect();
         let cost_order = |node_a: &NodeIndex, node_b: &NodeIndex| {
-            let node_a_data = self.orig_graph.node_weight(*node_a).unwrap();
-            let node_b_data = self.orig_graph.node_weight(*node_b).unwrap();
+            let node_a_data = self.orig_graph.node_weight(*node_a).unwrap().inner_inst().unwrap();
+            let node_b_data = self.orig_graph.node_weight(*node_b).unwrap().inner_inst().unwrap();
             if node_a_data.cost < node_b_data.cost || (node_a_data.cost == node_b_data.cost
                 && node_b_data.inst_idx < node_a_data.inst_idx) {
                 std::cmp::Ordering::Greater
@@ -743,27 +876,27 @@ impl InstGraph {
         };
         cost_ranked_node_indices.sort_unstable_by(cost_order);
         for (i, nidx) in cost_ranked_node_indices.iter().enumerate() {
-            self.orig_graph.node_weight_mut(*nidx).unwrap().cost_rank = i;
+            self.orig_graph.node_weight_mut(*nidx).unwrap().inner_mut_inst().unwrap().cost_rank = i;
         }
         self.cost_ranked_node_indices = cost_ranked_node_indices;
         // precompute BFS depth such that we can filter the graph up to some specified depth
         let roots: Vec<NodeIndex> = self
             .orig_graph
             .node_indices()
-            .filter(|nx| self.orig_graph.node_weight(*nx).unwrap().parent_count == 0)
+            .filter(|nx| self.orig_graph.node_weight(*nx).unwrap().parent_count() == 0)
             .collect();
         for root in roots {
             let mut bfs = Bfs::new(&self.orig_graph, root);
             while let Some(nx) = bfs.next(&self.orig_graph) {
                 let parents = self.orig_graph.neighbors_directed(nx, Incoming);
                 let min_parent_depth = parents
-                    .filter_map(|parent| self.orig_graph.node_weight(parent).unwrap().min_depth)
+                    .filter_map(|parent| self.orig_graph.node_weight(parent).unwrap().min_depth())
                     .min();
                 if let Some(depth) = min_parent_depth {
-                    self.orig_graph[nx].min_depth = Some(depth + 1);
+                    self.orig_graph[nx].set_min_depth_to(Some(depth + 1));
                 } else {
                     // the min_depth is None iff the node at nx has no parents, hence we set the depth to 0
-                    self.orig_graph[nx].min_depth = Some(0);
+                    self.orig_graph[nx].set_min_depth_to(Some(0));
                 }
             }
         }
@@ -774,12 +907,12 @@ impl InstGraph {
         // This is a total order since the line numbers are always guaranteed to be distinct
         // integers.
         let mut branching_ranked_node_indices: Vec<NodeIndex> =
-            self.orig_graph.node_indices().collect();
+            self.orig_graph.node_indices().filter(|nx| if let Node::Inst(_) = self.orig_graph[*nx] { true } else { false }).collect();
         let branching_order = |node_a: &NodeIndex, node_b: &NodeIndex| {
             let node_a_data = self.orig_graph.node_weight(*node_a).unwrap();
             let node_b_data = self.orig_graph.node_weight(*node_b).unwrap();
-            if node_a_data.child_count < node_b_data.child_count || (node_a_data.child_count == node_b_data.child_count
-                && node_b_data.inst_idx < node_a_data.inst_idx) {
+            if node_a_data.child_count() < node_b_data.child_count() || (node_a_data.child_count() == node_b_data.child_count()
+                && node_b_data.inner_inst().unwrap().inst_idx < node_a_data.inner_inst().unwrap().inst_idx) {
                 std::cmp::Ordering::Greater
             } else {
                 std::cmp::Ordering::Less
@@ -789,6 +922,8 @@ impl InstGraph {
         for (i, nidx) in branching_ranked_node_indices.iter().enumerate() {
             self.orig_graph
                 .node_weight_mut(*nidx)
+                .unwrap()
+                .inner_mut_inst()
                 .unwrap()
                 .branching_rank = i;
         }
@@ -802,11 +937,11 @@ impl InstGraph {
             let max_parent_depth = self
                 .orig_graph
                 .neighbors_directed(node, Incoming)
-                .map(|nx| self.orig_graph.node_weight(nx).unwrap().max_depth)
+                .map(|nx| self.orig_graph.node_weight(nx).unwrap().max_depth())
                 .max();
             if let Some(depth) = max_parent_depth {
                 let node_weight = self.orig_graph.node_weight_mut(node).unwrap();
-                node_weight.max_depth = depth + 1;
+                node_weight.set_max_depth_to(depth + 1);
             }
         }
         // efficiently compute transitive closure with a vector of FixedBitSet's
@@ -814,7 +949,7 @@ impl InstGraph {
         // assign topological orders to each node
         let mut topo_ord = self.orig_graph.node_count() - 1;
         while let Some(nx) = topo.next(petgraph::visit::Reversed(&self.orig_graph)) {
-            self.orig_graph[nx].topo_ord = topo_ord;
+            self.orig_graph[nx].set_topo_ord_to(topo_ord);
             topo_ord = topo_ord.saturating_sub(1);
         }
         self.tr_closure = vec![RoaringBitmap::new(); self.orig_graph.node_count()];
@@ -826,7 +961,7 @@ impl InstGraph {
             if let Some(nx) = topo.next(petgraph::visit::Reversed(&self.orig_graph)) {
                 last.insert(nx.index() as u32);
                 for pred in self.orig_graph.neighbors_directed(nx, Incoming) {
-                    let pred_topo_ord = self.orig_graph.node_weight(pred).unwrap().topo_ord;
+                    let pred_topo_ord = self.orig_graph.node_weight(pred).unwrap().topo_ord();
                     let pred_bitset = others.get_mut(pred_topo_ord).unwrap();
                     *pred_bitset |= &*last;
                 }
@@ -844,9 +979,9 @@ impl InstGraph {
         )
     }
 
-    fn add_node(&mut self, node_data: NodeData) {
+    fn add_inst_node(&mut self, node_data: InstNode) {
         let inst_idx = node_data.inst_idx;
-        let node = self.orig_graph.add_node(node_data);
+        let node = self.orig_graph.add_node(Node::Inst(node_data));
         let ins_idx = self.node_of_inst_idx.push_and_get_key(node);
         assert_eq!(ins_idx, inst_idx);
         // store original node-index in each node
@@ -857,7 +992,7 @@ impl InstGraph {
         // Also, using StableGraph where node-indices stay stable across removals
         // is not viable here since StableGraph does not implement NodeCompactIndexable
         // which is needed for petgraph::algo::tred::dag_to_toposorted_adjacency_list
-        self.orig_graph[node].orig_graph_idx = node;
+        self.orig_graph[node].set_orig_graph_idx_to(node);
     }
 
     fn add_edge(&mut self, from: InstIdx, to: InstIdx, blame: &BlameKind) {
@@ -868,8 +1003,10 @@ impl InstGraph {
     pub fn get_node_info_map(&self) -> NodeInfoMap {
         let mut node_info_map = FxHashMap::default();
         for node_index in self.orig_graph.node_indices() {
-            let NodeData { inst_idx, .. } = self.orig_graph[node_index];
-            node_info_map.insert(node_index, inst_idx);
+            if let Node::Inst(ref inst) = self.orig_graph[node_index] {
+                let InstNode { inst_idx, .. } = inst;
+                node_info_map.insert(node_index, *inst_idx);
+            }
         }
         NodeInfoMap::from(node_info_map)
     }

@@ -44,7 +44,7 @@ pub enum Msg {
     WorkerOutput(super::worker::WorkerOutput),
     UpdateSelectedNodes(Vec<InstInfo>),
     SearchMatchingLoops,
-    SelectNthMatchingLoop(usize),
+    // SelectNthMatchingLoop(usize),
     ShowMatchingLoopSubgraph,
 }
 
@@ -157,17 +157,17 @@ impl Component for SVGResult {
             Msg::SearchMatchingLoops => {
                 self.matching_loop_count = self.inst_graph.search_matching_loops();
                 self.searched_matching_loops = true;
-                ctx.link().send_message(Msg::SelectNthMatchingLoop(0));
+                // ctx.link().send_message(Msg::SelectNthMatchingLoop(0));
                 true
             }
-            Msg::SelectNthMatchingLoop(n) => {
-                self.filter_chain_link
-                    .borrow()
-                    .clone()
-                    .unwrap()
-                    .send_message(FilterChainMsg::AddFilters(vec![Filter::SelectNthMatchingLoop(n)]));
-                false
-            }
+            // Msg::SelectNthMatchingLoop(n) => {
+            //     self.filter_chain_link
+            //         .borrow()
+            //         .clone()
+            //         .unwrap()
+            //         .send_message(FilterChainMsg::AddFilters(vec![Filter::SelectNthMatchingLoop(n)]));
+            //     false
+            // }
             Msg::ShowMatchingLoopSubgraph => {
                 self.filter_chain_link
                     .borrow()
@@ -248,9 +248,9 @@ impl Component for SVGResult {
                             ),
                             &|_, (_, node_data)| {
                                 format!("id=node{} label=\"{}\" style=\"{}\" shape={} fillcolor=\"{}\" fontcolor=black gradientangle=90",
-                                        node_data.orig_graph_idx.index(),
-                                        node_data.orig_graph_idx.index(),
-                                        if node_data.mkind.is_mbqi() { "filled,dashed" } else { "filled" },
+                                        node_data.orig_graph_idx().index(),
+                                        node_data.orig_graph_idx().index(),
+                                        if node_data.inner_inst().unwrap().mkind.is_mbqi() { "filled,dashed" } else { "filled" },
                                         // match (self.inst_graph.node_has_filtered_children(node_data.orig_graph_idx), 
                                         //        self.inst_graph.node_has_filtered_parents(node_data.orig_graph_idx)) {
                                         //     (false, false) => format!("{}", self.colour_map.get(&node_data.quant_idx, 0.7)),
@@ -258,14 +258,14 @@ impl Component for SVGResult {
                                         //     (true, false) => format!("{}:{}", self.colour_map.get(&node_data.quant_idx, 0.1), self.colour_map.get(&node_data.quant_idx, 1.0)),
                                         //     (true, true) => format!("{}", self.colour_map.get(&node_data.quant_idx, 0.3)),
                                         // },
-                                        match (self.inst_graph.node_has_filtered_children(node_data.orig_graph_idx),
-                                               self.inst_graph.node_has_filtered_parents(node_data.orig_graph_idx)) {
+                                        match (self.inst_graph.node_has_filtered_children(node_data.orig_graph_idx()),
+                                               self.inst_graph.node_has_filtered_parents(node_data.orig_graph_idx())) {
                                             (false, false) => "box",
                                             (false, true) => "house",
                                             (true, false) => "invhouse",
                                             (true, true) => "diamond",
                                         },
-                                        self.colour_map.get(&node_data.mkind, NODE_COLOUR_SATURATION),
+                                        self.colour_map.get(&node_data.inner_inst().unwrap().mkind, NODE_COLOUR_SATURATION),
                                     )
                             },
                         )
@@ -382,14 +382,14 @@ impl Component for SVGResult {
                     }
                 } else {
                     html! {
-                        <>
-                        <Indexer 
-                            label="Analyzed matching loops" 
-                            index_consumer={ctx.link().callback(Msg::SelectNthMatchingLoop)}
-                            max={self.matching_loop_count - 1}
-                        />
-                        <button onclick={ctx.link().callback(|_| Msg::ShowMatchingLoopSubgraph)}>{"Show all matching loops"}</button>
-                        </>
+                        // <>
+                        // <Indexer 
+                        //     label="Analyzed matching loops" 
+                        //     index_consumer={ctx.link().callback(Msg::SelectNthMatchingLoop)}
+                        //     max={self.matching_loop_count - 1}
+                        // />
+                        // <button onclick={ctx.link().callback(|_| Msg::ShowMatchingLoopSubgraph)}>{"Show all matching loops"}</button>
+                        // </>
                     }
                 }}
                 <ContextProvider<Vec<InstInfo>> context={self.selected_insts.clone()}>
