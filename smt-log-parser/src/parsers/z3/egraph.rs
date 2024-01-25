@@ -2,8 +2,7 @@ use fxhash::FxHashMap;
 use typed_index_collections::TiVec;
 
 use crate::{
-    Result,
-    items::{ENodeIdx, EqualityExpl, InstIdx, StackIdx, TermIdx, BlameKind}, Error
+    items::{ENodeIdx, EqualityExpl, InstIdx, StackIdx, TermIdx, BlameKind}, Error, Result, Z3Parser
 };
 
 use super::stack::Stack;
@@ -63,7 +62,7 @@ impl EGraph {
         self.enodes[enode].owner
     }
 
-    pub fn new_equality(&mut self, from: ENodeIdx, expl: EqualityExpl, stack: &Stack) -> Result<()> {
+    pub fn new_equality(&mut self, from: ENodeIdx, expl: EqualityExpl, stack: &Stack) -> Result<(ENodeIdx, ENodeIdx, Option<InstIdx>)> {
         let enode = &mut self.enodes[from];
         let to = expl.to();
         let eq = Equality {
@@ -93,7 +92,7 @@ impl EGraph {
         //         panic!();
         //     }
         // }
-        Ok(())
+        Ok((from, to, enode.created_by))
     }
 
     pub fn path_to_root(&self, from: ENodeIdx, stack: &Stack, depth: usize) -> Vec<ENodeIdx> {
@@ -129,25 +128,26 @@ impl EGraph {
         Ok(all.map(|idx| &self.enodes[idx].get_equality(stack).unwrap().expl))
     }
 
-    pub fn blame_equalities(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, blamed: &mut Vec<BlameKind>, can_mismatch: impl Fn() -> bool) -> Result<()> {
-        for eq in self.get_equalities(from, to, stack, can_mismatch)? {
-            // TODO: figure out if this is all the blames we need.
-            match eq {
-                EqualityExpl::Root { .. } => unreachable!(),
-                &EqualityExpl::Literal { eq, .. } => {
-                    blamed.push(BlameKind::Equality { eq });
-                }
-                EqualityExpl::Congruence { arg_eqs, .. } => {
-                    for (from, to) in arg_eqs.iter() {
-                        fn cannot_mismatch() -> bool { false }
-                        self.blame_equalities(*from, *to, stack, blamed, cannot_mismatch)?;
-                    }
-                }
-                EqualityExpl::Theory { .. } => (),
-                EqualityExpl::Axiom { .. } => (),
-                EqualityExpl::Unknown { .. } => (),
-            }
-        }
+    pub fn blame_equalities(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, blamed: &mut Vec<(ENodeIdx, ENodeIdx)>, can_mismatch: impl Fn() -> bool) -> Result<()> {
+        blamed.push((from, to));
+        // for eq in self.get_equalities(from, to, stack, can_mismatch)? {
+        //     // TODO: figure out if this is all the blames we need.
+        //     match eq {
+        //         EqualityExpl::Root { .. } => unreachable!(),
+        //         &EqualityExpl::Literal { eq, .. } => {
+        //             blamed.push(BlameKind::Equality { eq });
+        //         }
+        //         EqualityExpl::Congruence { arg_eqs, .. } => {
+        //             for (from, to) in arg_eqs.iter() {
+        //                 fn cannot_mismatch() -> bool { false }
+        //                 self.blame_equalities(*from, *to, stack, blamed, cannot_mismatch)?;
+        //             }
+        //         }
+        //         EqualityExpl::Theory { .. } => (),
+        //         EqualityExpl::Axiom { .. } => (),
+        //         EqualityExpl::Unknown { .. } => (),
+        //     }
+        // }
         Ok(())
     }
 }

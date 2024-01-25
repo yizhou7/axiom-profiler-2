@@ -1,6 +1,6 @@
 use fxhash::{FxHashSet, FxHashMap};
 use gloo_console::log;
-use petgraph::graph::NodeIndex;
+use petgraph::graph::{NodeIndex, UnGraph};
 use petgraph::stable_graph::StableGraph;
 use petgraph::visit::{Bfs, IntoEdgeReferences, Topo, IntoEdges};
 use petgraph::{
@@ -16,6 +16,8 @@ use typed_index_collections::TiVec;
 
 use crate::display_with::{DisplayCtxt, DisplayWithCtxt};
 use crate::items::{BlameKind, ENodeIdx, Fingerprint, InstIdx, MatchKind, Term, TermIdx, QuantIdx, TermKind};
+
+use self::equalities::EqualityGraph;
 
 use super::terms::Terms;
 use super::z3parser::Z3Parser;
@@ -49,7 +51,8 @@ pub struct EqualityNode {
     min_depth: Option<usize>,
     max_depth: usize,
     topo_ord: usize,
-    equality: ENodeIdx,
+    from: ENodeIdx,
+    to: ENodeIdx,
 }
 
 #[derive(Clone)]
@@ -193,12 +196,12 @@ impl PartialEq for EdgeType {
 }
 
 impl EdgeType {
-    pub fn blame_term_idx(&self) -> Option<ENodeIdx> {
-        match self {
-            EdgeType::Direct { kind, .. } => kind.get_blame_node(),
-            _ => None,
-        }
-    }
+    // pub fn blame_term_idx(&self) -> Option<ENodeIdx> {
+    //     match self {
+    //         EdgeType::Direct { kind, .. } => kind.get_blame_node(),
+    //         _ => None,
+    //     }
+    // }
     pub fn is_direct(&self) -> bool {
         matches!(self, EdgeType::Direct { .. })
     }
@@ -218,6 +221,7 @@ impl fmt::Debug for EdgeType {
 #[derive(Default, Clone)]
 pub struct InstGraph {
     orig_graph: Graph<Node, BlameKind>,
+    equalities: EqualityGraph,
     pub visible_graph: Graph<Node, EdgeType>,
     node_of_inst_idx: TiVec<InstIdx, NodeIndex>,
     cost_ranked_node_indices: Vec<NodeIndex>,
@@ -279,15 +283,15 @@ impl InstGraph {
                 }
             }
         }
-        for nx in self.orig_graph.node_indices() {
-            let parent_count = self.orig_graph.neighbors_directed(nx, Incoming).filter(|p| self.orig_graph[*p].visible()).count();
-            let child_count = self.orig_graph.neighbors_directed(nx, Outgoing).filter(|p| self.orig_graph[*p].visible()).count();
-            if let Some(Node::Equality(eq)) = self.orig_graph.node_weight_mut(nx) {
-                if parent_count == 0 || child_count == 0 {
-                    eq.visible = false;
-                }
-            }
-        }
+        // for nx in self.orig_graph.node_indices() {
+        //     let parent_count = self.orig_graph.neighbors_directed(nx, Incoming).filter(|p| self.orig_graph[*p].visible()).count();
+        //     let child_count = self.orig_graph.neighbors_directed(nx, Outgoing).filter(|p| self.orig_graph[*p].visible()).count();
+        //     if let Some(Node::Equality(eq)) = self.orig_graph.node_weight_mut(nx) {
+        //         if parent_count == 0 || child_count == 0 {
+        //             eq.visible = false;
+        //         }
+        //     }
+        // }
     }
 
     pub fn retain_visible_nodes_and_reconnect(&mut self) -> VisibleGraphInfo {
@@ -807,20 +811,20 @@ impl InstGraph {
             });
             // then add all edges to previous nodes
             // for (kind, from) in match_
-            let (blame_deps, eq_deps): (Vec<_>, Vec<_>) = match_
-                .due_to_enodes()
+            for (kind, from) in match_
+                .due_to_terms()
                 .filter_map(|(kind, e)| parser[e].created_by.map(|c| (kind, c)))
-                .partition(|(kind, _)| match kind {
-                    BlameKind::Term { .. } => true,
-                    _ => false,
-                });
-            for (kind, from) in blame_deps
             {
                 self.add_edge(from, inst_idx, kind);
             }
-            for (kind, from) in eq_deps {
-
-                if let BlameKind::Equality { eq } = kind {
+                // .partition(|(kind, _)| match kind {
+                //     BlameKind::Term { .. } => true,
+                //     _ => false,
+                // });
+            // for (kind, from) in blame_deps
+            for (from, to) in match_.due_to_equalities() 
+            {
+                // if let BlameKind::Equality { eq } = kind {
                     // here add an equality-node, eq_node
                     let eq_node_idx = self.add_eq_node(EqualityNode {
                         orig_graph_idx: NodeIndex::default(),
@@ -830,11 +834,28 @@ impl InstGraph {
                         min_depth: None,
                         max_depth: 0,
                         topo_ord: 0,
-                        equality: *eq,
+                        from: *from,
+                        to: *to,
                     });
                     // and equality edges (from, eq_node) and (eq_node, inst_idx)
-                    self.add_eq_edges(from, eq_node_idx, inst_idx, kind);
-                }
+                    self.add_eq_edge_to_inst(eq_node_idx, inst_idx);
+                // }
+            }
+            for (from, to) in &inst.yields_equalities {
+                self.equalities.add_equality(*from, *to);
+                let eq_node_idx = self.add_eq_node(EqualityNode {
+                    orig_graph_idx: NodeIndex::default(),
+                    visible: true,
+                    child_count: 0,
+                    parent_count: 0,
+                    min_depth: None,
+                    max_depth: 0,
+                    topo_ord: 0,
+                    from: *from,
+                    to: *to,
+                });
+                // and equality edges (from, eq_node) and (eq_node, inst_idx)
+                self.add_eq_edge_from_inst(inst_idx, eq_node_idx);
             }
         }
         // precompute number of children and parents of each node
@@ -993,10 +1014,18 @@ impl InstGraph {
         self.orig_graph.add_edge(from, to, blame.clone());
     }
 
-    fn add_eq_edges(&mut self, from: InstIdx, eq: NodeIndex, to: InstIdx, blame: &BlameKind) {
-        let (from, to) = (self.node_of_inst_idx[from], self.node_of_inst_idx[to]);
-        self.orig_graph.update_edge(from, eq, blame.clone());
-        self.orig_graph.update_edge(eq, to, blame.clone());
+    fn add_eq_edge_to_inst(&mut self, eq: NodeIndex, to: InstIdx) {
+        // let (from, to) = (self.node_of_inst_idx[from], self.node_of_inst_idx[to]);
+        let to = self.node_of_inst_idx[to];
+        // self.orig_graph.update_edge(from, eq, blame.clone());
+        self.orig_graph.update_edge(eq, to, BlameKind::Equality);
+    }
+
+    fn add_eq_edge_from_inst(&mut self, from: InstIdx, eq: NodeIndex) {
+        // let (from, to) = (self.node_of_inst_idx[from], self.node_of_inst_idx[to]);
+        let from = self.node_of_inst_idx[from];
+        // self.orig_graph.update_edge(from, eq, blame.clone());
+        self.orig_graph.update_edge(from, eq, BlameKind::Equality);
     }
 
     pub fn get_node_info_map(&self) -> NodeInfoMap {
@@ -1008,7 +1037,7 @@ impl InstGraph {
                 node_info_map.insert(node_index, *inst_idx);
             } else {
                 if let Node::Equality(eq) = &self.orig_graph[node_index] {
-                    eq_info_map.insert(node_index, eq.equality);
+                    eq_info_map.insert(node_index, (eq.from, eq.to));
                 }
             }
         }
@@ -1081,12 +1110,12 @@ impl PartialEq for InstInfo {
 
 pub struct NodeInfoMap{
     inst_info_map: FxHashMap<NodeIndex, InstIdx>,
-    eq_info_map: FxHashMap<NodeIndex, ENodeIdx>
+    eq_info_map: FxHashMap<NodeIndex, (ENodeIdx, ENodeIdx)>
 } 
 
 impl NodeInfoMap {
 
-    fn from(inst_info_map: FxHashMap<NodeIndex, InstIdx>, eq_info_map: FxHashMap<NodeIndex, ENodeIdx>) -> Self {
+    fn from(inst_info_map: FxHashMap<NodeIndex, InstIdx>, eq_info_map: FxHashMap<NodeIndex, (ENodeIdx, ENodeIdx)>) -> Self {
         NodeInfoMap {
             inst_info_map,
             eq_info_map,
@@ -1111,7 +1140,7 @@ impl NodeInfoMap {
             let match_ = &parser.insts[inst.match_];
             let pretty_blamed_terms = match_
                 .due_to_terms()
-                .map(|eidx| eidx.with(&ctxt).to_string())
+                .map(|(_, eidx)| eidx.with(&ctxt).to_string())
                 .collect::<Vec<String>>();
             let inst_info = InstInfo {
                 fingerprint: inst.fingerprint,
@@ -1136,15 +1165,15 @@ impl NodeInfoMap {
                 blamed_terms: pretty_blamed_terms,
                 equality_expls: match_
                     .due_to_equalities()
-                    .map(|eq| eq.with(&ctxt).to_string())
+                    .map(|(from, to)| format!("{} = {}", from.with(&ctxt).to_string(), to.with(&ctxt).to_string()))
                     .collect(),
                 dep_instantiations: Vec::new(),
                 node_index: NodeIndex::new(node_index),
             };
             NodeInfo::Inst(inst_info)
         } else {
-            let eq_enode_idx = self.eq_info_map.get(&NodeIndex::new(node_index)).unwrap();
-            let pretty_equality = parser[*eq_enode_idx].owner.with(&ctxt).to_string();
+            let (from_idx, to_idx) = self.eq_info_map.get(&NodeIndex::new(node_index)).unwrap();
+            let pretty_equality = format!("{} = {}", parser[*from_idx].owner.with(&ctxt), parser[*to_idx].owner.with(&ctxt));
             let eq_info = EqualityInfo {
                 equality: pretty_equality,
                 node_index: NodeIndex::new(node_index),
@@ -1191,14 +1220,43 @@ impl EdgeInfoMap {
             display_quantifier_name: false,
             use_mathematical_symbols: true,
         };
-        let blame_term_idx = edge_data.get_blame_node().unwrap();
-        let blame_term = blame_term_idx.with(&ctxt).to_string();
+        let blame_term = if let Some(blame_term_idx) = edge_data.get_blame_node() {
+            blame_term_idx.with(&ctxt).to_string()
+        } else {
+            String::new()
+        };
+        // let blame_term = blame_term_idx.with(&ctxt).to_string();
         EdgeInfo {
             edge_data: edge_data.clone(),
             orig_graph_idx: edge_index,
             blame_term,
             from: *from,
             to: *to,
+        }
+    }
+}
+
+mod equalities {
+    use super::*;
+
+    #[derive(Default, Clone)]
+    pub struct EqualityGraph {
+        graph: UnGraph<ENodeIdx, ()>,
+        node_idx_of_weight: FxHashMap<ENodeIdx, NodeIndex>,
+    }
+
+    impl EqualityGraph {
+        fn add_node(&mut self, weight: ENodeIdx) -> NodeIndex {
+            if let Some(idx) = self.node_idx_of_weight.get(&weight) {
+                *idx
+            } else {
+                self.graph.add_node(weight)
+            }
+        }
+        pub fn add_equality(&mut self, from: ENodeIdx, to: ENodeIdx) {
+            let from_idx = self.add_node(from);
+            let to_idx = self.add_node(to);
+            self.graph.update_edge(from_idx, to_idx, ());
         }
     }
 }

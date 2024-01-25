@@ -368,11 +368,11 @@ fn selected_edges_info(
                         <h4>{"Blame term: "}</h4><p>{selected_edge.blame_term.clone()}</p>
                         </div>
                     },
-                    BlameKind::Equality { .. } => html! {
-                        <div>
-                        <h4>{"Equality: "}</h4><p>{selected_edge.blame_term.clone()}</p>
-                        </div>
-                    },
+                    // BlameKind::Equality { .. } => html! {
+                    //     <div>
+                    //     <h4>{"Equality: "}</h4><p>{selected_edge.blame_term.clone()}</p>
+                    //     </div>
+                    // },
                     _ => html! {}
                 }}
             </details>
