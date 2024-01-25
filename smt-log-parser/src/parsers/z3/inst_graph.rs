@@ -1028,14 +1028,14 @@ impl InstGraph {
     }
 
     fn add_eq_node(&mut self, node_data: EqualityNode) -> NodeIndex {
-        // if let Some(nx) = self.node_idx_of_eq.get(&node_data) {
-        //     *nx
-        // } else {
+        if let Some(nx) = self.node_idx_of_eq.get(&node_data) {
+            *nx
+        } else {
             let node = self.orig_graph.add_node(Node::Equality(node_data));
             self.orig_graph[node].set_orig_graph_idx_to(node);
             self.node_idx_of_eq.insert(node_data, node);
             node
-        // }
+        }
     }
 
     fn add_edge(&mut self, from: InstIdx, to: InstIdx, blame: &BlameKind) {

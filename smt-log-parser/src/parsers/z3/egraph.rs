@@ -63,6 +63,10 @@ impl EGraph {
     }
 
     pub fn new_equality(&mut self, from: ENodeIdx, expl: EqualityExpl, stack: &Stack) -> Result<(ENodeIdx, ENodeIdx, Option<InstIdx>)> {
+        let eq_created_by = match expl {
+            EqualityExpl::Literal { eq, .. } => self.enodes[eq].created_by,
+            _ => None,
+        };
         let enode = &mut self.enodes[from];
         let to = expl.to();
         let eq = Equality {
@@ -92,7 +96,7 @@ impl EGraph {
         //         panic!();
         //     }
         // }
-        Ok((from, to, enode.created_by))
+        Ok((from, to, eq_created_by))
     }
 
     pub fn path_to_root(&self, from: ENodeIdx, stack: &Stack, depth: usize) -> Vec<ENodeIdx> {
