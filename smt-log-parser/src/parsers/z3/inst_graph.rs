@@ -11,6 +11,7 @@ use petgraph::{
 use petgraph::{Direction, Graph};
 use roaring::bitmap::RoaringBitmap;
 use std::fmt;
+use std::hash::Hash;
 use std::iter::zip;
 use typed_index_collections::TiVec;
 
@@ -42,7 +43,7 @@ pub struct InstNode {
     topo_ord: usize,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct EqualityNode {
     pub orig_graph_idx: NodeIndex,
     visible: bool,
@@ -54,6 +55,28 @@ pub struct EqualityNode {
     from: ENodeIdx,
     to: ENodeIdx,
 }
+
+impl Hash for EqualityNode {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // to make sure an equality from = to has the same hash as the equality to = from,
+        // we always hash the smaller ENodeIdx first
+        if self.from < self.to {
+            self.from.hash(state);
+            self.to.hash(state);
+        } else {
+            self.to.hash(state);
+            self.from.hash(state);
+        }
+    }
+}
+
+impl PartialEq for EqualityNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.from == other.from && self.to == other.to
+    }
+}
+
+impl Eq for EqualityNode {}
 
 #[derive(Clone)]
 pub enum Node {
@@ -230,6 +253,7 @@ pub struct InstGraph {
     matching_loop_subgraph: Graph<Node, EdgeType>,
     matching_loop_end_nodes: Vec<NodeIndex>, // these are sorted by maximal depth in descending order 
     generalized_terms: TiVec<usize, Option<Vec<String>>>,
+    node_idx_of_eq: FxHashMap<EqualityNode, NodeIndex>,
 }
 
 enum InstOrder {
@@ -1004,9 +1028,14 @@ impl InstGraph {
     }
 
     fn add_eq_node(&mut self, node_data: EqualityNode) -> NodeIndex {
-        let node = self.orig_graph.add_node(Node::Equality(node_data));
-        self.orig_graph[node].set_orig_graph_idx_to(node);
-        node
+        // if let Some(nx) = self.node_idx_of_eq.get(&node_data) {
+        //     *nx
+        // } else {
+            let node = self.orig_graph.add_node(Node::Equality(node_data));
+            self.orig_graph[node].set_orig_graph_idx_to(node);
+            self.node_idx_of_eq.insert(node_data, node);
+            node
+        // }
     }
 
     fn add_edge(&mut self, from: InstIdx, to: InstIdx, blame: &BlameKind) {
