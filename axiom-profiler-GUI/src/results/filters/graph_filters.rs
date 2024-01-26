@@ -24,6 +24,7 @@ pub enum Filter {
     ShowLongestPath(NodeIndex),
     // SelectNthMatchingLoop(usize),
     ShowMatchingLoopSubgraph,
+    IgnoreEqualityNodes,
 }
 
 impl Display for Filter {
@@ -75,6 +76,7 @@ impl Display for Filter {
             Self::ShowMatchingLoopSubgraph => {
                 write!(f, "Showing all potential matching loops")
             }
+            Self::IgnoreEqualityNodes => write!(f, "Hiding all equality nodes")
         }
     }
 }
@@ -101,6 +103,7 @@ impl Filter {
             Filter::ShowLongestPath(nidx) => return FilterOutput::LongestPath(graph.show_longest_path_through(nidx)),
             // Filter::SelectNthMatchingLoop(n) => return FilterOutput::MatchingLoopGeneralizedTerms(graph.show_nth_matching_loop(n, parser)),
             Filter::ShowMatchingLoopSubgraph => graph.show_matching_loop_subgraph(),
+            Filter::IgnoreEqualityNodes => graph.hide_equality_nodes(),
         }
         FilterOutput::None
     }
@@ -197,6 +200,10 @@ impl Component for GraphFilters {
             let max_depth = self.max_depth;
             Callback::from(move |_| callback.emit(vec![Filter::MaxDepth(max_depth)]))
         };
+        let ignore_equality_nodes = {
+            let callback = ctx.props().add_filters.clone();
+            Callback::from(move |_| callback.emit(vec![Filter::IgnoreEqualityNodes]))
+        };
         html! {
             <div>
                 <h2>{"Add (optional) filters:"}</h2>
@@ -235,6 +242,10 @@ impl Component for GraphFilters {
                         set_value={ctx.link().callback(Msg::SetMaxDepth)}
                     />
                     <button onclick={add_max_depth_filter}>{"Add"}</button>
+                </div>
+                <div>
+                    <label for="equality_button">{"Ignore equality nodes"}</label>
+                    <button onclick={ignore_equality_nodes} id="equality_button">{"Add"}</button>
                 </div>
                 {if !self.selected_nodes.is_empty() {
                     html! {

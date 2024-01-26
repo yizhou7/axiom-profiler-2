@@ -336,6 +336,14 @@ impl InstGraph {
         // }
     }
 
+    pub fn hide_equality_nodes(&mut self) {
+        for node in self.orig_graph.node_weights_mut() {
+            if let Node::Equality(eq) = node {
+                eq.visible = false;
+            }
+        }
+    }
+
     pub fn retain_visible_nodes_and_reconnect(&mut self) -> VisibleGraphInfo {
         let prev_node_count = self.visible_graph.node_count();
         let prev_edge_count = self.visible_graph.edge_count();
@@ -1039,6 +1047,7 @@ impl InstGraph {
     fn add_inst_node(&mut self, node_data: InstNode) {
         let inst_idx = node_data.inst_idx;
         let node = self.orig_graph.add_node(Node::Inst(node_data));
+        log!(format!("Processing inst with node index {}", node.index()));
         let ins_idx = self.node_of_inst_idx.push_and_get_key(node);
         assert_eq!(ins_idx, inst_idx);
         // store original node-index in each node
@@ -1332,27 +1341,29 @@ mod equalities {
         pub fn blamed_equalities(&mut self, from: &ENodeIdx, to: &ENodeIdx) -> Vec<(ENodeIdx, ENodeIdx)> {
             let mut blamed_eqs = Vec::new();
             if let (Some(from), Some(to)) = (self.node_idx_of_weight.get(from), self.node_idx_of_weight.get(to)) {
-            let shortest_path_lengths = dijkstra(&self.graph, *from, Some(*to), |_| 1);
-            let mut curr = *to;
-            let mut curr_dist = *shortest_path_lengths.get(&curr).unwrap();
-            while let Some(ref node) = self.graph
-            .neighbors(curr)
-            .filter(|nx| if let Some(&dist) = shortest_path_lengths.get(nx) {
-                dist == curr_dist - 1
-                } else {
-                    false
-                }
-            )
-            .next() {
-                let curr_eq = self.graph.node_weight(curr).unwrap();
-                let node_eq = self.graph.node_weight(*node).unwrap();
-                blamed_eqs.push((*node_eq, *curr_eq));
-                curr = node.clone();
-                curr_dist = curr_dist - 1;
+                let shortest_path_lengths = dijkstra(&self.graph, *from, Some(*to), |_| 1);
+                let mut curr = *to;
+                if let Some(curr_dist) = shortest_path_lengths.get(&curr) {
+                    let mut curr_dist = *curr_dist;
+                    while let Some(ref node) = self.graph
+                    .neighbors(curr)
+                    .filter(|nx| if let Some(&dist) = shortest_path_lengths.get(nx) {
+                        dist == curr_dist - 1
+                        } else {
+                            false
+                        }
+                    )
+                    .next() {
+                        let curr_eq = self.graph.node_weight(curr).unwrap();
+                        let node_eq = self.graph.node_weight(*node).unwrap();
+                        blamed_eqs.push((*node_eq, *curr_eq));
+                        curr = node.clone();
+                        curr_dist = curr_dist - 1;
+                    }
+                } 
             }
             // need to check that the blamed equality is not the same as from = to. 
-            // If that's the case we should just return an empty vector
-            }
+            // if that's the case we should just return an empty vector
             if blamed_eqs.len() > 1 {
                 blamed_eqs
             } else {
