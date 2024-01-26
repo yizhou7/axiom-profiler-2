@@ -271,7 +271,7 @@ impl Component for SVGResult {
                                         )
                                     },
                                     Node::Equality(eq) => {
-                                        format!("id=node{} label=\"{}\"",
+                                        format!("id=node{} label=\"{}\" style=filled fillcolor=white",
                                             eq.orig_graph_idx.index(),
                                             eq.orig_graph_idx.index(),
                                         )
