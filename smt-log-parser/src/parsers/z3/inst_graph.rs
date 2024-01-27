@@ -10,15 +10,13 @@ use petgraph::{
 };
 use petgraph::{Direction, Graph};
 use roaring::bitmap::RoaringBitmap;
-use std::collections::hash_map::DefaultHasher;
-use std::f64::consts::E;
 use std::fmt;
-use std::hash::{Hash, Hasher};
+use std::hash::{Hash};
 use std::iter::zip;
 use typed_index_collections::TiVec;
 
 use crate::display_with::{DisplayCtxt, DisplayWithCtxt};
-use crate::items::{BlameKind, ENodeIdx, Fingerprint, InstIdx, MatchKind, Term, TermIdx, QuantIdx, TermKind};
+use crate::items::{BlameKind, ENodeIdx, EqualityExpl, Fingerprint, InstIdx, MatchKind, QuantIdx, Term, TermIdx, TermKind};
 
 use self::equalities::EqualityGraph;
 
@@ -93,6 +91,11 @@ impl EqualityNode {
             from, 
             to 
         }
+    }
+    fn rev(&self) -> Self {
+        let from = self.from;
+        let to = self.to;
+        EqualityNode::from(to, from)
     }
 }
 
@@ -841,6 +844,21 @@ impl InstGraph {
     }
 
     fn compute_instantiation_graph(&mut self, parser: &Z3Parser) {
+        for eq in &parser.cg_eqs {
+            if let EqualityExpl::Congruence { from, arg_eqs, to } = eq {
+                // let eq_node_idx = self.add_eq_node(*from, *to);
+                self.equalities.add_equality(*from, *to);
+                for (lhs, rhs) in arg_eqs.iter() {
+                    // if let Some(_) = self.add_eq_node(*lhs, *rhs) {
+                        self.equalities.add_equality(*lhs, *rhs);
+                        self.add_eq_edge(EqualityNode::from(*lhs, *rhs), EqualityNode::from(*from, *to));
+                        // if let Some(nx) = eq_node_idx {
+                        //     self.add_eq_edge(EqualityNode::from(*lhs, *rhs), nx);
+                        // }
+                    // }
+                }
+            }
+        }
         for (inst_idx, inst) in parser.insts.insts.iter_enumerated() {
             let match_ = &parser.insts[inst.match_];
             // add new node to graph
@@ -860,56 +878,50 @@ impl InstGraph {
                 topo_ord: 0,
             });
             // then add all edges to previous nodes
-            // for (kind, from) in match_
             for (kind, from) in match_
                 .due_to_terms()
                 .filter_map(|(kind, e)| parser[e].created_by.map(|c| (kind, c)))
             {
                 self.add_edge(from, inst_idx, kind);
             }
-                // .partition(|(kind, _)| match kind {
-                //     BlameKind::Term { .. } => true,
-                //     _ => false,
-                // });
-            // for (kind, from) in blame_deps
             for (from, to) in &inst.yields_equalities {
-                if let Some(eq_node_idx) = self.add_eq_node(*from, *to) {
+                // if let Some(eq_node_idx) = self.add_eq_node(*from, *to) {
                     // and equality edges (from, eq_node) and (eq_node, inst_idx)
-                    self.add_eq_edge_from_inst(inst_idx, eq_node_idx);
+                    self.add_eq_edge_from_inst(inst_idx, EqualityNode::from(*from, *to));
                     self.equalities.add_equality(*from, *to);
-                }
+                // }
             }
             for (from, to) in match_.due_to_equalities() 
             {
                 // if let BlameKind::Equality { eq } = kind {
                     // here add an equality-node, eq_node
-                    if let Some(eq_node_idx) = self.add_eq_node(*from, *to) {
-                        let ctxt = DisplayCtxt {
-                            parser,
+                    // if let Some(eq_node_idx) = self.add_eq_node(*from, *to) {
+                        // let ctxt = DisplayCtxt {
+                        //     parser,
 
-                            display_term_ids: false,
-                            display_quantifier_name: false,
-                            use_mathematical_symbols: true,
-                        };
-                        log!(format!("Adding eq. {} = {} with enode indices {} and {}", from.with(&ctxt), to.with(&ctxt), from, to));
+                        //     display_term_ids: false,
+                        //     display_quantifier_name: false,
+                        //     use_mathematical_symbols: true,
+                        // };
+                        // log!(format!("Adding eq. {} = {} with enode indices {} and {}", from.with(&ctxt), to.with(&ctxt), from, to));
                         // and equality edges (from, eq_node) and (eq_node, inst_idx)
-                        self.add_eq_edge_to_inst(eq_node_idx, inst_idx);
+                        self.add_eq_edge_to_inst(EqualityNode::from(*from, *to), inst_idx);
                         // add equality edges from equality nodes to this equality node
                         for (lhs, rhs) in self.equalities.blamed_equalities(from, to) {
                             let new_eq = EqualityNode::from(lhs, rhs);
-                            let ctxt = DisplayCtxt {
-                                parser,
+                            // let ctxt = DisplayCtxt {
+                            //     parser,
 
-                                display_term_ids: false,
-                                display_quantifier_name: false,
-                                use_mathematical_symbols: true,
-                            };
-                            log!(format!("Adding eq. ({} = {}) to ({} = {}) with enode indices ({} = {}) and ({} = {})", lhs.with(&ctxt), rhs.with(&ctxt), from.with(&ctxt), to.with(&ctxt), lhs, rhs, from, to));
+                            //     display_term_ids: false,
+                            //     display_quantifier_name: false,
+                            //     use_mathematical_symbols: true,
+                            // };
+                            // log!(format!("Adding eq. ({} = {}) to ({} = {}) with enode indices ({} = {}) and ({} = {})", lhs.with(&ctxt), rhs.with(&ctxt), from.with(&ctxt), to.with(&ctxt), lhs, rhs, from, to));
                             // self.add_eq_node(new_eq);
-                            self.add_eq_edge(new_eq, eq_node_idx);
+                            self.add_eq_edge(new_eq, EqualityNode::from(*from, *to));
                         }
                     self.equalities.add_equality(*from, *to);
-                    }
+                    // }
                 // at this point, the equality from = to is connected to the yield-equalities 
                 // so we add it to the equalities that are already connected to yield-equalities
                 // }
@@ -1062,21 +1074,33 @@ impl InstGraph {
     }
 
     // fn add_eq_node(&mut self, node_data: EqualityNode) -> NodeIndex {
-    fn add_eq_node(&mut self, from: ENodeIdx, to: ENodeIdx) -> Option<NodeIndex> {
-        if from != to {
-            let node_data = EqualityNode::from(from, to);
-            let node_data_rev = EqualityNode::from(to, from);
-            if let Some(nx) = self.node_idx_of_eq.get(&node_data) {
-                Some(*nx)
-            } else {
-                let node = self.orig_graph.add_node(Node::Equality(node_data));
-                self.orig_graph[node].set_orig_graph_idx_to(node);
-                self.node_idx_of_eq.insert(node_data, node);
-                self.node_idx_of_eq.insert(node_data_rev, node);
-                Some(node)
-            }
+    // fn add_eq_node(&mut self, from: ENodeIdx, to: ENodeIdx) -> Option<NodeIndex> {
+    //     if from != to {
+    //         let node_data = EqualityNode::from(from, to);
+    //         let node_data_rev = EqualityNode::from(to, from);
+    //         if let Some(nx) = self.node_idx_of_eq.get(&node_data) {
+    //             Some(*nx)
+    //         } else {
+    //             let node = self.orig_graph.add_node(Node::Equality(node_data));
+    //             self.orig_graph[node].set_orig_graph_idx_to(node);
+    //             self.node_idx_of_eq.insert(node_data, node);
+    //             self.node_idx_of_eq.insert(node_data_rev, node);
+    //             Some(node)
+    //         }
+    //     } else {
+    //         None
+    //     }
+    // }
+
+    fn add_eq_node(&mut self, eq: EqualityNode) -> NodeIndex {
+        if let Some(nx) = self.node_idx_of_eq.get(&eq) {
+            *nx
         } else {
-            None
+            let nx = self.orig_graph.add_node(Node::Equality(eq));
+            self.orig_graph[nx].set_orig_graph_idx_to(nx);
+            self.node_idx_of_eq.insert(eq, nx);
+            self.node_idx_of_eq.insert(eq.rev(), nx);
+            nx
         }
     }
 
@@ -1085,23 +1109,27 @@ impl InstGraph {
         self.orig_graph.add_edge(from, to, blame.clone());
     }
 
-    fn add_eq_edge_to_inst(&mut self, eq: NodeIndex, to: InstIdx) {
+    fn add_eq_edge_to_inst(&mut self, eq: EqualityNode, to: InstIdx) {
         // let (from, to) = (self.node_of_inst_idx[from], self.node_of_inst_idx[to]);
         let to = self.node_of_inst_idx[to];
+        let eq_nx = self.add_eq_node(eq);
         // self.orig_graph.update_edge(from, eq, blame.clone());
-        self.orig_graph.update_edge(eq, to, BlameKind::Equality);
+        self.orig_graph.update_edge(eq_nx, to, BlameKind::Equality);
     }
 
-    fn add_eq_edge_from_inst(&mut self, from: InstIdx, eq: NodeIndex) {
+    fn add_eq_edge_from_inst(&mut self, from: InstIdx, eq: EqualityNode) {
         // let (from, to) = (self.node_of_inst_idx[from], self.node_of_inst_idx[to]);
         let from = self.node_of_inst_idx[from];
+        let eq_nx = self.add_eq_node(eq);
         // self.orig_graph.update_edge(from, eq, blame.clone());
-        self.orig_graph.update_edge(from, eq, BlameKind::Equality);
+        self.orig_graph.update_edge(from, eq_nx, BlameKind::Equality);
     }
 
-    fn add_eq_edge(&mut self, from: EqualityNode, to: NodeIndex) {
-        let from = self.node_idx_of_eq.get(&from).unwrap();
-        self.orig_graph.update_edge(*from, to, BlameKind::Equality);
+    fn add_eq_edge(&mut self, from: EqualityNode, to: EqualityNode) {
+        // let from = self.node_idx_of_eq.get(&from).unwrap();
+        let from_nx = self.add_eq_node(from);
+        let to_nx = self.add_eq_node(to);
+        self.orig_graph.update_edge(from_nx, to_nx, BlameKind::Equality);
     }
 
     pub fn get_node_info_map(&self) -> NodeInfoMap {
@@ -1343,8 +1371,9 @@ mod equalities {
             if let (Some(from), Some(to)) = (self.node_idx_of_weight.get(from), self.node_idx_of_weight.get(to)) {
                 let shortest_path_lengths = dijkstra(&self.graph, *from, Some(*to), |_| 1);
                 let mut curr = *to;
-                if let Some(curr_dist) = shortest_path_lengths.get(&curr) {
-                    let mut curr_dist = *curr_dist;
+                // if let Some(curr_dist) = shortest_path_lengths.get(&curr) {
+                    // let mut curr_dist = *curr_dist;
+                    let mut curr_dist = *shortest_path_lengths.get(&curr).unwrap();
                     while let Some(ref node) = self.graph
                     .neighbors(curr)
                     .filter(|nx| if let Some(&dist) = shortest_path_lengths.get(nx) {
@@ -1360,7 +1389,7 @@ mod equalities {
                         curr = node.clone();
                         curr_dist = curr_dist - 1;
                     }
-                } 
+                // } 
             }
             // need to check that the blamed equality is not the same as from = to. 
             // if that's the case we should just return an empty vector

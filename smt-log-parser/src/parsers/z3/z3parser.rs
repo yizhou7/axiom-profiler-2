@@ -29,6 +29,7 @@ pub struct Z3Parser {
     pub(super) stack: Stack,
 
     pub strings: StringTable,
+    pub(super) cg_eqs: Vec<EqualityExpl>,
 }
 
 impl Default for Z3Parser {
@@ -43,6 +44,7 @@ impl Default for Z3Parser {
             egraph: Default::default(),
             stack: Default::default(),
             strings,
+            cg_eqs: Vec::new(),
         }
     }
 }
@@ -341,7 +343,9 @@ impl Z3LogParser for Z3Parser {
                 "cg" => {
                     let arg_eqs = self.gobble_enode_pairs(kind_dependent_info)?;
                     let to = self.parse_existing_enode(l.next().ok_or(Error::UnexpectedNewline)?)?;
-                    EqualityExpl::Congruence { from, arg_eqs, to }
+                    let eq_expl = EqualityExpl::Congruence { from, arg_eqs, to };
+                    self.cg_eqs.push(eq_expl.clone());
+                    eq_expl
                     // For each pair (#A #B), reconstruct dependent equality explanations connecting #A to #B ...
                 }
                 "th" => {
