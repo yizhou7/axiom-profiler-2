@@ -844,20 +844,24 @@ impl InstGraph {
     }
 
     fn compute_instantiation_graph(&mut self, parser: &Z3Parser) {
-        for eq in &parser.cg_eqs {
-            if let EqualityExpl::Congruence { from, arg_eqs, to } = eq {
-                // let eq_node_idx = self.add_eq_node(*from, *to);
-                self.equalities.add_equality(*from, *to);
-                for (lhs, rhs) in arg_eqs.iter() {
-                    // if let Some(_) = self.add_eq_node(*lhs, *rhs) {
-                        self.equalities.add_equality(*lhs, *rhs);
+        for eq in &parser.equalities {
+            match eq {
+                EqualityExpl::Congruence { from, arg_eqs, to } => {
+                    for (lhs, rhs) in arg_eqs.iter() {
                         self.add_eq_edge(EqualityNode::from(*lhs, *rhs), EqualityNode::from(*from, *to));
-                        // if let Some(nx) = eq_node_idx {
-                        //     self.add_eq_edge(EqualityNode::from(*lhs, *rhs), nx);
-                        // }
-                    // }
+                        for (blame_lhs, blame_rhs) in self.equalities.blamed_equalities(lhs, rhs) {
+                            self.add_eq_edge(EqualityNode::from(blame_lhs, blame_rhs), EqualityNode::from(*lhs, *rhs));
+                        }
+                        self.equalities.add_equality(*lhs, *rhs);
+                    }
+                    self.equalities.add_equality(*from, *to);
                 }
+                EqualityExpl::Literal { from, to, .. } => {
+                    self.equalities.add_equality(*from, *to);
+                },
+                _ => {}
             }
+
         }
         for (inst_idx, inst) in parser.insts.insts.iter_enumerated() {
             let match_ = &parser.insts[inst.match_];
