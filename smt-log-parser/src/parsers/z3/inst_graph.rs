@@ -72,7 +72,7 @@ impl Hash for EqualityNode {
 
 impl PartialEq for EqualityNode {
     fn eq(&self, other: &Self) -> bool {
-        self.from == other.from && self.to == other.to
+        (self.from == other.from && self.to == other.to) || (self.from == other.to && self.to == other.from) 
     }
 }
 
@@ -91,11 +91,6 @@ impl EqualityNode {
             from: *from, 
             to: *to, 
         }
-    }
-    fn rev(&self) -> Self {
-        let from = self.from;
-        let to = self.to;
-        EqualityNode::from(&to, &from)
     }
 }
 
@@ -1095,7 +1090,6 @@ impl InstGraph {
             let nx = self.orig_graph.add_node(Node::Equality(eq));
             self.orig_graph[nx].set_orig_graph_idx_to(nx);
             self.node_idx_of_eq.insert(eq, nx);
-            self.node_idx_of_eq.insert(eq.rev(), nx);
             nx
         }
     }
@@ -1106,23 +1100,18 @@ impl InstGraph {
     }
 
     fn add_eq_edge_to_inst(&mut self, eq: EqualityNode, to: InstIdx) {
-        // let (from, to) = (self.node_of_inst_idx[from], self.node_of_inst_idx[to]);
         let to = self.node_of_inst_idx[to];
         let eq_nx = self.add_eq_node(eq);
-        // self.orig_graph.update_edge(from, eq, blame.clone());
         self.orig_graph.update_edge(eq_nx, to, BlameKind::Equality);
     }
 
     fn add_eq_edge_from_inst(&mut self, from: InstIdx, eq: EqualityNode) {
-        // let (from, to) = (self.node_of_inst_idx[from], self.node_of_inst_idx[to]);
         let from = self.node_of_inst_idx[from];
         let eq_nx = self.add_eq_node(eq);
-        // self.orig_graph.update_edge(from, eq, blame.clone());
         self.orig_graph.update_edge(from, eq_nx, BlameKind::Equality);
     }
 
     fn add_eq_edge(&mut self, from: EqualityNode, to: EqualityNode) {
-        // let from = self.node_idx_of_eq.get(&from).unwrap();
         let from_nx = self.add_eq_node(from);
         let to_nx = self.add_eq_node(to);
         self.orig_graph.update_edge(from_nx, to_nx, BlameKind::Equality);
