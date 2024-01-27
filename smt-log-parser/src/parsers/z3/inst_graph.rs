@@ -79,7 +79,7 @@ impl PartialEq for EqualityNode {
 impl Eq for EqualityNode {}
 
 impl EqualityNode {
-    fn from(from: ENodeIdx, to: ENodeIdx) -> Self {
+    fn from(from: &ENodeIdx, to: &ENodeIdx) -> Self {
         EqualityNode { 
             orig_graph_idx: NodeIndex::default(), 
             visible: true, 
@@ -88,14 +88,14 @@ impl EqualityNode {
             min_depth: None, 
             max_depth: 0, 
             topo_ord: 0, 
-            from, 
-            to 
+            from: *from, 
+            to: *to, 
         }
     }
     fn rev(&self) -> Self {
         let from = self.from;
         let to = self.to;
-        EqualityNode::from(to, from)
+        EqualityNode::from(&to, &from)
     }
 }
 
@@ -844,16 +844,30 @@ impl InstGraph {
     }
 
     fn compute_instantiation_graph(&mut self, parser: &Z3Parser) {
+        // add nodes for the [eq-expl] equalities 
+        // since we traverse the equalities in the order they were created, we can 
+        // start constructing the equality graph and blame the previous equalities
+        // When we encounter 
+        // [eq-expl] from cg arg_eqs ; to
+        // we create a nodes for the equality from = to as well as for all the equalities lhs = rhs in arg_eqs
+        // and equality edges from each equality in arg_eqs to from = to. 
+        // We also look up which equalities the equalities in arg_eqs blame and add edges accordingly  
+        // Invariant: the equality graph always contains all cg-equalities which have already been explained
+        // as well as all lit-equalities
+        // The lit-equalities are all created by instantiations and hence we explain them later when we add 
+        // the instantiations to the instantiation graph
         for eq in &parser.equalities {
             match eq {
                 EqualityExpl::Congruence { from, arg_eqs, to } => {
                     for (lhs, rhs) in arg_eqs.iter() {
-                        self.add_eq_edge(EqualityNode::from(*lhs, *rhs), EqualityNode::from(*from, *to));
+                        self.add_eq_edge(EqualityNode::from(lhs, rhs), EqualityNode::from(from, to));
                         for (blame_lhs, blame_rhs) in self.equalities.blamed_equalities(lhs, rhs) {
-                            self.add_eq_edge(EqualityNode::from(blame_lhs, blame_rhs), EqualityNode::from(*lhs, *rhs));
+                            self.add_eq_edge(EqualityNode::from(&blame_lhs, &blame_rhs), EqualityNode::from(lhs, rhs));
                         }
+                        // since we have now explained lhs = rhs we can add it to the equality graph
                         self.equalities.add_equality(*lhs, *rhs);
                     }
+                    // since we have now explained from = to we can add it to the equality graph
                     self.equalities.add_equality(*from, *to);
                 }
                 EqualityExpl::Literal { from, to, .. } => {
@@ -881,54 +895,32 @@ impl InstGraph {
                 max_depth: 0,
                 topo_ord: 0,
             });
-            // then add all edges to previous nodes
+            // then add all edges to previous instantiation nodes 
             for (kind, from) in match_
                 .due_to_terms()
                 .filter_map(|(kind, e)| parser[e].created_by.map(|c| (kind, c)))
             {
                 self.add_edge(from, inst_idx, kind);
             }
-            for (from, to) in &inst.yields_equalities {
-                // if let Some(eq_node_idx) = self.add_eq_node(*from, *to) {
-                    // and equality edges (from, eq_node) and (eq_node, inst_idx)
-                    self.add_eq_edge_from_inst(inst_idx, EqualityNode::from(*from, *to));
-                    self.equalities.add_equality(*from, *to);
-                // }
+            // add all equality edges from this instantiation to the equality-nodes representing 
+            // the equalities this instantiation created 
+            for (from, to) in &inst.yields_equalities 
+            {
+                self.add_eq_edge_from_inst(inst_idx, EqualityNode::from(from, to));
+                // since from = to has now been explained, must add it to the equality-graph
+                self.equalities.add_equality(*from, *to);
             }
             for (from, to) in match_.due_to_equalities() 
             {
-                // if let BlameKind::Equality { eq } = kind {
-                    // here add an equality-node, eq_node
-                    // if let Some(eq_node_idx) = self.add_eq_node(*from, *to) {
-                        // let ctxt = DisplayCtxt {
-                        //     parser,
-
-                        //     display_term_ids: false,
-                        //     display_quantifier_name: false,
-                        //     use_mathematical_symbols: true,
-                        // };
-                        // log!(format!("Adding eq. {} = {} with enode indices {} and {}", from.with(&ctxt), to.with(&ctxt), from, to));
-                        // and equality edges (from, eq_node) and (eq_node, inst_idx)
-                        self.add_eq_edge_to_inst(EqualityNode::from(*from, *to), inst_idx);
-                        // add equality edges from equality nodes to this equality node
-                        for (lhs, rhs) in self.equalities.blamed_equalities(from, to) {
-                            let new_eq = EqualityNode::from(lhs, rhs);
-                            // let ctxt = DisplayCtxt {
-                            //     parser,
-
-                            //     display_term_ids: false,
-                            //     display_quantifier_name: false,
-                            //     use_mathematical_symbols: true,
-                            // };
-                            // log!(format!("Adding eq. ({} = {}) to ({} = {}) with enode indices ({} = {}) and ({} = {})", lhs.with(&ctxt), rhs.with(&ctxt), from.with(&ctxt), to.with(&ctxt), lhs, rhs, from, to));
-                            // self.add_eq_node(new_eq);
-                            self.add_eq_edge(new_eq, EqualityNode::from(*from, *to));
-                        }
-                    self.equalities.add_equality(*from, *to);
-                    // }
-                // at this point, the equality from = to is connected to the yield-equalities 
-                // so we add it to the equalities that are already connected to yield-equalities
-                // }
+                // add equality edges from the blamed equalities obtained in the [new-match] of this instantiation 
+                // to the instantiation node
+                self.add_eq_edge_to_inst(EqualityNode::from(from, to), inst_idx);
+                // must explain the blamed equalities 
+                for (lhs, rhs) in self.equalities.blamed_equalities(from, to) {
+                    self.add_eq_edge(EqualityNode::from(&lhs, &rhs), EqualityNode::from(from, to));
+                }
+                // since from = to has now been explained, must add it to the equality-graph
+                self.equalities.add_equality(*from, *to);
             }
         }
         // precompute number of children and parents of each node
@@ -1345,8 +1337,7 @@ impl EdgeInfoMap {
 }
 
 mod equalities {
-    use petgraph::{algo::dijkstra, visit::IntoNeighborsDirected};
-
+    use petgraph::algo::dijkstra;
     use super::*;
 
     #[derive(Default, Clone)]
@@ -1375,25 +1366,17 @@ mod equalities {
             if let (Some(from), Some(to)) = (self.node_idx_of_weight.get(from), self.node_idx_of_weight.get(to)) {
                 let shortest_path_lengths = dijkstra(&self.graph, *from, Some(*to), |_| 1);
                 let mut curr = *to;
-                // if let Some(curr_dist) = shortest_path_lengths.get(&curr) {
-                    // let mut curr_dist = *curr_dist;
-                    let mut curr_dist = *shortest_path_lengths.get(&curr).unwrap();
-                    while let Some(ref node) = self.graph
-                    .neighbors(curr)
-                    .filter(|nx| if let Some(&dist) = shortest_path_lengths.get(nx) {
-                        dist == curr_dist - 1
-                        } else {
-                            false
-                        }
-                    )
-                    .next() {
-                        let curr_eq = self.graph.node_weight(curr).unwrap();
-                        let node_eq = self.graph.node_weight(*node).unwrap();
-                        blamed_eqs.push((*node_eq, *curr_eq));
-                        curr = node.clone();
-                        curr_dist = curr_dist - 1;
-                    }
-                // } 
+                let mut curr_dist = *shortest_path_lengths.get(&curr).unwrap();
+                while let Some(ref node) = self.graph
+                .neighbors(curr)
+                .filter(|nx| if let Some(&dist) = shortest_path_lengths.get(nx) { dist == curr_dist - 1 } else { false })
+                .next() {
+                    let curr_eq = self.graph.node_weight(curr).unwrap();
+                    let node_eq = self.graph.node_weight(*node).unwrap();
+                    blamed_eqs.push((*node_eq, *curr_eq));
+                    curr = node.clone();
+                    curr_dist = curr_dist - 1;
+                }
             }
             // need to check that the blamed equality is not the same as from = to. 
             // if that's the case we should just return an empty vector
