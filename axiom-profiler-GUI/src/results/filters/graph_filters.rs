@@ -25,6 +25,7 @@ pub enum Filter {
     // SelectNthMatchingLoop(usize),
     ShowMatchingLoopSubgraph,
     IgnoreEqualityNodes,
+    PruneEqualityNodes,
 }
 
 impl Display for Filter {
@@ -76,7 +77,8 @@ impl Display for Filter {
             Self::ShowMatchingLoopSubgraph => {
                 write!(f, "Showing all potential matching loops")
             }
-            Self::IgnoreEqualityNodes => write!(f, "Hiding all equality nodes")
+            Self::IgnoreEqualityNodes => write!(f, "Hiding all equality nodes"),
+            Self::PruneEqualityNodes => write!(f, "Hiding all equality nodes without visible ancestor or descendant that is an instantiation node"),
         }
     }
 }
@@ -104,6 +106,7 @@ impl Filter {
             // Filter::SelectNthMatchingLoop(n) => return FilterOutput::MatchingLoopGeneralizedTerms(graph.show_nth_matching_loop(n, parser)),
             Filter::ShowMatchingLoopSubgraph => graph.show_matching_loop_subgraph(),
             Filter::IgnoreEqualityNodes => graph.hide_equality_nodes(),
+            Filter::PruneEqualityNodes => graph.prune_equality_nodes(),
         }
         FilterOutput::None
     }
@@ -204,6 +207,10 @@ impl Component for GraphFilters {
             let callback = ctx.props().add_filters.clone();
             Callback::from(move |_| callback.emit(vec![Filter::IgnoreEqualityNodes]))
         };
+        let prune_equalities = {
+            let callback = ctx.props().add_filters.clone();
+            Callback::from(move |_| callback.emit(vec![Filter::PruneEqualityNodes]))
+        };
         html! {
             <div>
                 <h2>{"Add (optional) filters:"}</h2>
@@ -244,8 +251,12 @@ impl Component for GraphFilters {
                     <button onclick={add_max_depth_filter}>{"Add"}</button>
                 </div>
                 <div>
-                    <label for="equality_button">{"Ignore equality nodes"}</label>
-                    <button onclick={ignore_equality_nodes} id="equality_button">{"Add"}</button>
+                    <label for="hide_equalities">{"Ignore equality nodes"}</label>
+                    <button onclick={ignore_equality_nodes} id="hide_equalities">{"Add"}</button>
+                </div>
+                <div>
+                    <label for="prune_equalities">{"Prune equality nodes"}</label>
+                    <button onclick={prune_equalities} id="prune_equalities">{"Add"}</button>
                 </div>
                 {if !self.selected_nodes.is_empty() {
                     html! {

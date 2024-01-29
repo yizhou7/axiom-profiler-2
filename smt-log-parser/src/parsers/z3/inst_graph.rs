@@ -2,7 +2,7 @@ use fxhash::{FxHashSet, FxHashMap};
 use gloo_console::log;
 use petgraph::graph::{NodeIndex, UnGraph};
 use petgraph::stable_graph::StableGraph;
-use petgraph::visit::{Bfs, IntoEdgeReferences, Topo, IntoEdges};
+use petgraph::visit::{Bfs, IntoEdgeReferences, IntoEdges, IntoNeighborsDirected, Topo};
 use petgraph::{
     stable_graph::EdgeIndex,
     visit::{Dfs, EdgeRef},
@@ -41,6 +41,8 @@ pub struct InstNode {
     pub min_depth: Option<usize>,
     max_depth: usize,
     topo_ord: usize,
+    has_visible_ancestor: bool,
+    has_visible_descendant: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -54,6 +56,8 @@ pub struct EqualityNode {
     topo_ord: usize,
     from: ENodeIdx,
     to: ENodeIdx,
+    has_visible_ancestor: bool,
+    has_visible_descendant: bool,
 }
 
 impl Hash for EqualityNode {
@@ -90,6 +94,8 @@ impl EqualityNode {
             topo_ord: 0, 
             from: *from, 
             to: *to, 
+            has_visible_ancestor: true,
+            has_visible_descendant: true,
         }
     }
 }
@@ -195,6 +201,18 @@ impl Node {
         match self {
             Node::Inst(inst) => inst.orig_graph_idx = orig_graph_idx,
             Node::Equality(eq) => eq.orig_graph_idx = orig_graph_idx,
+        }
+    }
+    fn has_visible_ancestor(&self) -> bool {
+        match self {
+            Node::Inst(inst) => inst.has_visible_ancestor,
+            Node::Equality(eq) => eq.has_visible_ancestor,
+        }
+    }
+    fn has_visible_descendant(&self) -> bool {
+        match self {
+            Node::Inst(inst) => inst.has_visible_descendant,
+            Node::Equality(eq) => eq.has_visible_descendant,
         }
     }
 }
@@ -323,15 +341,6 @@ impl InstGraph {
                 }
             }
         }
-        // for nx in self.orig_graph.node_indices() {
-        //     let parent_count = self.orig_graph.neighbors_directed(nx, Incoming).filter(|p| self.orig_graph[*p].visible()).count();
-        //     let child_count = self.orig_graph.neighbors_directed(nx, Outgoing).filter(|p| self.orig_graph[*p].visible()).count();
-        //     if let Some(Node::Equality(eq)) = self.orig_graph.node_weight_mut(nx) {
-        //         if parent_count == 0 || child_count == 0 {
-        //             eq.visible = false;
-        //         }
-        //     }
-        // }
     }
 
     pub fn hide_equality_nodes(&mut self) {
@@ -339,6 +348,54 @@ impl InstGraph {
             if let Node::Equality(eq) = node {
                 eq.visible = false;
             }
+        }
+    }
+
+    pub fn prune_equality_nodes(&mut self) {
+        let mut new_inst_graph = self.orig_graph.filter_map(
+            |_, node| Some(node).filter(|node| node.visible()).cloned(),
+            |orig_graph_idx, edge_data| {
+                Some(EdgeType::Direct {
+                    kind: edge_data.clone(),
+                    orig_graph_idx,
+                })
+            },
+        );
+        let mut topo = Topo::new(&new_inst_graph);
+        while let Some(nx) = topo.next(&new_inst_graph) {
+            let any_parent_has_visible_ancestor = new_inst_graph
+                .neighbors_directed(nx, Incoming)
+                .map(|nx| new_inst_graph.node_weight(nx).unwrap())
+                .any(|parent| parent.has_visible_ancestor());
+            let curr = new_inst_graph.node_weight_mut(nx).unwrap();
+            match curr {
+                Node::Inst(inst) => {
+                    inst.has_visible_ancestor = true;
+                },
+                Node::Equality(eq) => {
+                    eq.has_visible_ancestor = any_parent_has_visible_ancestor;
+                },
+            }
+        }
+        let mut rev_topo = Topo::new(petgraph::visit::Reversed(&new_inst_graph));
+        while let Some(nx) = rev_topo.next(&petgraph::visit::Reversed(&new_inst_graph)) {
+            let any_child_has_visible_descendant = new_inst_graph
+                .neighbors_directed(nx, Outgoing)
+                .map(|nx| new_inst_graph.node_weight(nx).unwrap())
+                .any(|child| child.has_visible_descendant());
+            let curr = new_inst_graph.node_weight_mut(nx).unwrap();
+            match curr {
+                Node::Inst(inst) => {
+                    inst.has_visible_descendant = true;
+                },
+                Node::Equality(eq) => {
+                    eq.has_visible_descendant = any_child_has_visible_descendant;
+                },
+            }
+        }
+        for node in new_inst_graph.node_weights_mut() {
+            let orig_nx = node.orig_graph_idx();
+            self.orig_graph[orig_nx].set_visibility_to(node.has_visible_ancestor() && node.has_visible_descendant());
         }
     }
 
@@ -889,6 +946,8 @@ impl InstGraph {
                 min_depth: None,
                 max_depth: 0,
                 topo_ord: 0,
+                has_visible_ancestor: true,
+                has_visible_descendant: true,
             });
             // then add all edges to previous instantiation nodes 
             for (kind, from) in match_
