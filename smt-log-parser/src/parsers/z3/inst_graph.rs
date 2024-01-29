@@ -393,7 +393,7 @@ impl InstGraph {
                 },
             }
         }
-        for node in new_inst_graph.node_weights_mut() {
+        for node in new_inst_graph.node_weights() {
             let orig_nx = node.orig_graph_idx();
             self.orig_graph[orig_nx].set_visibility_to(node.has_visible_ancestor() && node.has_visible_descendant());
         }
