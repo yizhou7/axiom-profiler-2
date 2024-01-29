@@ -133,7 +133,9 @@ impl EGraph {
     }
 
     pub fn blame_equalities(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, blamed: &mut Vec<(ENodeIdx, ENodeIdx)>, can_mismatch: impl Fn() -> bool) -> Result<()> {
-        blamed.push((from, to));
+        if from != to {
+            blamed.push((from, to));
+        }
         // for eq in self.get_equalities(from, to, stack, can_mismatch)? {
         //     // TODO: figure out if this is all the blames we need.
         //     match eq {

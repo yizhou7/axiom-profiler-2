@@ -669,7 +669,7 @@ impl InstGraph {
         let mut matching_loop_nodes_per_quant: Vec<FxHashSet<NodeIndex>> = Vec::new();
         log!(format!("Start processing quants"));
         for quant in quants {
-            log!(format!("Processing quant {}", quant));
+            // log!(format!("Processing quant {}", quant));
             self.reset_visibility_to(true);
             self.retain_nodes(|node| {
                 node.mkind
@@ -1109,7 +1109,7 @@ impl InstGraph {
     fn add_inst_node(&mut self, node_data: InstNode) {
         let inst_idx = node_data.inst_idx;
         let node = self.orig_graph.add_node(Node::Inst(node_data));
-        log!(format!("Processing inst with node index {}", node.index()));
+        // log!(format!("Processing inst with node index {}", node.index()));
         let ins_idx = self.node_of_inst_idx.push_and_get_key(node);
         assert_eq!(ins_idx, inst_idx);
         // store original node-index in each node
@@ -1414,16 +1414,18 @@ mod equalities {
             if let (Some(from), Some(to)) = (self.node_idx_of_weight.get(from), self.node_idx_of_weight.get(to)) {
                 let shortest_path_lengths = dijkstra(&self.graph, *from, Some(*to), |_| 1);
                 let mut curr = *to;
-                let mut curr_dist = *shortest_path_lengths.get(&curr).unwrap();
-                while let Some(ref node) = self.graph
-                .neighbors(curr)
-                .filter(|nx| if let Some(&dist) = shortest_path_lengths.get(nx) { dist == curr_dist - 1 } else { false })
-                .next() {
-                    let curr_eq = self.graph.node_weight(curr).unwrap();
-                    let node_eq = self.graph.node_weight(*node).unwrap();
-                    blamed_eqs.push((*node_eq, *curr_eq));
-                    curr = node.clone();
-                    curr_dist = curr_dist - 1;
+                if let Some(dist) = shortest_path_lengths.get(&curr) {
+                    let mut curr_dist = *dist;
+                    while let Some(ref node) = self.graph
+                    .neighbors(curr)
+                    .filter(|nx| if let Some(&dist) = shortest_path_lengths.get(nx) { dist == curr_dist - 1 } else { false })
+                    .next() {
+                        let curr_eq = self.graph.node_weight(curr).unwrap();
+                        let node_eq = self.graph.node_weight(*node).unwrap();
+                        blamed_eqs.push((*node_eq, *curr_eq));
+                        curr = node.clone();
+                        curr_dist = curr_dist - 1;
+                    }
                 }
             }
             // need to check that the blamed equality is not the same as from = to. 
