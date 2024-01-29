@@ -26,6 +26,7 @@ pub enum Filter {
     ShowMatchingLoopSubgraph,
     IgnoreEqualityNodes,
     PruneEqualityNodes,
+    IgnoreChainEqualityNodes,
 }
 
 impl Display for Filter {
@@ -79,6 +80,7 @@ impl Display for Filter {
             }
             Self::IgnoreEqualityNodes => write!(f, "Hiding all equality nodes"),
             Self::PruneEqualityNodes => write!(f, "Hiding all equality nodes without visible ancestor or descendant that is an instantiation node"),
+            Self::IgnoreChainEqualityNodes => write!(f, "Hiding all equality nodes with exactly one child and one parent"),
         }
     }
 }
@@ -107,6 +109,7 @@ impl Filter {
             Filter::ShowMatchingLoopSubgraph => graph.show_matching_loop_subgraph(),
             Filter::IgnoreEqualityNodes => graph.hide_equality_nodes(),
             Filter::PruneEqualityNodes => graph.prune_equality_nodes(),
+            Filter::IgnoreChainEqualityNodes => graph.ignore_chain_equality_nodes(),
         }
         FilterOutput::None
     }
@@ -211,6 +214,10 @@ impl Component for GraphFilters {
             let callback = ctx.props().add_filters.clone();
             Callback::from(move |_| callback.emit(vec![Filter::PruneEqualityNodes]))
         };
+        let ignore_chain_equalities = {
+            let callback = ctx.props().add_filters.clone();
+            Callback::from(move |_| callback.emit(vec![Filter::IgnoreChainEqualityNodes]))
+        };
         html! {
             <div>
                 <h2>{"Add (optional) filters:"}</h2>
@@ -257,6 +264,10 @@ impl Component for GraphFilters {
                 <div>
                     <label for="prune_equalities">{"Prune equality nodes"}</label>
                     <button onclick={prune_equalities} id="prune_equalities">{"Add"}</button>
+                </div>
+                <div>
+                    <label for="ignore_chain_equalities">{"Ignore chain equality nodes"}</label>
+                    <button onclick={ignore_chain_equalities} id="ignore_chain_equalities">{"Add"}</button>
                 </div>
                 {if !self.selected_nodes.is_empty() {
                     html! {
