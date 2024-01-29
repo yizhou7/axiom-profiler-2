@@ -399,6 +399,28 @@ impl InstGraph {
         }
     }
 
+    pub fn ignore_chain_equality_nodes(&mut self) {
+        let new_inst_graph = self.orig_graph.filter_map(
+        |_, node| Some(node).filter(|node| node.visible()).cloned(),
+        |orig_graph_idx, edge_data| {
+            Some(EdgeType::Direct {
+                kind: edge_data.clone(),
+                orig_graph_idx,
+            })},
+        );
+        for nx in new_inst_graph.node_indices() {
+            if let Node::Equality(_) = new_inst_graph[nx] {
+                let parent_count = new_inst_graph.neighbors_directed(nx, Incoming).count(); 
+                let child_count = new_inst_graph.neighbors_directed(nx, Outgoing).count(); 
+                if parent_count == 1 && child_count == 1 {
+                    let orig_idx = new_inst_graph.node_weight(nx).unwrap().orig_graph_idx();
+                    self.orig_graph[orig_idx].set_visibility_to(false);
+                }
+            }
+
+        }
+    }
+
     pub fn retain_visible_nodes_and_reconnect(&mut self) -> VisibleGraphInfo {
         let prev_node_count = self.visible_graph.node_count();
         let prev_edge_count = self.visible_graph.edge_count();
