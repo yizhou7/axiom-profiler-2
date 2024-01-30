@@ -339,14 +339,14 @@ impl Z3LogParser for Z3Parser {
                     Self::expect_completed(kind_dependent_info)?;
                     let to = self.parse_existing_enode(l.next().ok_or(Error::UnexpectedNewline)?)?;
                     let eq_expl = EqualityExpl::Literal { from, eq, to };
-                    self.equalities.push(eq_expl.clone());
+                    // self.equalities.push(eq_expl.clone());
                     eq_expl
                 }
                 "cg" => {
                     let arg_eqs = self.gobble_enode_pairs(kind_dependent_info)?;
                     let to = self.parse_existing_enode(l.next().ok_or(Error::UnexpectedNewline)?)?;
                     let eq_expl = EqualityExpl::Congruence { from, arg_eqs, to };
-                    self.equalities.push(eq_expl.clone());
+                    // self.equalities.push(eq_expl.clone());
                     eq_expl
                     // For each pair (#A #B), reconstruct dependent equality explanations connecting #A to #B ...
                 }
@@ -375,6 +375,7 @@ impl Z3LogParser for Z3Parser {
                 }
             }
         };
+        self.equalities.push(eq_expl.clone());
         // Return if there is unexpectedly more data
         Self::expect_completed(l)?;
 

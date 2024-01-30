@@ -947,6 +947,15 @@ impl InstGraph {
                 EqualityExpl::Literal { from, to, .. } => {
                     self.equalities.add_equality(*from, *to);
                 },
+                EqualityExpl::Theory { from, to, .. } => {
+                    self.equalities.add_equality(*from, *to);
+                },
+                EqualityExpl::Axiom { from, to } => {
+                    self.equalities.add_equality(*from, *to);
+                },
+                EqualityExpl::Unknown { from, to, .. } => {
+                    self.equalities.add_equality(*from, *to);
+                },
                 _ => {}
             }
 
@@ -1436,18 +1445,16 @@ mod equalities {
             if let (Some(from), Some(to)) = (self.node_idx_of_weight.get(from), self.node_idx_of_weight.get(to)) {
                 let shortest_path_lengths = dijkstra(&self.graph, *from, Some(*to), |_| 1);
                 let mut curr = *to;
-                if let Some(dist) = shortest_path_lengths.get(&curr) {
-                    let mut curr_dist = *dist;
-                    while let Some(ref node) = self.graph
-                    .neighbors(curr)
-                    .filter(|nx| if let Some(&dist) = shortest_path_lengths.get(nx) { dist == curr_dist - 1 } else { false })
-                    .next() {
-                        let curr_eq = self.graph.node_weight(curr).unwrap();
-                        let node_eq = self.graph.node_weight(*node).unwrap();
-                        blamed_eqs.push((*node_eq, *curr_eq));
-                        curr = node.clone();
-                        curr_dist = curr_dist - 1;
-                    }
+                let mut curr_dist = *shortest_path_lengths.get(&curr).unwrap();
+                while let Some(ref node) = self.graph
+                .neighbors(curr)
+                .filter(|nx| if let Some(&dist) = shortest_path_lengths.get(nx) { dist == curr_dist - 1 } else { false })
+                .next() {
+                    let curr_eq = self.graph.node_weight(curr).unwrap();
+                    let node_eq = self.graph.node_weight(*node).unwrap();
+                    blamed_eqs.push((*node_eq, *curr_eq));
+                    curr = node.clone();
+                    curr_dist = curr_dist - 1;
                 }
             }
             // need to check that the blamed equality is not the same as from = to. 
