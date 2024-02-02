@@ -17,8 +17,9 @@ use typed_index_collections::TiVec;
 
 use crate::display_with::{DisplayCtxt, DisplayWithCtxt};
 use crate::items::{BlameKind, ENodeIdx, EqualityExpl, Fingerprint, InstIdx, MatchKind, QuantIdx, Term, TermIdx, TermKind};
+use crate::parsers::z3::egraph::{LeafEquality, NodeEquality};
 
-use self::equalities::EqualityGraph;
+// use self::equalities::EqualityGraph;
 
 use super::terms::Terms;
 use super::z3parser::Z3Parser;
@@ -278,7 +279,7 @@ impl fmt::Debug for EdgeType {
 #[derive(Default, Clone)]
 pub struct InstGraph {
     orig_graph: Graph<Node, BlameKind>,
-    equalities: EqualityGraph,
+    // equalities: EqualityGraph,
     pub visible_graph: Graph<Node, EdgeType>,
     node_of_inst_idx: TiVec<InstIdx, NodeIndex>,
     cost_ranked_node_indices: Vec<NodeIndex>,
@@ -930,36 +931,36 @@ impl InstGraph {
         // as well as all lit-equalities
         // The lit-equalities are all created by instantiations and hence we explain them later when we add 
         // the instantiations to the instantiation graph
-        for eq in &parser.equalities {
-            match eq {
-                EqualityExpl::Congruence { from, arg_eqs, to } => {
-                    for (lhs, rhs) in arg_eqs.iter() {
-                        self.add_eq_edge(EqualityNode::from(lhs, rhs), EqualityNode::from(from, to));
-                        for (blame_lhs, blame_rhs) in self.equalities.blamed_equalities(lhs, rhs) {
-                            self.add_eq_edge(EqualityNode::from(&blame_lhs, &blame_rhs), EqualityNode::from(lhs, rhs));
-                        }
-                        // since we have now explained lhs = rhs we can add it to the equality graph
-                        self.equalities.add_equality(*lhs, *rhs);
-                    }
-                    // since we have now explained from = to we can add it to the equality graph
-                    self.equalities.add_equality(*from, *to);
-                }
-                EqualityExpl::Literal { from, to, .. } => {
-                    self.equalities.add_equality(*from, *to);
-                },
-                EqualityExpl::Theory { from, to, .. } => {
-                    self.equalities.add_equality(*from, *to);
-                },
-                EqualityExpl::Axiom { from, to } => {
-                    self.equalities.add_equality(*from, *to);
-                },
-                EqualityExpl::Unknown { from, to, .. } => {
-                    self.equalities.add_equality(*from, *to);
-                },
-                _ => {}
-            }
+        // for eq in &parser.equalities {
+        //     match eq {
+        //         EqualityExpl::Congruence { from, arg_eqs, to } => {
+        //             for (lhs, rhs) in arg_eqs.iter() {
+        //                 self.add_eq_edge(EqualityNode::from(lhs, rhs), EqualityNode::from(from, to));
+        //                 for (blame_lhs, blame_rhs) in self.equalities.blamed_equalities(lhs, rhs) {
+        //                     self.add_eq_edge(EqualityNode::from(&blame_lhs, &blame_rhs), EqualityNode::from(lhs, rhs));
+        //                 }
+        //                 // since we have now explained lhs = rhs we can add it to the equality graph
+        //                 self.equalities.add_equality(*lhs, *rhs);
+        //             }
+        //             // since we have now explained from = to we can add it to the equality graph
+        //             self.equalities.add_equality(*from, *to);
+        //         }
+        //         EqualityExpl::Literal { from, to, .. } => {
+        //             self.equalities.add_equality(*from, *to);
+        //         },
+        //         EqualityExpl::Theory { from, to, .. } => {
+        //             self.equalities.add_equality(*from, *to);
+        //         },
+        //         EqualityExpl::Axiom { from, to } => {
+        //             self.equalities.add_equality(*from, *to);
+        //         },
+        //         EqualityExpl::Unknown { from, to, .. } => {
+        //             self.equalities.add_equality(*from, *to);
+        //         },
+        //         _ => {}
+        //     }
 
-        }
+        // }
         for (inst_idx, inst) in parser.insts.insts.iter_enumerated() {
             let match_ = &parser.insts[inst.match_];
             // add new node to graph
@@ -993,19 +994,28 @@ impl InstGraph {
             {
                 self.add_eq_edge_from_inst(inst_idx, EqualityNode::from(from, to));
                 // since from = to has now been explained, must add it to the equality-graph
-                self.equalities.add_equality(*from, *to);
+                // self.equalities.add_equality(*from, *to);
             }
-            for (from, to) in match_.due_to_equalities() 
+            for eq in match_.due_to_equalities() 
             {
+                match eq {
+                    NodeEquality::Leaf(LeafEquality(lhs, rhs)) => self.add_eq_edge_to_inst(EqualityNode::from(lhs, rhs), inst_idx),
+                    NodeEquality::Node(lhs, rhs, eqs) => {
+                        self.add_eq_edge_to_inst(EqualityNode::from(lhs, rhs), inst_idx);
+                        for eq in eqs {
+                            self.add_equalities(lhs, rhs, eq);
+                        }
+                    }
+                }
                 // add equality edges from the blamed equalities obtained in the [new-match] of this instantiation 
                 // to the instantiation node
-                self.add_eq_edge_to_inst(EqualityNode::from(from, to), inst_idx);
-                // must explain the blamed equalities 
-                for (lhs, rhs) in self.equalities.blamed_equalities(from, to) {
-                    self.add_eq_edge(EqualityNode::from(&lhs, &rhs), EqualityNode::from(from, to));
-                }
-                // since from = to has now been explained, must add it to the equality-graph
-                self.equalities.add_equality(*from, *to);
+                // self.add_eq_edge_to_inst(EqualityNode::from(from, to), inst_idx);
+                // // must explain the blamed equalities 
+                // for (lhs, rhs) in self.equalities.blamed_equalities(from, to) {
+                //     self.add_eq_edge(EqualityNode::from(&lhs, &rhs), EqualityNode::from(from, to));
+                // }
+                // // since from = to has now been explained, must add it to the equality-graph
+                // self.equalities.add_equality(*from, *to);
             }
         }
         // precompute number of children and parents of each node
@@ -1135,6 +1145,18 @@ impl InstGraph {
                 orig_graph_idx,
             },
         )
+    }
+
+    fn add_equalities(&mut self, child_from: &ENodeIdx, child_to: &ENodeIdx, curr: &NodeEquality) {
+        match curr {
+            NodeEquality::Leaf(LeafEquality(lhs, rhs)) => self.add_eq_edge(EqualityNode::from(&lhs, &rhs), EqualityNode::from(&child_from, &child_to)),
+            NodeEquality::Node(lhs, rhs, parent_eqs) => {
+                self.add_eq_edge(EqualityNode::from(&lhs, &rhs), EqualityNode::from(child_from, child_to));
+                for parent_eq in parent_eqs {
+                    self.add_equalities(&lhs, &rhs, parent_eq);
+                }
+            },
+        }
     }
 
     fn add_inst_node(&mut self, node_data: InstNode) {
@@ -1344,7 +1366,7 @@ impl NodeInfoMap {
                 blamed_terms: pretty_blamed_terms,
                 equality_expls: match_
                     .due_to_equalities()
-                    .map(|(from, to)| format!("{} = {}", from.with(&ctxt).to_string(), to.with(&ctxt).to_string()))
+                    .map(|eq| format!("{} = {}", eq.from().with(&ctxt).to_string(), eq.to().with(&ctxt).to_string()))
                     .collect(),
                 dep_instantiations: Vec::new(),
                 node_index: NodeIndex::new(node_index),
@@ -1415,55 +1437,55 @@ impl EdgeInfoMap {
     }
 }
 
-mod equalities {
-    use petgraph::algo::dijkstra;
-    use super::*;
+// mod equalities {
+//     use petgraph::algo::dijkstra;
+//     use super::*;
 
-    #[derive(Default, Clone)]
-    pub struct EqualityGraph {
-        graph: UnGraph<ENodeIdx, ()>,
-        node_idx_of_weight: FxHashMap<ENodeIdx, NodeIndex>,
-    }
+//     #[derive(Default, Clone)]
+//     pub struct EqualityGraph {
+//         graph: UnGraph<ENodeIdx, ()>,
+//         node_idx_of_weight: FxHashMap<ENodeIdx, NodeIndex>,
+//     }
 
-    impl EqualityGraph {
-        fn add_node(&mut self, weight: ENodeIdx) -> NodeIndex {
-            if let Some(idx) = self.node_idx_of_weight.get(&weight) {
-                *idx
-            } else {
-                let nx = self.graph.add_node(weight);
-                self.node_idx_of_weight.insert(weight, nx);
-                nx
-            }
-        }
-        pub fn add_equality(&mut self, from: ENodeIdx, to: ENodeIdx) {
-            let from_idx = self.add_node(from);
-            let to_idx = self.add_node(to);
-            self.graph.update_edge(from_idx, to_idx, ());
-        }
-        pub fn blamed_equalities(&mut self, from: &ENodeIdx, to: &ENodeIdx) -> Vec<(ENodeIdx, ENodeIdx)> {
-            let mut blamed_eqs = Vec::new();
-            if let (Some(from), Some(to)) = (self.node_idx_of_weight.get(from), self.node_idx_of_weight.get(to)) {
-                let shortest_path_lengths = dijkstra(&self.graph, *from, Some(*to), |_| 1);
-                let mut curr = *to;
-                let mut curr_dist = *shortest_path_lengths.get(&curr).unwrap();
-                while let Some(ref node) = self.graph
-                .neighbors(curr)
-                .filter(|nx| if let Some(&dist) = shortest_path_lengths.get(nx) { dist == curr_dist - 1 } else { false })
-                .next() {
-                    let curr_eq = self.graph.node_weight(curr).unwrap();
-                    let node_eq = self.graph.node_weight(*node).unwrap();
-                    blamed_eqs.push((*node_eq, *curr_eq));
-                    curr = node.clone();
-                    curr_dist = curr_dist - 1;
-                }
-            }
-            // need to check that the blamed equality is not the same as from = to. 
-            // if that's the case we should just return an empty vector
-            if blamed_eqs.len() > 1 {
-                blamed_eqs
-            } else {
-                vec![]
-            }
-        }
-    }
-}
+//     impl EqualityGraph {
+//         fn add_node(&mut self, weight: ENodeIdx) -> NodeIndex {
+//             if let Some(idx) = self.node_idx_of_weight.get(&weight) {
+//                 *idx
+//             } else {
+//                 let nx = self.graph.add_node(weight);
+//                 self.node_idx_of_weight.insert(weight, nx);
+//                 nx
+//             }
+//         }
+//         pub fn add_equality(&mut self, from: ENodeIdx, to: ENodeIdx) {
+//             let from_idx = self.add_node(from);
+//             let to_idx = self.add_node(to);
+//             self.graph.update_edge(from_idx, to_idx, ());
+//         }
+//         pub fn blamed_equalities(&mut self, from: &ENodeIdx, to: &ENodeIdx) -> Vec<(ENodeIdx, ENodeIdx)> {
+//             let mut blamed_eqs = Vec::new();
+//             if let (Some(from), Some(to)) = (self.node_idx_of_weight.get(from), self.node_idx_of_weight.get(to)) {
+//                 let shortest_path_lengths = dijkstra(&self.graph, *from, Some(*to), |_| 1);
+//                 let mut curr = *to;
+//                 let mut curr_dist = *shortest_path_lengths.get(&curr).unwrap();
+//                 while let Some(ref node) = self.graph
+//                 .neighbors(curr)
+//                 .filter(|nx| if let Some(&dist) = shortest_path_lengths.get(nx) { dist == curr_dist - 1 } else { false })
+//                 .next() {
+//                     let curr_eq = self.graph.node_weight(curr).unwrap();
+//                     let node_eq = self.graph.node_weight(*node).unwrap();
+//                     blamed_eqs.push((*node_eq, *curr_eq));
+//                     curr = node.clone();
+//                     curr_dist = curr_dist - 1;
+//                 }
+//             }
+//             // need to check that the blamed equality is not the same as from = to. 
+//             // if that's the case we should just return an empty vector
+//             if blamed_eqs.len() > 1 {
+//                 blamed_eqs
+//             } else {
+//                 vec![]
+//             }
+//         }
+//     }
+// }

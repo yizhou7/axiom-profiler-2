@@ -188,6 +188,10 @@ impl Component for SVGResult {
                     node_count_decreased,
                     edge_count_decreased,
                 } = self.inst_graph.retain_visible_nodes_and_reconnect();
+                // let node_count: usize = 0;
+                // let edge_count: usize = 0;
+                // let node_count_decreased = true;
+                // let edge_count_decreased = true;
                 log::debug!("The current node count is {}", node_count);
                 self.graph_dim.node_count = node_count;
                 self.graph_dim.edge_count = edge_count;

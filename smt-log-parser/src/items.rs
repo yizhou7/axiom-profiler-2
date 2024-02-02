@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt;
 use std::num::{NonZeroU32, NonZeroUsize};
+use crate::parsers::z3::egraph::NodeEquality;
 use crate::{Result, Error};
 
 pub type StringTable = lasso::Rodeo<lasso::Spur, fxhash::FxBuildHasher>;
@@ -200,7 +201,7 @@ impl Instantiation {
 pub struct Match {
     pub kind: MatchKind,
     pub blamed: Box<[BlameKind]>,
-    pub blamed_eqs: Vec<(ENodeIdx, ENodeIdx)>,
+    pub blamed_eqs: Vec<NodeEquality>,
 }
 
 impl Match {
@@ -215,7 +216,7 @@ impl Match {
             _ => None,
         })
     }
-    pub fn due_to_equalities(&self) -> impl Iterator<Item = &(ENodeIdx, ENodeIdx)> + '_ {
+    pub fn due_to_equalities(&self) -> impl Iterator<Item = &NodeEquality> + '_ {
         self.blamed_eqs.iter()
         // self.blamed.iter().filter_map(|x| match x {
         //     // BlameKind::Equality { eq } => Some(*eq),

@@ -1,4 +1,5 @@
 use fxhash::FxHashMap;
+use serde::{Deserialize, Serialize};
 use typed_index_collections::TiVec;
 
 use crate::{
@@ -112,16 +113,17 @@ impl EGraph {
         path
     }
 
-    pub fn get_equalities<'a: 'b, 'b>(&'a self, from: ENodeIdx, to: ENodeIdx, stack: &'b Stack, can_mismatch: impl Fn() -> bool) -> Result<impl Iterator<Item = &'a EqualityExpl> + 'b> {
+    // pub fn get_equalities<'a: 'b, 'b>(&'a self, from: ENodeIdx, to: ENodeIdx, stack: &'b Stack, can_mismatch: Box<dyn Fn() -> bool>) -> Result<impl Iterator<Item = &'a EqualityExpl> + 'b> {
+    pub fn get_equalities<'a: 'b, 'b>(&'a self, from: ENodeIdx, to: ENodeIdx, stack: &'b Stack) -> impl Iterator<Item = &'a EqualityExpl> + 'b {
         let f_path = self.path_to_root(from, stack, 0);
         let t_path = self.path_to_root(to, stack, 0);
         let mut shared = 1;
         if f_path[0] != t_path[0] {
             // Root may not always be the same from v4.12.3 onwards if `to` is an `ite` expression. See:
             // https://github.com/Z3Prover/z3/commit/faf14012ba18d21c1fcddbdc321ac127f019fa03#diff-0a9ec50ded668e51578edc67ecfe32380336b9cbf12c5d297e2d3759a7a39847R2417-R2419
-            if !can_mismatch() {
-                return Err(Error::EnodeRootMismatch(from, to));
-            }
+            // if !can_mismatch() {
+            //     return Err(Error::EnodeRootMismatch(from, to));
+            // }
             // Return an empty iterator if the roots are different.
             shared = f_path.len().max(t_path.len());
         }
@@ -129,13 +131,38 @@ impl EGraph {
             shared += 1;
         }
         let all = f_path.into_iter().skip(shared).rev().chain(t_path.into_iter().skip(shared));
-        Ok(all.map(|idx| &self.enodes[idx].get_equality(stack).unwrap().expl))
+        all.map(|idx| &self.enodes[idx].get_equality(stack).unwrap().expl)
     }
 
-    pub fn blame_equalities(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, blamed: &mut Vec<(ENodeIdx, ENodeIdx)>, can_mismatch: impl Fn() -> bool) -> Result<()> {
-        if from != to {
-            blamed.push((from, to));
+    fn explain_eq<'a: 'b, 'b>(&'a self, eq: EqualityExpl, stack: &'b Stack) -> Result<NodeEquality> {
+        match eq {
+            EqualityExpl::Congruence { from, arg_eqs, to } => {
+                let mut inner_eqs = Vec::new();
+                for (lhs, rhs) in arg_eqs.iter() {
+                    for eq_expl in self.get_equalities(*lhs, *rhs, stack) {
+                        let expl = self.explain_eq(eq_expl.clone(), stack)?;
+                        inner_eqs.push(expl);
+                    }
+                };
+                Ok(NodeEquality::Node(from, to, inner_eqs))
+            },
+            _ => Ok(NodeEquality::Leaf(LeafEquality(eq.from(), eq.to())))
         }
+    }
+
+    pub fn blame_equalities(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, blamed: &mut Vec<NodeEquality>, can_mismatch: impl Fn() -> bool) -> Result<()> {
+        if from != to {
+            let mut inner_eqs = Vec::new();
+            for eq_expl in self.get_equalities(from, to, stack).skip(1) {
+                let expl = self.explain_eq(eq_expl.clone(), stack)?;
+                inner_eqs.push(expl);
+            }
+            blamed.push(NodeEquality::Node(from, to, inner_eqs));
+        }
+
+        // if from != to {
+        //     blamed.push((from, to));
+        // }
         // for eq in self.get_equalities(from, to, stack, can_mismatch)? {
         //     // TODO: figure out if this is all the blames we need.
         //     match eq {
@@ -188,4 +215,28 @@ pub struct Equality {
     _frame: Option<StackIdx>,
     pub to: ENodeIdx,
     pub expl: EqualityExpl,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LeafEquality(pub ENodeIdx, pub ENodeIdx);
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum NodeEquality {
+    Leaf(LeafEquality),
+    Node(ENodeIdx, ENodeIdx, Vec<NodeEquality>),
+}
+
+impl NodeEquality {
+    pub fn from(&self) -> ENodeIdx {
+        match self {
+            NodeEquality::Leaf(LeafEquality(from, _)) => *from,
+            NodeEquality::Node(from, _, _) => *from,
+        }
+    }
+    pub fn to(&self) -> ENodeIdx {
+        match self {
+            NodeEquality::Leaf(LeafEquality(_, to)) => *to,
+            NodeEquality::Node(_, to, _) => *to,
+        }
+    }
 }
