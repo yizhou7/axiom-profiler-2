@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 
 use fxhash::FxHashMap;
+use petgraph::graph::Node;
 use serde::{Deserialize, Serialize};
 use typed_index_collections::TiVec;
 
@@ -150,7 +151,7 @@ impl EGraph {
         }
         // next time, the e-graph might have updated equalities and hence we forget the current state of the equality-graph (except for the synthetic edges)
         let shortest_path = self.equalities.borrow_mut().find_shortest_path(&from, &to);
-        self.equalities.borrow_mut().remove_eqs(added_eqs);
+        // self.equalities.borrow_mut().remove_eqs(added_eqs);
         shortest_path
     }
 
@@ -175,13 +176,22 @@ impl EGraph {
 
     pub fn blame_equalities(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, blamed: &mut Vec<NodeEquality>, can_mismatch: impl Fn() -> bool) -> Result<()> {
         if from != to {
-            let mut inner_eqs = Vec::new();
-            // for eq_expl in self.get_equalities(from, to, stack).skip(1) {
-            for eq_expl in self.get_shortest_path(from, to, stack).iter() {
-                let expl = self.explain_eq(eq_expl.clone(), stack)?;
-                inner_eqs.push(expl);
+            let eq_expls = self.get_shortest_path(from, to, stack);
+            if eq_expls.len() == 1 {
+                blamed.push(NodeEquality::Leaf(LeafEquality(from, to)));
+            } else {
+                let mut inner_eqs = Vec::new();
+                for eq_expl in eq_expls {
+                    let expl = self.explain_eq(eq_expl.clone(), stack)?;
+                    inner_eqs.push(expl);
+                }
+                blamed.push(NodeEquality::Node(from, to, inner_eqs));
             }
-            blamed.push(NodeEquality::Node(from, to, inner_eqs));
+            // for eq_expl in self.get_shortest_path(from, to, stack).iter() {
+            //     let expl = self.explain_eq(eq_expl.clone(), stack)?;
+            //     inner_eqs.push(expl);
+            // }
+            // blamed.push(NodeEquality::Node(from, to, inner_eqs));
         }
         // after this new-match, we want to be able to blame this "synthetic" equality 
         self.equalities.borrow_mut().add_equality(from, to, EqualityExpl::Synthetic { from, to });
@@ -326,12 +336,13 @@ mod equalities {
                     curr_dist = curr_dist - 1;
                 }
             }
-            if blamed_eqs.len() > 1 {
-                blamed_eqs.reverse();
-                blamed_eqs
-            } else {
-                vec![]
-            }
+            blamed_eqs
+            // if blamed_eqs.len() > 1 {
+            //     blamed_eqs.reverse();
+            //     blamed_eqs
+            // } else {
+            //     vec![]
+            // }
             // need to check that the blamed equality is not the same as from = to. 
             // if that's the case we should just return an empty vector
             // if blamed_eqs.len() > 1 {
