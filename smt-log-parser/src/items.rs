@@ -1,7 +1,7 @@
 use fxhash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::fmt;
+use std::fmt::{self, Display};
 use std::num::{NonZeroU32, NonZeroUsize};
 use crate::parsers::z3::egraph::NodeEquality;
 use crate::{Result, Error};
@@ -459,6 +459,10 @@ pub enum EqualityExpl {
         args: Box<[IString]>,
         to: ENodeIdx,
     },
+    Synthetic {
+        from: ENodeIdx,
+        to: ENodeIdx,
+    }
 }
 
 impl EqualityExpl {
@@ -470,7 +474,8 @@ impl EqualityExpl {
             | Congruence { from, .. }
             | Theory { from, .. }
             | Axiom { from, .. }
-            | Unknown { from, .. } => from,
+            | Unknown { from, .. } 
+            | Synthetic { from, .. } => from,
         }
     }
     pub fn to(&self) -> ENodeIdx {
@@ -481,7 +486,8 @@ impl EqualityExpl {
             | Congruence { to, .. }
             | Theory { to, .. }
             | Axiom { to, .. }
-            | Unknown { to, .. } => to,
+            | Unknown { to, .. }
+            | Synthetic { to, .. } => to,
         }
     }
     pub fn dependency_on(&self) -> Option<ENodeIdx> {
@@ -494,6 +500,21 @@ impl EqualityExpl {
             Theory { .. } => None,
             Axiom { .. } => None,
             Unknown { .. } => None,
+            Synthetic { .. } => None,
+        }
+    }
+}
+
+impl Display for EqualityExpl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EqualityExpl::Root { id } => write!(f, "root"),
+            EqualityExpl::Literal { from, eq, to } => write!(f, "lit"),
+            EqualityExpl::Congruence { from, arg_eqs, to } => write!(f, "cg"),
+            EqualityExpl::Theory { from, theory, to } => write!(f, "th"),
+            EqualityExpl::Axiom { from, to } => write!(f, "ax"),
+            EqualityExpl::Unknown { kind, from, args, to } => write!(f, "unknown"),
+            EqualityExpl::Synthetic { from, to } => write!(f, "syn"),
         }
     }
 }

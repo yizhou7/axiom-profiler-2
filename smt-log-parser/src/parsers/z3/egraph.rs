@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use fxhash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use typed_index_collections::TiVec;
@@ -6,12 +8,15 @@ use crate::{
     items::{ENodeIdx, EqualityExpl, InstIdx, StackIdx, TermIdx, BlameKind}, Error, Result, Z3Parser
 };
 
+use self::equalities::EqualityGraph;
+
 use super::stack::Stack;
 
 #[derive(Debug, Default)]
 pub struct EGraph {
     term_to_enode: FxHashMap<TermIdx, ENodeIdx>,
     enodes: TiVec<ENodeIdx, ENode>,
+    equalities: RefCell<EqualityGraph>, 
 }
 
 impl EGraph {
@@ -134,32 +139,52 @@ impl EGraph {
         all.map(|idx| &self.enodes[idx].get_equality(stack).unwrap().expl)
     }
 
+    fn get_shortest_path<'a: 'b, 'b>(&'a self, from: ENodeIdx, to: ENodeIdx, stack: &'b Stack) -> Vec<EqualityExpl> {
+        let mut added_eqs = Vec::new();
+        for eq_expl in self.get_equalities(from, to, stack) {
+            let eq_idx = self.equalities.borrow_mut().add_equality(eq_expl.from(), eq_expl.to(), eq_expl.clone());
+            // we remember all non-synthetic edges that we added here such that we can remove them in the end 
+            if let Some(idx) = eq_idx {
+                added_eqs.push(idx);
+            }
+        }
+        // next time, the e-graph might have updated equalities and hence we forget the current state of the equality-graph (except for the synthetic edges)
+        let shortest_path = self.equalities.borrow_mut().find_shortest_path(&from, &to);
+        self.equalities.borrow_mut().remove_eqs(added_eqs);
+        shortest_path
+    }
+
     fn explain_eq<'a: 'b, 'b>(&'a self, eq: EqualityExpl, stack: &'b Stack) -> Result<NodeEquality> {
         match eq {
             EqualityExpl::Congruence { from, arg_eqs, to } => {
                 let mut inner_eqs = Vec::new();
                 for (lhs, rhs) in arg_eqs.iter() {
-                    for eq_expl in self.get_equalities(*lhs, *rhs, stack) {
+                    // for eq_expl in self.get_equalities(*lhs, *rhs, stack) {
+                    for eq_expl in self.get_shortest_path(*lhs, *rhs, stack) {
                         let expl = self.explain_eq(eq_expl.clone(), stack)?;
                         inner_eqs.push(expl);
                     }
                 };
                 Ok(NodeEquality::Node(from, to, inner_eqs))
             },
-            _ => Ok(NodeEquality::Leaf(LeafEquality(eq.from(), eq.to())))
+            _ => {
+                Ok(NodeEquality::Leaf(LeafEquality(eq.from(), eq.to())))
+            }
         }
     }
 
     pub fn blame_equalities(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, blamed: &mut Vec<NodeEquality>, can_mismatch: impl Fn() -> bool) -> Result<()> {
         if from != to {
             let mut inner_eqs = Vec::new();
-            for eq_expl in self.get_equalities(from, to, stack).skip(1) {
+            // for eq_expl in self.get_equalities(from, to, stack).skip(1) {
+            for eq_expl in self.get_shortest_path(from, to, stack).iter() {
                 let expl = self.explain_eq(eq_expl.clone(), stack)?;
                 inner_eqs.push(expl);
             }
             blamed.push(NodeEquality::Node(from, to, inner_eqs));
         }
-
+        // after this new-match, we want to be able to blame this "synthetic" equality 
+        self.equalities.borrow_mut().add_equality(from, to, EqualityExpl::Synthetic { from, to });
         // if from != to {
         //     blamed.push((from, to));
         // }
@@ -237,6 +262,88 @@ impl NodeEquality {
         match self {
             NodeEquality::Leaf(LeafEquality(_, to)) => *to,
             NodeEquality::Node(_, to, _) => *to,
+        }
+    }
+}
+
+mod equalities {
+    use petgraph::graph::{NodeIndex, EdgeIndex, UnGraph};
+    use petgraph::algo::dijkstra;
+    use super::*;
+
+    #[derive(Default, Clone, Debug)]
+    pub struct EqualityGraph {
+        graph: UnGraph<ENodeIdx, EqualityExpl>,
+        node_idx_of_weight: FxHashMap<ENodeIdx, NodeIndex>,
+    }
+
+    impl EqualityGraph {
+        fn add_node(&mut self, weight: ENodeIdx) -> NodeIndex {
+            if let Some(idx) = self.node_idx_of_weight.get(&weight) {
+                *idx
+            } else {
+                let nx = self.graph.add_node(weight);
+                self.node_idx_of_weight.insert(weight, nx);
+                nx
+            }
+        }
+        pub fn add_equality(&mut self, from: ENodeIdx, to: ENodeIdx, expl: EqualityExpl) -> Option<EdgeIndex> {
+            let from_idx = self.add_node(from);
+            let to_idx = self.add_node(to);
+            if let Some(edge) = self.graph.find_edge(from_idx, to_idx) {
+                match self.graph.edge_weight(edge).unwrap() {
+                    EqualityExpl::Synthetic {..} => None,
+                    _ => Some(self.graph.update_edge(from_idx, to_idx, expl)),
+                }
+            } else {
+                let ex = self.graph.add_edge(from_idx, to_idx, expl.clone());
+                match expl {
+                    EqualityExpl::Synthetic {..} => None,
+                    _ => Some(ex),
+                }
+            }
+        }
+        pub fn find_shortest_path(&mut self, from: &ENodeIdx, to: &ENodeIdx) -> Vec<EqualityExpl> {
+            let mut blamed_eqs = Vec::new();
+            if let (Some(from), Some(to)) = (self.node_idx_of_weight.get(from), self.node_idx_of_weight.get(to)) {
+                let shortest_path_lengths = dijkstra(&self.graph, *from, Some(*to), |_| 1);
+                let mut curr = *to;
+                let mut curr_dist = *shortest_path_lengths.get(&curr).unwrap();
+                while let Some(ref node) = self.graph
+                .neighbors(curr)
+                .filter(|nx| if let Some(&dist) = shortest_path_lengths.get(nx) { dist == curr_dist - 1 } else { false })
+                .next() {
+                    // let curr_eq = self.graph.node_weight(curr).unwrap();
+                    // let node_eq = self.graph.node_weight(*node).unwrap();
+                    let edge = self.graph.find_edge(curr, *node).unwrap();
+                    let expl = self.graph.edge_weight(edge).unwrap();
+                    match expl {
+                        EqualityExpl::Root { .. } => (),
+                        _ => blamed_eqs.push(expl.clone()),
+                    }
+                    // blamed_eqs.push(self.graph.edge_weight(edge).unwrap().clone());
+                    curr = node.clone();
+                    curr_dist = curr_dist - 1;
+                }
+            }
+            if blamed_eqs.len() > 1 {
+                blamed_eqs.reverse();
+                blamed_eqs
+            } else {
+                vec![]
+            }
+            // need to check that the blamed equality is not the same as from = to. 
+            // if that's the case we should just return an empty vector
+            // if blamed_eqs.len() > 1 {
+            //     blamed_eqs
+            // } else {
+            //     vec![]
+            // }
+        }
+        pub fn remove_eqs(&mut self, eqs: Vec<EdgeIndex>) {
+            for eq in eqs {
+                self.graph.remove_edge(eq);
+            }
         }
     }
 }
