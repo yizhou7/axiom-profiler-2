@@ -142,10 +142,8 @@ impl EGraph {
     }
 
     fn get_shortest_path<'a: 'b, 'b>(&'a self, from: ENodeIdx, to: ENodeIdx, stack: &'b Stack) -> Vec<EqualityExpl> {
-        // log!("Computing shortest path");
         let mut added_eqs = Vec::new();
         for eq_expl in self.get_equalities(from, to, stack) {
-            // log!(format!("Adding eq. {} to equality graph", eq_expl));
             let eq_idx = self.equalities.borrow_mut().add_equality(eq_expl.from(), eq_expl.to(), eq_expl.clone());
             // we remember all non-synthetic edges that we added here such that we can remove them in the end 
             if let Some(idx) = eq_idx {
@@ -155,7 +153,6 @@ impl EGraph {
         // next time, the e-graph might have updated equalities and hence we forget the current state of the equality-graph (except for the synthetic edges)
         let shortest_path = self.equalities.borrow_mut().find_shortest_path(&from, &to);
         self.equalities.borrow_mut().remove_eqs(added_eqs);
-        // log!("Done computing shortest path");
         shortest_path
     }
 
@@ -164,7 +161,6 @@ impl EGraph {
             EqualityExpl::Congruence { from, arg_eqs, to } => {
                 let mut inner_eqs = Vec::new();
                 for (lhs, rhs) in arg_eqs.iter() {
-                    // for eq_expl in self.get_equalities(*lhs, *rhs, stack) {
                     for eq_expl in self.get_shortest_path(*lhs, *rhs, stack) {
                         let expl = self.explain_eq(eq_expl.clone(), stack)?;
                         inner_eqs.push(expl);
@@ -178,14 +174,11 @@ impl EGraph {
         }
     }
 
-    pub fn blame_equalities(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, blamed: &mut Vec<NodeEquality>, can_mismatch: impl Fn() -> bool) -> Result<()> {
-        // if from != to {
+    pub fn blame_equalities(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, blamed: &mut Vec<NodeEquality>, can_mismatch: impl Fn() -> bool, equalities: &mut Vec<NodeEquality>) -> Result<()> {
             let eq_expls = self.get_shortest_path(from, to, stack);
             if eq_expls.len() == 1 {
-                // blamed.push(NodeEquality::Leaf(LeafEquality(from, to)));
                 let eq = self.explain_eq(eq_expls[0].clone(), stack).unwrap();
-                // log!(format!("{}", eq));
-                blamed.push(eq);
+                equalities.push(eq);
             } else {
                 let mut inner_eqs = Vec::new();
                 for eq_expl in eq_expls {
@@ -193,15 +186,11 @@ impl EGraph {
                     inner_eqs.push(expl);
                 }
                 let eq = NodeEquality::Node(from, to, inner_eqs);
-                // log!(format!("{}", eq));
-                blamed.push(eq);
+                equalities.push(eq);
             }
-            // for eq_expl in self.get_shortest_path(from, to, stack).iter() {
-            //     let expl = self.explain_eq(eq_expl.clone(), stack)?;
-            //     inner_eqs.push(expl);
-            // }
-            // blamed.push(NodeEquality::Node(from, to, inner_eqs));
-        // }
+        if from != to {
+            blamed.push(NodeEquality::Leaf(LeafEquality(from, to)));
+        }
         // after this new-match, we want to be able to blame this "synthetic" equality 
         self.equalities.borrow_mut().add_equality(from, to, EqualityExpl::Synthetic { from, to });
         // if from != to {
@@ -285,21 +274,6 @@ impl NodeEquality {
     }
 }
 
-impl Display for NodeEquality {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            NodeEquality::Leaf(LeafEquality(from, to)) => write!(f, "Leaf({} = {})", from, to),
-            NodeEquality::Node(from, to, eqs) => {
-                write!(f, "Node({} = {}, ", from, to)?;
-                for eq in eqs {
-                    write!(f, "{}, ", eq)?;
-                }
-                write!(f, ")")
-            },
-        }
-    }
-}
-
 mod equalities {
     use petgraph::graph::{NodeIndex, EdgeIndex, UnGraph};
     use petgraph::algo::dijkstra;
@@ -347,34 +321,17 @@ mod equalities {
                 .neighbors(curr)
                 .filter(|nx| if let Some(&dist) = shortest_path_lengths.get(nx) { dist == curr_dist - 1 } else { false })
                 .next() {
-                    // let curr_eq = self.graph.node_weight(curr).unwrap();
-                    // let node_eq = self.graph.node_weight(*node).unwrap();
                     let edge = self.graph.find_edge(curr, *node).unwrap();
                     let expl = self.graph.edge_weight(edge).unwrap();
-                    // log!(format!("Shortest path contains {}", expl));
                     match expl {
                         EqualityExpl::Root { .. } => (),
                         _ => blamed_eqs.push(expl.clone()),
                     }
-                    // blamed_eqs.push(self.graph.edge_weight(edge).unwrap().clone());
                     curr = node.clone();
                     curr_dist = curr_dist - 1;
                 }
             }
             blamed_eqs
-            // if blamed_eqs.len() > 1 {
-            //     blamed_eqs.reverse();
-            //     blamed_eqs
-            // } else {
-            //     vec![]
-            // }
-            // need to check that the blamed equality is not the same as from = to. 
-            // if that's the case we should just return an empty vector
-            // if blamed_eqs.len() > 1 {
-            //     blamed_eqs
-            // } else {
-            //     vec![]
-            // }
         }
         pub fn remove_eqs(&mut self, eqs: Vec<EdgeIndex>) {
             for eq in eqs {

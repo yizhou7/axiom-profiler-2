@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use typed_index_collections::TiVec;
 
 use crate::{
@@ -7,7 +9,7 @@ use crate::{
 };
 
 use super::{
-    egraph::{EGraph, ENode},
+    egraph::{EGraph, ENode, NodeEquality},
     inst::Insts,
     stack::Stack,
     terms::Terms,
@@ -29,7 +31,7 @@ pub struct Z3Parser {
     pub(super) stack: Stack,
 
     pub strings: StringTable,
-    pub(super) equalities: Vec<EqualityExpl>,
+    pub(super) equalities: RefCell<Vec<NodeEquality>>,
 }
 
 impl Default for Z3Parser {
@@ -44,7 +46,7 @@ impl Default for Z3Parser {
             egraph: Default::default(),
             stack: Default::default(),
             strings,
-            equalities: Vec::new(),
+            equalities: RefCell::new(Vec::new()),
         }
     }
 }
@@ -375,7 +377,6 @@ impl Z3LogParser for Z3Parser {
                 }
             }
         };
-        self.equalities.push(eq_expl.clone());
         // Return if there is unexpectedly more data
         Self::expect_completed(l)?;
 
@@ -426,7 +427,7 @@ impl Z3LogParser for Z3Parser {
                 // See comment in `EGraph::get_equalities`
                 let can_mismatch = || self.is_ge_version(4, 12, 3) &&
                     self.terms[self.egraph.get_owner(to)].kind.app_name().is_some_and(|app| &self.strings[app] == "if");
-                self.egraph.blame_equalities(from, to, &self.stack, &mut blamed_eqs, can_mismatch)?;
+                self.egraph.blame_equalities(from, to, &self.stack, &mut blamed_eqs, can_mismatch, &mut self.equalities.borrow_mut())?;
             } else {
                 let term = self.parse_existing_enode(word)?;
                 blamed.try_reserve(1)?;

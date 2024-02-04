@@ -961,6 +961,18 @@ impl InstGraph {
         //     }
 
         // }
+        for eq in parser.equalities.borrow().iter() {
+            match eq {
+                // NodeEquality::Leaf(LeafEquality(lhs, rhs)) => self.add_eq_edge_to_inst(EqualityNode::from(lhs, rhs), inst_idx),
+                NodeEquality::Leaf(LeafEquality(_, _)) => (),
+                NodeEquality::Node(lhs, rhs, eqs) => {
+                    // self.add_eq_edge_to_inst(EqualityNode::from(lhs, rhs), inst_idx);
+                    for eq in eqs {
+                        self.add_equalities(&lhs, &rhs, &eq);
+                    }
+                }
+            }
+        }
         for (inst_idx, inst) in parser.insts.insts.iter_enumerated() {
             let match_ = &parser.insts[inst.match_];
             // add new node to graph
