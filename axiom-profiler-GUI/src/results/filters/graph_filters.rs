@@ -12,6 +12,7 @@ use yew::prelude::*;
 #[derive(Clone, Copy)]
 pub enum Filter {
     MaxNodeIdx(usize),
+    MinNodeIdx(usize),
     IgnoreTheorySolving,
     IgnoreQuantifier(Option<QuantIdx>),
     IgnoreAllButQuantifier(Option<QuantIdx>),
@@ -33,6 +34,7 @@ impl Display for Filter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::MaxNodeIdx(node_idx) => write!(f, "Only show nodes up to index {}", node_idx),
+            Self::MinNodeIdx(node_idx) => write!(f, "Only show nodes after index {}", node_idx),
             Self::IgnoreTheorySolving => write!(f, "Ignore theory solving instantiations"),
             Self::IgnoreQuantifier(None) => {
                 write!(f, "Ignore instantiations without quantifier")
@@ -95,6 +97,7 @@ impl Filter {
     pub fn apply(self: Filter, graph: &mut InstGraph, parser: &mut Z3Parser) -> FilterOutput {
         match self {
             Filter::MaxNodeIdx(max) => graph.retain_nodes(|node: &InstNode| node.orig_graph_idx.index() <= max),
+            Filter::MinNodeIdx(min) => graph.retain_nodes(|node: &InstNode| node.orig_graph_idx.index() >= min),
             Filter::IgnoreTheorySolving => graph.retain_nodes(|node: &InstNode| !node.is_theory_inst),
             Filter::IgnoreQuantifier(qidx) => graph.retain_nodes(|node: &InstNode| node.mkind.quant_idx() != qidx),
             Filter::IgnoreAllButQuantifier(qidx) => graph.retain_nodes(|node: &InstNode| node.mkind.quant_idx() == qidx),
@@ -117,6 +120,7 @@ impl Filter {
 
 pub struct GraphFilters {
     max_node_idx: usize,
+    min_node_idx: usize,
     max_instantiations: usize,
     max_branching: usize,
     max_depth: usize,
@@ -131,6 +135,7 @@ pub struct GraphFiltersProps {
 
 pub enum Msg {
     SetMaxNodeIdx(usize),
+    SetMinNodeIdx(usize),
     SetMaxInsts(usize),
     SetMaxBranching(usize),
     SetMaxDepth(usize),
@@ -145,6 +150,10 @@ impl Component for GraphFilters {
         match msg {
             Msg::SetMaxNodeIdx(to) => {
                 self.max_node_idx = to;
+                true
+            }
+            Msg::SetMinNodeIdx(to) => {
+                self.min_node_idx = to;
                 true
             }
             Msg::SetMaxInsts(to) => {
@@ -174,6 +183,7 @@ impl Component for GraphFilters {
             .expect("No context provided");
         Self {
             max_node_idx: usize::MAX,
+            min_node_idx: 0,
             max_instantiations: DEFAULT_NODE_COUNT,
             max_branching: usize::MAX,
             max_depth: usize::MAX,
@@ -186,6 +196,11 @@ impl Component for GraphFilters {
             let callback = ctx.props().add_filters.clone();
             let max_node_idx = self.max_node_idx;
             Callback::from(move |_| callback.emit(vec![Filter::MaxNodeIdx(max_node_idx)]))
+        };
+        let add_min_line_nr_filter = {
+            let callback = ctx.props().add_filters.clone();
+            let min_node_idx = self.min_node_idx;
+            Callback::from(move |_| callback.emit(vec![Filter::MinNodeIdx(min_node_idx)]))
         };
         let add_theory_filter = {
             let callback = ctx.props().add_filters.clone();
@@ -228,6 +243,14 @@ impl Component for GraphFilters {
                         set_value={ctx.link().callback(Msg::SetMaxNodeIdx)}
                     />
                     <button onclick={add_max_line_nr_filter}>{"Add"}</button>
+                </div>
+                <div>
+                    <UsizeInput
+                        label={"Only show nodes with index at least "}
+                        placeholder={""}
+                        set_value={ctx.link().callback(Msg::SetMinNodeIdx)}
+                    />
+                    <button onclick={add_min_line_nr_filter}>{"Add"}</button>
                 </div>
                 <div>
                     <label for="theory_button">{"Ignore theory-solving instantiations"}</label>
