@@ -2,7 +2,7 @@ use std::{cell::RefCell, fmt::Display};
 
 use fxhash::FxHashMap;
 use gloo_console::log;
-use petgraph::graph::Node;
+use petgraph::graph::EdgeIndex;
 use serde::{Deserialize, Serialize};
 use typed_index_collections::TiVec;
 
@@ -19,6 +19,7 @@ pub struct EGraph {
     term_to_enode: FxHashMap<TermIdx, ENodeIdx>,
     enodes: TiVec<ENodeIdx, ENode>,
     equalities: RefCell<EqualityGraph>, 
+    synthetic_eqs: RefCell<FxHashMap<ENodeIdx, Vec<EdgeIndex>>>,
 }
 
 impl EGraph {
@@ -84,6 +85,9 @@ impl EGraph {
         };
         enode.equalities.try_reserve(1)?;
         enode.equalities.push(eq);
+        if let Some(syn_eqs) = self.synthetic_eqs.borrow().get(&from) {
+            self.equalities.borrow_mut().remove_eqs(syn_eqs.to_vec());
+        }
         // TODO: is ok to simply ignore the old equality, or should we also blame it later on?
         // let (new, others) = enode.equalities.split_last().unwrap();
         // if let Some(old) = others.last() {
@@ -192,7 +196,25 @@ impl EGraph {
             blamed.push(NodeEquality::Leaf(LeafEquality(from, to)));
         }
         // after this new-match, we want to be able to blame this "synthetic" equality 
-        self.equalities.borrow_mut().add_equality(from, to, EqualityExpl::Synthetic { from, to });
+        if let Some(ex) = self.equalities.borrow_mut().add_equality(from, to, EqualityExpl::Synthetic { from, to }) {
+            for node_eq in equalities {
+                match node_eq {
+                    NodeEquality::Leaf(_) => {
+                        if let Some(syn_eqs) = self.synthetic_eqs.borrow_mut().get_mut(&node_eq.from()) {
+                            syn_eqs.push(ex);
+                        } else {
+                            self.synthetic_eqs.borrow_mut().insert(node_eq.from(), vec![ex]);
+                        }
+                        if let Some(syn_eqs) = self.synthetic_eqs.borrow_mut().get_mut(&node_eq.to()) {
+                            syn_eqs.push(ex);
+                        } else {
+                            self.synthetic_eqs.borrow_mut().insert(node_eq.to(), vec![ex]);
+                        }
+                    },
+                    _ => (),
+                }  
+            }
+        } 
         // if from != to {
         //     blamed.push((from, to));
         // }
