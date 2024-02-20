@@ -38,8 +38,6 @@ pub fn graph(props: &GraphProps) -> Html {
                 if let Some(el) = svg_element {
                     let svg_el = el.dyn_into::<SvgsvgElement>().ok().unwrap();
                     let _ = svg_el.set_attribute("transform-origin", "top left");
-                    web_sys::console::log_1(&"Updating the transform-attribute of svg to ".into());
-                    web_sys::console::log_1(&zoom_factor.into());
                     let _ = svg_el.set_attribute(
                         "style",
                         format!("transform: scale({});", zoom_factor).as_str(),
@@ -65,7 +63,6 @@ pub fn graph(props: &GraphProps) -> Html {
 
         use_effect_with_deps(
             move |_| {
-                web_sys::console::log_1(&"Using effect".into());
                 let div = div_ref
                     .cast::<HtmlElement>()
                     .expect("div_ref not attached to div element");
@@ -182,7 +179,6 @@ pub fn graph(props: &GraphProps) -> Html {
                             .unwrap();
                         let callback = edges_callback.clone();
                         let closure: Closure<dyn Fn(Event)> = Closure::new(move |_: Event| {
-                            log::debug!("Clicked on edge {}", edge_index);
                             let current_stroke_width = path.get_attribute("stroke-width");
                             match current_stroke_width {
                                 None => {
@@ -249,7 +245,6 @@ pub fn graph(props: &GraphProps) -> Html {
         let div_ref = div_ref.clone();
         use_effect_with_deps(
             {
-                web_sys::console::log_1(&"Using effect due to changed selected nodes".into());
                 let selected_nodes = selected_nodes.clone();
                 move |_| {
                     let div = div_ref
@@ -313,6 +308,10 @@ pub fn graph(props: &GraphProps) -> Html {
             callback.emit(())
         })
     };
+    let window = web_sys::window().expect("should have a window in this context");
+    let performance = window.performance().expect("should have a performance object");
+    let start_timestamp = performance.now();
+    log::info!("Viewing SVG graph component at time {} s", start_timestamp / 1000.0);
     html! {
         <>
             // this is a "background" div

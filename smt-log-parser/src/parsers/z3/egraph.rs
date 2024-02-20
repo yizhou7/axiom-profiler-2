@@ -133,7 +133,6 @@ impl EGraph {
             //     return Err(Error::EnodeRootMismatch(from, to));
             // }
             // Return an empty iterator if the roots are different.
-            log!("Distinct roots in f_path and t_path");
             shared = f_path.len().max(t_path.len());
         }
         while shared < f_path.len() && shared < t_path.len() && f_path[shared] == t_path[shared] {

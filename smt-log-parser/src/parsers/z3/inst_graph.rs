@@ -690,7 +690,6 @@ impl InstGraph {
             .flat_map(|node| node.mkind.quant_idx())
             .collect();
         let mut matching_loop_nodes_per_quant: Vec<FxHashSet<NodeIndex>> = Vec::new();
-        log!(format!("Start processing quants"));
         for quant in quants {
             // log!(format!("Processing quant {}", quant));
             self.reset_visibility_to(true);
@@ -704,7 +703,6 @@ impl InstGraph {
             let matching_loops = Self::find_longest_paths(&mut self.visible_graph);
             matching_loop_nodes_per_quant.push(matching_loops);
         }
-        log!(format!("Done processing quants"));
         self.reset_visibility_to(false);
         for matching_loop in matching_loop_nodes_per_quant {
             for node in matching_loop {
@@ -1149,7 +1147,6 @@ impl InstGraph {
             bitsets = others;
             ord = ord.saturating_sub(1);
         }
-        log!("Finished computing transitive closure");
         self.visible_graph = self.orig_graph.map(
             |_, n| n.clone(),
             |orig_graph_idx, e| EdgeType::Direct {
