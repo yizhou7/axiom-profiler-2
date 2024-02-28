@@ -481,6 +481,12 @@ impl QuantIdxToColourMap {
             None => [][0],
         };
         let nz = NonZeroUsize::new(n);
+        // TODO: there are two bugs here:
+        //   - We try to calculate the number of primes less than or equal to `n/2` as `(n/ln(n)) / 2`, rather than
+        //     `n/2 / ln(n/2)` which actually gets closer to the real number (but still underapproximates).
+        //   - Getting a prime as close to `n/2` as possible is not ideal since
+        //     e.g. idx 0 and 2 will be right next to each other (0 -> 0, 1 -> n/2, 2 -> 1, ...).
+        //     Luckily we generally get a number somewhat smaller than `n/2` so it's not too bad.
         if let Some(nz) = nz {
             // according to prime number theorem, the number of primes less than or equal to N is roughly N/ln(N)
             let nr_primes_smaller_than_n = n as f64 / f64::ln(n as f64);
