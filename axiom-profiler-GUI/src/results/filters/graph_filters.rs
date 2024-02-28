@@ -9,7 +9,7 @@ use smt_log_parser::{
 use std::fmt::Display;
 use yew::prelude::*;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum Filter {
     MaxNodeIdx(usize),
     IgnoreTheorySolving,
@@ -22,6 +22,7 @@ pub enum Filter {
     VisitSubTreeWithRoot(NodeIndex, bool),
     MaxDepth(usize),
     ShowLongestPath(NodeIndex),
+    ShowNamedQuantifier(String),
     SelectNthMatchingLoop(usize),
     ShowMatchingLoopSubgraph,
 }
@@ -63,6 +64,9 @@ impl Display for Filter {
             Self::ShowLongestPath(node) => {
                 write!(f, "Showing longest path through node {}", node.index())
             }
+            Self::ShowNamedQuantifier(name) => {
+                write!(f, "Show instantiations of quantifier \"{name}\"")
+            }
             Self::SelectNthMatchingLoop(n) => {
                 let ordinal = match n {
                     0 => "".to_string(),
@@ -99,6 +103,7 @@ impl Filter {
             Filter::VisitSourceTree(nidx, retain) => graph.visit_ancestors(nidx, retain),
             Filter::MaxDepth(depth) => graph.retain_nodes(|node: &NodeData| node.min_depth.unwrap() <= depth),
             Filter::ShowLongestPath(nidx) => return FilterOutput::LongestPath(graph.show_longest_path_through(nidx)),
+            Filter::ShowNamedQuantifier(name) => graph.show_named_quantifier(name),
             Filter::SelectNthMatchingLoop(n) => return FilterOutput::MatchingLoopGeneralizedTerms(graph.show_nth_matching_loop(n, parser)),
             Filter::ShowMatchingLoopSubgraph => graph.show_matching_loop_subgraph(),
         }
@@ -197,6 +202,16 @@ impl Component for GraphFilters {
             let max_depth = self.max_depth;
             Callback::from(move |_| callback.emit(vec![Filter::MaxDepth(max_depth)]))
         };
+        let input_node_ref = NodeRef::default();
+        let add_quantifier_filter = {
+            let callback = ctx.props().add_filters.clone();
+            let input_node_ref = input_node_ref.clone();
+            Callback::from(move |_| {
+                let input_node = input_node_ref.cast::<web_sys::HtmlInputElement>().unwrap();
+                let value = input_node.value();
+                callback.emit(vec![Filter::ShowNamedQuantifier(value)])
+            })
+        };
         html! {
             <div>
                 <h2>{"Add (optional) filters:"}</h2>
@@ -235,6 +250,11 @@ impl Component for GraphFilters {
                         set_value={ctx.link().callback(Msg::SetMaxDepth)}
                     />
                     <button onclick={add_max_depth_filter}>{"Add"}</button>
+                </div>
+                <div>
+                    {"Show instantiations of quantifier "}
+                    <input ref={input_node_ref} type="text"/>
+                    <button onclick={add_quantifier_filter}>{"Add"}</button>
                 </div>
                 {if !self.selected_insts.is_empty() {
                     html! {

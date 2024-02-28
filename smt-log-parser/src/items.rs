@@ -142,6 +142,12 @@ impl QuantKind {
     pub fn is_discovered(&self) -> bool {
         matches!(self, Self::Other(_))
     }
+    pub fn name(&self) -> Option<IString> {
+        match self {
+            Self::NamedQuant(name) | Self::Other(name) => Some(*name),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -291,8 +297,6 @@ impl MatchKind {
 pub enum BlameKind {
     Term { term: ENodeIdx },
     Equality { eq: ENodeIdx },
-    // TODO: why aren't all equalities explained by a prior `eq-expl`?
-    UnknownEquality { from: ENodeIdx, to: ENodeIdx },
 }
 
 impl BlameKind {
@@ -300,7 +304,6 @@ impl BlameKind {
         match self {
             Self::Term { term } => Some(*term),
             Self::Equality { eq } => Some(*eq),
-            Self::UnknownEquality { .. } => None,
         }
     }
 }

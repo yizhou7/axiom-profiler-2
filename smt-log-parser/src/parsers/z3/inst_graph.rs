@@ -38,6 +38,7 @@ pub struct NodeData {
     pub min_depth: Option<usize>,
     max_depth: usize,
     topo_ord: usize,
+    quantifier: Option<String>,
 }
 
 impl fmt::Debug for NodeData {
@@ -595,6 +596,12 @@ impl InstGraph {
         }
     }
 
+    pub fn show_named_quantifier(&mut self, quant: String) {
+        for node in self.orig_graph.node_weights_mut() {
+            node.visible |= node.quantifier.as_ref().is_some_and(|q| q == &quant);
+        }
+    }
+
     pub fn show_matching_loop_subgraph(&mut self) {
         self.reset_visibility_to(false);
         for node in self.matching_loop_subgraph.node_weights() {
@@ -708,6 +715,7 @@ impl InstGraph {
                 min_depth: None,
                 max_depth: 0,
                 topo_ord: 0,
+                quantifier: match_.kind.quant_idx().and_then(|q| parser[q].kind.name()).map(|s| parser.strings[s].into()),
             });
             // then add all edges to previous nodes
             for (kind, from) in match_

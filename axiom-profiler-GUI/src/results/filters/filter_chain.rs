@@ -42,8 +42,8 @@ impl yew::html::Component for FilterChain {
             .borrow_mut()
             .replace(ctx.link().clone());
         let filter_chain = DEFAULT_FILTER_CHAIN.to_vec();
-        for &filter in &filter_chain {
-            ctx.props().apply_filter.emit(filter);
+        for filter in &filter_chain {
+            ctx.props().apply_filter.emit(filter.clone());
         }
         ctx.props().render_graph.emit(UserPermission::default());
         let prev_filter_chain = filter_chain.clone();
@@ -61,7 +61,7 @@ impl yew::html::Component for FilterChain {
                 self.prev_filter_chain = self.filter_chain.clone();
                 for filter in filters {
                     log!("Adding filter ", filter.to_string());
-                    self.filter_chain.push(filter);
+                    self.filter_chain.push(filter.clone());
                     ctx.props().apply_filter.emit(filter);
                 }
                 ctx.props().render_graph.emit(UserPermission::default());
@@ -73,8 +73,8 @@ impl yew::html::Component for FilterChain {
                 self.prev_filter_chain = self.filter_chain.clone();
                 self.filter_chain.remove(n);
                 ctx.props().reset_graph.emit(());
-                for &filter in &self.filter_chain {
-                    ctx.props().apply_filter.emit(filter);
+                for filter in &self.filter_chain {
+                    ctx.props().apply_filter.emit(filter.clone());
                 }
                 ctx.props().render_graph.emit(UserPermission::default());
                 true
@@ -84,8 +84,8 @@ impl yew::html::Component for FilterChain {
                 self.prev_filter_chain = self.filter_chain.clone();
                 self.filter_chain = DEFAULT_FILTER_CHAIN.to_vec();
                 ctx.props().reset_graph.emit(());
-                for &filter in &self.filter_chain {
-                    ctx.props().apply_filter.emit(filter);
+                for filter in &self.filter_chain {
+                    ctx.props().apply_filter.emit(filter.clone());
                 }
                 ctx.props().render_graph.emit(UserPermission::default());
                 true
@@ -94,8 +94,8 @@ impl yew::html::Component for FilterChain {
                 log!("Setting to previous filter chain");
                 self.filter_chain = self.prev_filter_chain.clone();
                 ctx.props().reset_graph.emit(());
-                for &filter in &self.filter_chain {
-                    ctx.props().apply_filter.emit(filter);
+                for filter in &self.filter_chain {
+                    ctx.props().apply_filter.emit(filter.clone());
                 }
                 true
             }
