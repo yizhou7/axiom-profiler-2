@@ -1,3 +1,7 @@
+.loading-bar-failed > mwc-linear-progress {
+    --mdc-theme-primary: red;
+}
+
 .ascii-art {
     font-family: monospace;
     white-space: pre;

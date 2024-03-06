@@ -64,6 +64,13 @@ struct GraphDimensions {
     edge_count: usize,
 }
 
+#[derive(Debug)]
+pub enum RenderingState {
+    ConstructingGraph,
+    GraphToDot,
+    RenderingGraph,
+}
+
 pub struct SVGResult {
     parser: RcParser,
     colour_map: QuantIdxToColourMap,
@@ -84,6 +91,7 @@ pub struct SVGResult {
 #[derive(Properties, PartialEq)]
 pub struct SVGProps {
     pub parser: RcParser,
+    pub progress: Callback<Option<RenderingState>>,
 }
 
 impl Component for SVGResult {
@@ -93,6 +101,7 @@ impl Component for SVGResult {
     fn create(ctx: &Context<Self>) -> Self {
         log::debug!("Creating SVGResult component");
         let parser = RcParser::clone(&ctx.props().parser);
+        ctx.props().progress.emit(Some(RenderingState::ConstructingGraph));
         let inst_graph = InstGraph::from(&parser.borrow());
         let (quant_count, non_quant_insts) = parser.borrow().quant_count_incl_theory_solving();
         let colour_map = QuantIdxToColourMap::from(quant_count, non_quant_insts);
@@ -198,6 +207,7 @@ impl Component for SVGResult {
                 if safe_to_render || permission {
                     self.async_graph_and_filter_chain = false;
                     log::debug!("Rendering graph");
+                    ctx.props().progress.emit(Some(RenderingState::GraphToDot));
                     let filtered_graph = &self.inst_graph.visible_graph;
 
                     // Performance observations (default value is in [])
@@ -271,6 +281,7 @@ impl Component for SVGResult {
                         )
                     );
                     log::debug!("Finished building dot output");
+                    ctx.props().progress.emit(Some(RenderingState::RenderingGraph));
                     let link = ctx.link().clone();
                     wasm_bindgen_futures::spawn_local(async move {
                         let graphviz = VizInstance::new().await;
@@ -338,6 +349,7 @@ impl Component for SVGResult {
             }
             Msg::UpdateSvgText(svg_text, node_count_decreased) => {
                 log::debug!("Updating svg text");
+                ctx.props().progress.emit(None);
                 if svg_text != self.svg_text {
                     self.svg_text = svg_text;
                     // only if some nodes were deleted, do we deselect all previously selected nodes
