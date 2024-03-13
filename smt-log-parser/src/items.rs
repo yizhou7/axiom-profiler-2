@@ -27,12 +27,12 @@ macro_rules! idx {
         }
         impl fmt::Debug for $struct {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, $prefix, self.0)
+                write!(f, $prefix, self.0.get() - 1)
             }
         }
         impl fmt::Display for $struct {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "{}", self.0)
+                write!(f, "{}", self.0.get() - 1)
             }
         }
     };

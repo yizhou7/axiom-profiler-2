@@ -80,7 +80,7 @@ impl Error {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FatalError {
     Allocation(TryReserveError),
 }

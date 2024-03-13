@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 yew = { version = "0.20", features = ["csr"]}
 gloo = "0.9.0"
-web-sys = {version="0.3.65", features=["DomTokenList","Element","Node"]}
+web-sys = {version="0.3.65", features=["DomTokenList","Element","Node","DomRect"]}
 log = "0.4.6"
 wasm-logger = "0.2.0"
 gloo-file = "0.2.3"
@@ -36,6 +36,8 @@ yew-agent = "0.2.0"
 chrono = "0.4"
 indexmap = "2.1.0"
 console_error_panic_hook = "0.1.2"
+wasm-timer = "0.2"
+gloo-timers = { version = "0.3.0", features = ["futures"] }
 
 [build-dependencies]
 vergen = { version = "8.2", features = ["git", "gitcl"] }

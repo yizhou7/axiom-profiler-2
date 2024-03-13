@@ -10,6 +10,7 @@ use petgraph::{
 };
 use petgraph::{Direction, Graph};
 use roaring::bitmap::RoaringBitmap;
+use std::cmp::Ordering;
 use std::fmt;
 use std::iter::zip;
 use typed_index_collections::TiVec;
@@ -32,7 +33,6 @@ pub struct NodeData {
     visible: bool,
     child_count: usize,
     parent_count: usize,
-    pub orig_graph_idx: NodeIndex,
     cost_rank: usize,
     branching_rank: usize,
     pub min_depth: Option<usize>,
@@ -41,9 +41,21 @@ pub struct NodeData {
     quantifier: Option<String>,
 }
 
+impl NodeData {
+    pub fn visible(&self) -> bool {
+        self.visible
+    }
+}
+
 impl fmt::Debug for NodeData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.inst_idx)
+    }
+}
+
+impl From<InstIdx> for NodeIndex {
+    fn from(value: InstIdx) -> Self {
+        NodeIndex::new(value.into())
     }
 }
 
@@ -90,8 +102,8 @@ pub struct EdgeInfo {
     pub edge_data: BlameKind,
     pub orig_graph_idx: EdgeIndex,
     pub blame_term: String,
-    pub from: NodeIndex,
-    pub to: NodeIndex,
+    pub from: InstIdx,
+    pub to: InstIdx,
 }
 
 impl PartialEq for EdgeInfo {
@@ -124,8 +136,7 @@ pub struct InstInfo {
     pub bound_terms: Vec<String>,
     pub blamed_terms: Vec<String>,
     pub equality_expls: Vec<String>,
-    pub dep_instantiations: Vec<NodeIndex>,
-    pub node_index: NodeIndex,
+    pub dep_instantiations: Vec<InstIdx>,
 }
 
 impl PartialEq for InstInfo {
@@ -136,14 +147,13 @@ impl PartialEq for InstInfo {
 
 #[derive(Default, Clone)]
 pub struct InstGraph {
-    orig_graph: Graph<NodeData, BlameKind>,
+    pub orig_graph: Graph<NodeData, BlameKind>,
     pub visible_graph: Graph<NodeData, EdgeType>,
-    node_of_inst_idx: TiVec<InstIdx, NodeIndex>,
-    cost_ranked_node_indices: Vec<NodeIndex>,
-    branching_ranked_node_indices: Vec<NodeIndex>,
+    cost_ranked_node_indices: Vec<InstIdx>,
+    branching_ranked_node_indices: Vec<InstIdx>,
     tr_closure: Vec<RoaringBitmap>,
     matching_loop_subgraph: Graph<NodeData, EdgeType>,
-    matching_loop_end_nodes: Vec<NodeIndex>, // these are sorted by maximal depth in descending order 
+    matching_loop_end_nodes: Option<Vec<NodeIndex>>, // these are sorted by maximal depth in descending order 
     generalized_terms: TiVec<usize, Option<Vec<String>>>,
 }
 
@@ -236,10 +246,10 @@ impl InstGraph {
         // and (u,v) is not an edge in the original graph, i.e., all indirect edges
         for &u in &out_set {
             for &v in &in_set {
-                let old_u = new_inst_graph.node_weight(u).unwrap().orig_graph_idx;
-                let old_v = new_inst_graph.node_weight(v).unwrap().orig_graph_idx;
+                let old_u = new_inst_graph.node_weight(u).unwrap().inst_idx;
+                let old_v = new_inst_graph.node_weight(v).unwrap().inst_idx;
                 if old_u != old_v
-                    && !self.orig_graph.contains_edge(old_u, old_v)
+                    && !self.orig_graph.contains_edge(old_u.into(), old_v.into())
                     && self.tr_closure_contains_edge(old_u, old_v)
                 // && petgraph::algo::has_path_connecting(&self.orig_graph, old_u, old_v, None)
                 {
@@ -286,10 +296,10 @@ impl InstGraph {
         }
     }
 
-    fn tr_closure_contains_edge(&self, from: NodeIndex, to: NodeIndex) -> bool {
-        let topo_ord_from = self.orig_graph.node_weight(from).unwrap().topo_ord;
+    fn tr_closure_contains_edge(&self, from: InstIdx, to: InstIdx) -> bool {
+        let topo_ord_from = self.orig_graph.node_weight(from.into()).unwrap().topo_ord;
         let from_bitset = &self.tr_closure[topo_ord_from];
-        from_bitset.contains(to.index() as u32)
+        from_bitset.contains(usize::from(to) as u32)
     }
 
     pub fn keep_n_most_costly(&mut self, n: usize) {
@@ -305,20 +315,20 @@ impl InstGraph {
             InstOrder::Branching => &self.branching_ranked_node_indices,
             InstOrder::Cost => &self.cost_ranked_node_indices,
         };
-        let visible_nodes: Vec<NodeIndex> = self
+        let visible_nodes: FxHashSet<NodeIndex> = self
             .orig_graph
             .node_indices()
             .filter(|n| self.orig_graph.node_weight(*n).unwrap().visible)
             .collect();
         if let Some(nth_highest_ranked_visible_node) = ranked_node_indices
             .iter()
-            .filter(|nidx| visible_nodes.contains(nidx))
+            .filter(|nidx| visible_nodes.contains(&NodeIndex::from(**nidx)))
             .take(n)
             .last()
         {
             let nth_largest_rank = self
                 .orig_graph
-                .node_weight(*nth_highest_ranked_visible_node)
+                .node_weight(NodeIndex::from(*nth_highest_ranked_visible_node))
                 .unwrap()
                 .clone();
             // among the visible nodes keep those whose cost-rank
@@ -334,38 +344,34 @@ impl InstGraph {
         }
     }
 
-    pub fn visit_descendants(&mut self, root: NodeIndex, retain: bool) {
-        let mut dfs = Dfs::new(&self.orig_graph, root);
+    pub fn visit_descendants(&mut self, root: InstIdx, retain: bool) {
+        let mut dfs = Dfs::new(&self.orig_graph, root.into());
         while let Some(nx) = dfs.next(&self.orig_graph) {
             self.orig_graph[nx].visible = retain;
         }
     }
 
-    pub fn visit_ancestors(&mut self, node: NodeIndex, retain: bool) {
-        let mut dfs = Dfs::new(petgraph::visit::Reversed(&self.orig_graph), node);
+    pub fn visit_ancestors(&mut self, node: InstIdx, retain: bool) {
+        let mut dfs = Dfs::new(petgraph::visit::Reversed(&self.orig_graph), node.into());
         while let Some(nx) = dfs.next(petgraph::visit::Reversed(&self.orig_graph)) {
             self.orig_graph[nx].visible = retain;
         }
     }
 
-    pub fn show_longest_path_through(&mut self, node: NodeIndex) -> Vec<NodeIndex> {
+    pub fn show_longest_path_through(&mut self, node: InstIdx) -> Vec<InstIdx> {
         // construct subtree rooted at selected node
         let mut subtree_rooted_at_node: StableGraph<NodeData, BlameKind> =
             StableGraph::from(self.orig_graph.clone());
         for node in subtree_rooted_at_node.node_weights_mut() {
             node.visible = false;
         }
-        let mut dfs = Dfs::new(&subtree_rooted_at_node, node);
+        let mut dfs = Dfs::new(&subtree_rooted_at_node, node.into());
         while let Some(nx) = dfs.next(&subtree_rooted_at_node) {
             subtree_rooted_at_node[nx].visible = true;
         }
         subtree_rooted_at_node = subtree_rooted_at_node.filter_map(
             |_, node_data| {
-                if node_data.visible {
-                    Some(node_data.clone())
-                } else {
-                    None
-                }
+                node_data.visible.then(|| node_data.clone())
             },
             |_, edge| Some(edge.clone()),
         );
@@ -384,21 +390,22 @@ impl InstGraph {
             .node_weights()
             .max_by(|node_a, node_b| node_a.max_depth.cmp(&node_b.max_depth))
             .unwrap()
-            .orig_graph_idx;
+            .inst_idx;
         // backtrack a longest path from furthest away node in subgraph until we reach the root
         // with respect to the subgraph, i.e., node
         // self.backtrack(Some(&subtree_rooted_at_node), furthest_away_node_idx);
-        let mut longest_path: Vec<NodeIndex> = Vec::new();
-        let mut visitor: Vec<NodeIndex> = Vec::new();
+        let mut longest_path: Vec<InstIdx> = Vec::new();
+        let mut visitor: Vec<InstIdx> = Vec::new();
         if furthest_away_node_idx != node {
             visitor.push(furthest_away_node_idx);
         }
         while let Some(curr) = visitor.pop() {
             longest_path.push(curr);
-            self.orig_graph[curr].visible = true;
-            let curr_distance = subtree_rooted_at_node.node_weight(curr).unwrap().max_depth;
+            let n_curr = NodeIndex::from(curr);
+            self.orig_graph[n_curr].visible = true;
+            let curr_distance = subtree_rooted_at_node.node_weight(n_curr).unwrap().max_depth;
             let pred = subtree_rooted_at_node
-                .neighbors_directed(curr, Incoming)
+                .neighbors_directed(n_curr, Incoming)
                 .filter(|pred| {
                     let pred_distance =
                         subtree_rooted_at_node.node_weight(*pred).unwrap().max_depth;
@@ -406,37 +413,38 @@ impl InstGraph {
                 })
                 .next();
             if let Some(node) = pred {
-                visitor.push(node);
+                visitor.push(subtree_rooted_at_node[node].inst_idx);
             }
         }
         // backtrack a longest path from node until we reach a root with respect to the original graph
         visitor.push(node);
         while let Some(curr) = visitor.pop() {
             longest_path.push(curr);
-            self.orig_graph[curr].visible = true;
-            let curr_distance = self.orig_graph.node_weight(curr).unwrap().max_depth;
+            let n_curr = NodeIndex::from(curr);
+            self.orig_graph[n_curr].visible = true;
+            let curr_distance = self.orig_graph.node_weight(n_curr).unwrap().max_depth;
             let pred = self
                 .orig_graph
-                .neighbors_directed(curr, Incoming)
+                .neighbors_directed(n_curr, Incoming)
                 .filter(|pred| {
                     let pred_distance = self.orig_graph.node_weight(*pred).unwrap().max_depth;
                     pred_distance == curr_distance - 1
                 })
                 .next();
             if let Some(node) = pred {
-                visitor.push(node);
+                visitor.push(self.orig_graph[node].inst_idx);
             }
         }
         longest_path
             .iter()
             .cloned()
             .rev()
-            .collect::<Vec<NodeIndex>>()
+            .collect::<Vec<InstIdx>>()
     }
 
-    // fn backtrack<T>(&mut self, graph: Option<T>, node: NodeIndex) where
-    // T: NodeIndexable<EdgeId = EdgeIndex, NodeId = NodeIndex> + DataMap<NodeWeight = NodeData> + IntoNeighborsDirected {
-    //     let mut visitor: Vec<NodeIndex> = Vec::new();
+    // fn backtrack<T>(&mut self, graph: Option<T>, node: InstIdx) where
+    // T: NodeIndexable<EdgeId = EdgeIndex, NodeId = InstIdx> + DataMap<NodeWeight = NodeData> + IntoNeighborsDirected {
+    //     let mut visitor: Vec<InstIdx> = Vec::new();
     //     visitor.push(node);
     //     while let Some(curr) = visitor.pop() {
     //         self.orig_graph[curr].visible = true;
@@ -462,7 +470,7 @@ impl InstGraph {
             .node_weights()
             .flat_map(|node| node.mkind.quant_idx())
             .collect();
-        let mut matching_loop_nodes_per_quant: Vec<FxHashSet<NodeIndex>> = Vec::new();
+        let mut matching_loop_nodes_per_quant: Vec<FxHashSet<InstIdx>> = Vec::new();
         log!(format!("Start processing quants"));
         for quant in quants {
             log!(format!("Processing quant {}", quant));
@@ -481,7 +489,7 @@ impl InstGraph {
         self.reset_visibility_to(false);
         for matching_loop in matching_loop_nodes_per_quant {
             for node in matching_loop {
-                self.orig_graph[node].visible = true;
+                self.orig_graph[NodeIndex::from(node)].visible = true;
             }
         }
         self.retain_visible_nodes_and_reconnect();
@@ -490,13 +498,13 @@ impl InstGraph {
         // and sort them by max-depth in descending order
         Self::compute_longest_distances_from_roots(&mut self.matching_loop_subgraph);
         // compute end-nodes of matching loops 
-        self.matching_loop_end_nodes = self.matching_loop_subgraph 
+        let mut matching_loop_end_nodes: Vec<_> = self.matching_loop_subgraph 
             .node_indices()
             // only keep end-points of matching loops, i.e., nodes without any children in the matching loop subgraph
             .filter(|nx| self.matching_loop_subgraph.neighbors_directed(*nx, Outgoing).count() == 0)
             .collect();
         // sort the matching loop end-nodes by the max-depth
-        self.matching_loop_end_nodes.sort_unstable_by(|node_a, node_b| {
+        matching_loop_end_nodes.sort_unstable_by(|node_a, node_b| {
             let max_depth_node_a = self.matching_loop_subgraph.node_weight(*node_a).unwrap().max_depth;
             let max_depth_node_b = self.matching_loop_subgraph.node_weight(*node_b).unwrap().max_depth;
             if max_depth_node_a < max_depth_node_b {
@@ -506,16 +514,21 @@ impl InstGraph {
             }
         });
         // return the total number of potential matching loops
-        let nr_matching_loop_end_nodes = self.matching_loop_end_nodes.len();
+        let nr_matching_loop_end_nodes = matching_loop_end_nodes.len();
+        self.matching_loop_end_nodes = Some(matching_loop_end_nodes);
         self.generalized_terms.resize(nr_matching_loop_end_nodes, None);
         nr_matching_loop_end_nodes
+    }
+
+    pub fn found_matching_loops(&self) -> Option<usize> {
+        self.matching_loop_end_nodes.as_ref().map(|mlen| mlen.len())
     }
 
     pub fn show_nth_matching_loop(&mut self, n: usize, p: &mut Z3Parser) -> Vec<String> {
         self.reset_visibility_to(false);
         // relies on the fact that we have previously sorted self.matching_loop_end_nodes by max_depth in descending order in 
         // search_matching_loops
-        let end_node_of_nth_matching_loop = self.matching_loop_end_nodes.get(n);
+        let end_node_of_nth_matching_loop = self.matching_loop_end_nodes.as_ref().and_then(|mlen| mlen.get(n));
         if let Some(&node) = end_node_of_nth_matching_loop {
             // start a reverse-DFS from node and mark all the nodes as visible along the way
             // during the reverse-DFS collect information needed to compute the generalized terms later on
@@ -527,8 +540,8 @@ impl InstGraph {
             let mut abstract_edge_blame_terms: FxHashMap<(QuantIdx, QuantIdx, TermIdx), Vec<TermIdx>> = FxHashMap::default(); 
             let mut dfs = Dfs::new(petgraph::visit::Reversed(&self.matching_loop_subgraph), node);
             while let Some(nx) = dfs.next(petgraph::visit::Reversed(&self.matching_loop_subgraph)) {
-                let orig_index = self.matching_loop_subgraph.node_weight(nx).unwrap().orig_graph_idx;
-                self.orig_graph[orig_index].visible = true;
+                let orig_index = self.matching_loop_subgraph.node_weight(nx).unwrap().inst_idx;
+                self.orig_graph[NodeIndex::from(orig_index)].visible = true;
                 // add all direct dependencies which have BlameKind::Term to the correct bin in abstract_edges
                 // such that later on we can generalize over each all edges in a matching loop that have 
                 // identical from- and to-quantifiers
@@ -605,7 +618,7 @@ impl InstGraph {
     pub fn show_matching_loop_subgraph(&mut self) {
         self.reset_visibility_to(false);
         for node in self.matching_loop_subgraph.node_weights() {
-            self.orig_graph[node.orig_graph_idx].visible = true;
+            self.orig_graph[NodeIndex::from(node.inst_idx)].visible = true;
         }
     }
 
@@ -624,7 +637,7 @@ impl InstGraph {
         }
     }
 
-    fn find_longest_paths(graph: &mut Graph<NodeData, EdgeType>) -> FxHashSet<NodeIndex> {
+    fn find_longest_paths(graph: &mut Graph<NodeData, EdgeType>) -> FxHashSet<InstIdx> {
         // traverse this subtree in topological order to compute longest distances from root nodes
         Self::compute_longest_distances_from_roots(graph);
         let furthest_away_end_nodes = graph
@@ -635,11 +648,11 @@ impl InstGraph {
             .filter(|nx| graph.node_weight(*nx).unwrap().max_depth >= MIN_MATCHING_LOOP_LENGTH - 1) 
             .collect();
         // backtrack longest paths from furthest away nodes in subgraph until we reach a root
-        let mut matching_loop_nodes: FxHashSet<NodeIndex> = FxHashSet::default();
+        let mut matching_loop_nodes: FxHashSet<InstIdx> = FxHashSet::default();
         let mut visitor: Vec<NodeIndex> = furthest_away_end_nodes;
         let mut visited: FxHashSet<_> = FxHashSet::default();
         while let Some(curr) = visitor.pop() {
-            matching_loop_nodes.insert(graph.node_weight(curr).unwrap().orig_graph_idx);
+            matching_loop_nodes.insert(graph.node_weight(curr).unwrap().inst_idx);
             let curr_distance = graph.node_weight(curr).unwrap().max_depth;
             let preds = graph.neighbors_directed(curr, Incoming).filter(|pred| {
                 let pred_distance = graph.node_weight(*pred).unwrap().max_depth;
@@ -660,32 +673,32 @@ impl InstGraph {
         }
     }
 
-    pub fn show_neighbours(&mut self, node: NodeIndex, direction: petgraph::Direction) {
+    pub fn show_neighbours(&mut self, node: InstIdx, direction: petgraph::Direction) {
         let neighbour_indices: Vec<NodeIndex> = self
             .orig_graph
-            .neighbors_directed(node, direction)
+            .neighbors_directed(node.into(), direction)
             .collect();
         for neighbour in neighbour_indices {
             self.orig_graph.node_weight_mut(neighbour).unwrap().visible = true;
         }
     }
 
-    pub fn node_has_filtered_children(&self, node_idx: NodeIndex) -> bool {
+    pub fn node_has_filtered_children(&self, node_idx: InstIdx) -> bool {
         self.node_has_filtered_direct_neighbours(node_idx, Outgoing)
     }
 
-    pub fn node_has_filtered_parents(&self, node_idx: NodeIndex) -> bool {
+    pub fn node_has_filtered_parents(&self, node_idx: InstIdx) -> bool {
         self.node_has_filtered_direct_neighbours(node_idx, Incoming)
     }
 
     fn node_has_filtered_direct_neighbours(
         &self,
-        node_idx: NodeIndex,
+        node_idx: InstIdx,
         direction: Direction,
     ) -> bool {
         let neighbours =
             self.orig_graph
-                .edges_directed(node_idx, direction)
+                .edges_directed(node_idx.into(), direction)
                 .map(|e| match direction {
                     Outgoing => e.target(),
                     Incoming => e.source(),
@@ -709,7 +722,6 @@ impl InstGraph {
                 visible: true,
                 child_count: 0,
                 parent_count: 0,
-                orig_graph_idx: NodeIndex::default(),
                 cost_rank: 0,
                 branching_rank: 0,
                 min_depth: None,
@@ -738,22 +750,15 @@ impl InstGraph {
         // inst_b > inst_a iff (cost_b > cost_a or (cost_b = cost_a and line_nr_b < line_nr_a))
         // This is a total order since the line numbers are always guaranteed to be distinct
         // integers.
-        let mut cost_ranked_node_indices: Vec<NodeIndex> = self.orig_graph.node_indices().collect();
-        let cost_order = |node_a: &NodeIndex, node_b: &NodeIndex| {
-            let node_a_data = self.orig_graph.node_weight(*node_a).unwrap();
-            let node_b_data = self.orig_graph.node_weight(*node_b).unwrap();
-            if node_a_data.cost < node_b_data.cost || (node_a_data.cost == node_b_data.cost
-                && node_b_data.inst_idx < node_a_data.inst_idx) {
-                std::cmp::Ordering::Greater
-            } else {
-                std::cmp::Ordering::Less
-            }
+        let mut cost_ranked_node_indices: Vec<_> = self.orig_graph.node_weights_mut().collect();
+        let cost_order = |node_a: &&mut NodeData, node_b: &&mut NodeData| {
+            node_a.cost.partial_cmp(&node_b.cost).map(Ordering::reverse).unwrap_or(Ordering::Equal)
         };
-        cost_ranked_node_indices.sort_unstable_by(cost_order);
-        for (i, nidx) in cost_ranked_node_indices.iter().enumerate() {
-            self.orig_graph.node_weight_mut(*nidx).unwrap().cost_rank = i;
+        cost_ranked_node_indices.sort_by(cost_order);
+        self.cost_ranked_node_indices = cost_ranked_node_indices.iter().map(|n| n.inst_idx).collect();
+        for (i, node) in cost_ranked_node_indices.into_iter().enumerate() {
+            node.cost_rank = i;
         }
-        self.cost_ranked_node_indices = cost_ranked_node_indices;
         // precompute BFS depth such that we can filter the graph up to some specified depth
         let roots: Vec<NodeIndex> = self
             .orig_graph
@@ -781,26 +786,15 @@ impl InstGraph {
         // inst_b > inst_a iff (child_count(b) > child_count(a) or (child_count(b) = child_count(a) and line_nr_b < line_nr_a))
         // This is a total order since the line numbers are always guaranteed to be distinct
         // integers.
-        let mut branching_ranked_node_indices: Vec<NodeIndex> =
-            self.orig_graph.node_indices().collect();
-        let branching_order = |node_a: &NodeIndex, node_b: &NodeIndex| {
-            let node_a_data = self.orig_graph.node_weight(*node_a).unwrap();
-            let node_b_data = self.orig_graph.node_weight(*node_b).unwrap();
-            if node_a_data.child_count < node_b_data.child_count || (node_a_data.child_count == node_b_data.child_count
-                && node_b_data.inst_idx < node_a_data.inst_idx) {
-                std::cmp::Ordering::Greater
-            } else {
-                std::cmp::Ordering::Less
-            }
+        let mut branching_ranked_node_indices: Vec<_> = self.orig_graph.node_weights_mut().collect();
+        let branching_order = |node_a: &&mut NodeData, node_b: &&mut NodeData| {
+            node_a.child_count.cmp(&node_b.child_count).reverse()
         };
-        branching_ranked_node_indices.sort_unstable_by(branching_order);
-        for (i, nidx) in branching_ranked_node_indices.iter().enumerate() {
-            self.orig_graph
-                .node_weight_mut(*nidx)
-                .unwrap()
-                .branching_rank = i;
+        branching_ranked_node_indices.sort_by(branching_order);
+        self.branching_ranked_node_indices = branching_ranked_node_indices.iter().map(|n| n.inst_idx).collect();
+        for (i, node) in branching_ranked_node_indices.into_iter().enumerate() {
+            node.branching_rank = i;
         }
-        self.branching_ranked_node_indices = branching_ranked_node_indices;
         // compute the longest distances from root nodes by traversing the graph in topological order
         // and taking max distance among parents + 1. Needed to compute longest paths through selected
         // nodes
@@ -855,31 +849,15 @@ impl InstGraph {
     fn add_node(&mut self, node_data: NodeData) {
         let inst_idx = node_data.inst_idx;
         let node = self.orig_graph.add_node(node_data);
-        let ins_idx = self.node_of_inst_idx.push_and_get_key(node);
-        assert_eq!(ins_idx, inst_idx);
-        // store original node-index in each node
-        // self.inst_graph.node_weight_mut(node).unwrap().orig_graph_idx = node;
-        // store original node-idx such that when we compute reachability, we
-        // can use the old indices.
-        // this is necessary since filtering out nodes will changes node-indices
-        // Also, using StableGraph where node-indices stay stable across removals
-        // is not viable here since StableGraph does not implement NodeCompactIndexable
-        // which is needed for petgraph::algo::tred::dag_to_toposorted_adjacency_list
-        self.orig_graph[node].orig_graph_idx = node;
+        assert_eq!(usize::from(inst_idx), node.index());
     }
 
     fn add_edge(&mut self, from: InstIdx, to: InstIdx, blame: &BlameKind) {
-        let (from, to) = (self.node_of_inst_idx[from], self.node_of_inst_idx[to]);
-        self.orig_graph.add_edge(from, to, blame.clone());
+        self.orig_graph.add_edge(from.into(), to.into(), blame.clone());
     }
 
     pub fn get_node_info_map(&self) -> NodeInfoMap {
-        let mut node_info_map = FxHashMap::default();
-        for node_index in self.orig_graph.node_indices() {
-            let NodeData { inst_idx, .. } = self.orig_graph[node_index];
-            node_info_map.insert(node_index, inst_idx);
-        }
-        NodeInfoMap::from(node_info_map)
+        NodeInfoMap
     }
 
     pub fn get_edge_info_map(&self) -> EdgeInfoMap {
@@ -887,27 +865,22 @@ impl InstGraph {
         for edge_index in self.orig_graph.edge_indices() {
             let edge_data = &self.orig_graph[edge_index];
             let (from, to) = self.orig_graph.edge_endpoints(edge_index).unwrap();
+            let (from, to) = (self.orig_graph[from].inst_idx, self.orig_graph[to].inst_idx);
             edge_info_map.insert(edge_index, (edge_data.clone(), (from, to)));
         }
         EdgeInfoMap::from(edge_info_map)
     }
 }
 
-pub struct NodeInfoMap(FxHashMap<NodeIndex, InstIdx>); 
+pub struct NodeInfoMap; 
 
 impl NodeInfoMap {
-
-    fn from(map: FxHashMap<NodeIndex, InstIdx>) -> Self {
-        NodeInfoMap(map) 
-    }
-
     pub fn get_instantiation_info(
         &self,
-        node_index: usize,
+        inst_idx: InstIdx,
         parser: &Z3Parser,
         ignore_ids: bool,
     ) -> InstInfo {
-        let inst_idx = self.0.get(&NodeIndex::new(node_index)).unwrap();
         let ctxt = DisplayCtxt {
             parser,
 
@@ -916,7 +889,7 @@ impl NodeInfoMap {
             use_mathematical_symbols: true,
         };
 
-        let inst = &parser.insts[*inst_idx];
+        let inst = &parser.insts[inst_idx];
         let match_ = &parser.insts[inst.match_];
         let pretty_blamed_terms = match_
             .due_to_terms()
@@ -924,7 +897,7 @@ impl NodeInfoMap {
             .collect::<Vec<String>>();
         let inst_info = InstInfo {
             fingerprint: inst.fingerprint,
-            inst_idx: *inst_idx,
+            inst_idx,
             resulting_term: inst
                 .get_resulting_term()
                 .map(|rt| rt.with(&ctxt).to_string()),
@@ -948,17 +921,16 @@ impl NodeInfoMap {
                 .map(|eq| eq.with(&ctxt).to_string())
                 .collect(),
             dep_instantiations: Vec::new(),
-            node_index: NodeIndex::new(node_index),
         };
         inst_info
     }
 }
 
-pub struct EdgeInfoMap(FxHashMap<EdgeIndex, (BlameKind, (NodeIndex, NodeIndex))>); 
+pub struct EdgeInfoMap(FxHashMap<EdgeIndex, (BlameKind, (InstIdx, InstIdx))>); 
 
 impl EdgeInfoMap {
 
-    fn from(map: FxHashMap<EdgeIndex, (BlameKind, (NodeIndex, NodeIndex))>) -> Self {
+    fn from(map: FxHashMap<EdgeIndex, (BlameKind, (InstIdx, InstIdx))>) -> Self {
         EdgeInfoMap(map)
     }
 

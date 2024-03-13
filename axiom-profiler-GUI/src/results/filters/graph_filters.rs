@@ -1,15 +1,15 @@
 use super::node_actions::NodeActions;
 use crate::{utils::usize_input::UsizeInput, results::svg_result::DEFAULT_NODE_COUNT};
 use gloo::console::log;
-use petgraph::{stable_graph::NodeIndex, Direction};
+use petgraph::Direction;
 use smt_log_parser::{
-    items::QuantIdx,
+    items::{InstIdx, QuantIdx},
     parsers::z3::inst_graph::{InstGraph, InstInfo, NodeData}, Z3Parser,
 };
 use std::fmt::Display;
 use yew::prelude::*;
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum Filter {
     MaxNodeIdx(usize),
     IgnoreTheorySolving,
@@ -17,11 +17,11 @@ pub enum Filter {
     IgnoreAllButQuantifier(Option<QuantIdx>),
     MaxInsts(usize),
     MaxBranching(usize),
-    ShowNeighbours(NodeIndex, Direction),
-    VisitSourceTree(NodeIndex, bool),
-    VisitSubTreeWithRoot(NodeIndex, bool),
+    ShowNeighbours(InstIdx, Direction),
+    VisitSourceTree(InstIdx, bool),
+    VisitSubTreeWithRoot(InstIdx, bool),
     MaxDepth(usize),
-    ShowLongestPath(NodeIndex),
+    ShowLongestPath(InstIdx),
     ShowNamedQuantifier(String),
     SelectNthMatchingLoop(usize),
     ShowMatchingLoopSubgraph,
@@ -31,7 +31,7 @@ impl Display for Filter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::MaxNodeIdx(node_idx) => write!(f, "Only show nodes up to index {}", node_idx),
-            Self::IgnoreTheorySolving => write!(f, "Ignore theory solving instantiations"),
+            Self::IgnoreTheorySolving => write!(f, "Hide theory solving"),
             Self::IgnoreQuantifier(None) => {
                 write!(f, "Ignore instantiations without quantifier")
             }
@@ -49,20 +49,20 @@ impl Display for Filter {
                 write!(f, "Show the {} instantiations with the most children", max)
             }
             Self::VisitSubTreeWithRoot(nidx, retain) => match retain {
-                true => write!(f, "Show node {} and its descendants", nidx.index()),
-                false => write!(f, "Hide node {} and its descendants", nidx.index()),
+                true => write!(f, "Show node {nidx} and its descendants"),
+                false => write!(f, "Hide node {nidx} and its descendants"),
             },
             Self::VisitSourceTree(nidx, retain) => match retain {
-                true => write!(f, "Show node {} and its ancestors", nidx.index()),
-                false => write!(f, "Hide node {} and its ancestors", nidx.index()),
+                true => write!(f, "Show node {nidx} and its ancestors"),
+                false => write!(f, "Hide node {nidx} and its ancestors"),
             },
             Self::ShowNeighbours(nidx, direction) => match direction {
-                Direction::Incoming => write!(f, "Show the parents of node {}", nidx.index()),
-                Direction::Outgoing => write!(f, "Show the children of node {}", nidx.index()),
+                Direction::Incoming => write!(f, "Show the parents of node {nidx}"),
+                Direction::Outgoing => write!(f, "Show the children of node {nidx}"),
             },
             Self::MaxDepth(depth) => write!(f, "Show nodes up to depth {}", depth),
             Self::ShowLongestPath(node) => {
-                write!(f, "Showing longest path through node {}", node.index())
+                write!(f, "Showing longest path through node {node}")
             }
             Self::ShowNamedQuantifier(name) => {
                 write!(f, "Show instantiations of quantifier \"{name}\"")
@@ -84,7 +84,7 @@ impl Display for Filter {
 }
 
 pub enum FilterOutput {
-    LongestPath(Vec<NodeIndex>),
+    LongestPath(Vec<InstIdx>),
     MatchingLoopGeneralizedTerms(Vec<String>),
     None
 }
@@ -92,7 +92,7 @@ pub enum FilterOutput {
 impl Filter {
     pub fn apply(self: Filter, graph: &mut InstGraph, parser: &mut Z3Parser) -> FilterOutput {
         match self {
-            Filter::MaxNodeIdx(max) => graph.retain_nodes(|node: &NodeData| node.orig_graph_idx.index() <= max),
+            Filter::MaxNodeIdx(max) => graph.retain_nodes(|node: &NodeData| usize::from(node.inst_idx) <= max),
             Filter::IgnoreTheorySolving => graph.retain_nodes(|node: &NodeData| !node.is_theory_inst),
             Filter::IgnoreQuantifier(qidx) => graph.retain_nodes(|node: &NodeData| node.mkind.quant_idx() != qidx),
             Filter::IgnoreAllButQuantifier(qidx) => graph.retain_nodes(|node: &NodeData| node.mkind.quant_idx() == qidx),
@@ -108,6 +108,13 @@ impl Filter {
             Filter::ShowMatchingLoopSubgraph => graph.show_matching_loop_subgraph(),
         }
         FilterOutput::None
+    }
+    pub fn get_hash(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        hasher.finish()
     }
 }
 

@@ -1,6 +1,5 @@
 use crate::{
-    results::{graph_info::{GraphInfo, Msg as GraphInfoMsg}, filters::graph_filters::FilterOutput},
-    RcParser, utils::indexer::Indexer,
+    results::{filters::graph_filters::FilterOutput, graph_info::{GraphInfo, Msg as GraphInfoMsg}}, OpenedFileInfo, RcParser
 };
 
 use self::colours::HSVColour;
@@ -14,16 +13,10 @@ use super::{
 use material_yew::WeakComponentLink;
 use num_format::{Locale, ToFormattedString};
 use petgraph::dot::{Config, Dot};
-use petgraph::graph::{EdgeIndex, NodeIndex};
+use petgraph::graph::EdgeIndex;
 use smt_log_parser::{
-    items::{BlameKind, MatchKind},
-    parsers::{
-        z3::{
-            inst_graph::{EdgeInfo, EdgeType, InstGraph, InstInfo, VisibleGraphInfo},
-            z3parser::Z3Parser,
-        },
-        LogParser,
-    },
+    items::{BlameKind, InstIdx, MatchKind, QuantIdx},
+    parsers::z3::inst_graph::{EdgeInfo, EdgeType, InstGraph, InstInfo, VisibleGraphInfo},
 };
 use std::num::NonZeroUsize;
 use viz_js::VizInstance;
@@ -31,11 +24,12 @@ use web_sys::window;
 use yew::prelude::*;
 
 pub const EDGE_LIMIT: usize = 2000;
-pub const DEFAULT_NODE_COUNT: usize = 125;
+pub const DEFAULT_NODE_COUNT: usize = 200;
 pub const NODE_COLOUR_SATURATION: f64 = 0.4;
 pub const NODE_COLOUR_VALUE: f64 = 0.95;
 
 pub enum Msg {
+    ConstructedGraph(SVGData),
     UpdateSvgText(AttrValue, bool),
     RenderGraph(UserPermission),
     ApplyFilter(Filter),
@@ -64,34 +58,37 @@ struct GraphDimensions {
     edge_count: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RenderingState {
     ConstructingGraph,
+    ConstructedGraph,
     GraphToDot,
     RenderingGraph,
 }
 
 pub struct SVGResult {
-    parser: RcParser,
     colour_map: QuantIdxToColourMap,
-    inst_graph: InstGraph,
     svg_text: AttrValue,
     filter_chain_link: WeakComponentLink<FilterChain>,
     insts_info_link: WeakComponentLink<GraphInfo>,
     graph_dim: GraphDimensions,
     worker: Option<Box<dyn yew_agent::Bridge<Worker>>>,
     async_graph_and_filter_chain: bool,
-    get_node_info: Callback<(NodeIndex, bool, RcParser), InstInfo>,
-    get_edge_info: Callback<(EdgeIndex, bool, RcParser), EdgeInfo>,
     selected_insts: Vec<InstInfo>,
-    searched_matching_loops: bool,
-    matching_loop_count: usize,
+    data: Option<SVGData>,
+    queue: Vec<Msg>,
+}
+
+pub struct SVGData {
+    get_node_info: Callback<(InstIdx, bool, RcParser), InstInfo>,
+    get_edge_info: Callback<(EdgeIndex, bool, RcParser), EdgeInfo>,
 }
 
 #[derive(Properties, PartialEq)]
 pub struct SVGProps {
-    pub parser: RcParser,
+    pub file: OpenedFileInfo,
     pub progress: Callback<Option<RenderingState>>,
+    pub selected_insts_cb: Callback<Vec<(InstIdx, Option<QuantIdx>)>>,
 }
 
 impl Component for SVGResult {
@@ -100,27 +97,36 @@ impl Component for SVGResult {
 
     fn create(ctx: &Context<Self>) -> Self {
         log::debug!("Creating SVGResult component");
-        let parser = RcParser::clone(&ctx.props().parser);
+        let old = std::mem::replace(&mut *ctx.props().file.update.borrow_mut(), Ok(ctx.link().callback(|msg| msg)));
+        if let Err(old) = old {
+            ctx.link().send_message_batch(old);
+        }
+        let parser = &ctx.props().file.parser;
         ctx.props().progress.emit(Some(RenderingState::ConstructingGraph));
-        let inst_graph = InstGraph::from(&parser.borrow());
         let (quant_count, non_quant_insts) = parser.borrow().quant_count_incl_theory_solving();
         let colour_map = QuantIdxToColourMap::from(quant_count, non_quant_insts);
-        let get_node_info = Callback::from({
-            let node_info_map = inst_graph.get_node_info_map();
-            move |(node, ignore_ids, parser): (NodeIndex, bool, RcParser)| {
-                node_info_map.get_instantiation_info(node.index(), &parser.borrow(), ignore_ids)
-            }
-        });
-        let get_edge_info = Callback::from({
-            let edge_info_map = inst_graph.get_edge_info_map();
-            move |(edge, ignore_ids, parser): (EdgeIndex, bool, RcParser)| {
-                edge_info_map.get_edge_info(edge, &parser.borrow(), ignore_ids)
-            }
+        let link = ctx.link().clone();
+        let parser = RcParser::clone(parser);
+        wasm_bindgen_futures::spawn_local(async move {
+            gloo_timers::future::TimeoutFuture::new(10).await;
+            let inst_graph = InstGraph::from(&parser.borrow());
+            let get_node_info = Callback::from({
+                let node_info_map = inst_graph.get_node_info_map();
+                move |(node, ignore_ids, parser): (InstIdx, bool, RcParser)| {
+                    node_info_map.get_instantiation_info(node, &parser.borrow(), ignore_ids)
+                }
+            });
+            let get_edge_info = Callback::from({
+                let edge_info_map = inst_graph.get_edge_info_map();
+                move |(edge, ignore_ids, parser): (EdgeIndex, bool, RcParser)| {
+                    edge_info_map.get_edge_info(edge, &parser.borrow(), ignore_ids)
+                }
+            });
+            let _ = parser.graph.borrow_mut().insert(inst_graph);
+            link.send_message(Msg::ConstructedGraph(SVGData { get_node_info, get_edge_info }));
         });
         Self {
-            parser,
             colour_map,
-            inst_graph,
             svg_text: AttrValue::default(),
             filter_chain_link: WeakComponentLink::default(),
             insts_info_link: WeakComponentLink::default(),
@@ -130,20 +136,31 @@ impl Component for SVGResult {
             },
             worker: Some(Self::create_worker(ctx.link().clone())),
             async_graph_and_filter_chain: false,
-            get_node_info,
-            get_edge_info,
             selected_insts: Vec::new(),
-            searched_matching_loops: false,
-            matching_loop_count: 0,
+            data: None,
+            queue: Vec::new(),
         }
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
+        if let Msg::ConstructedGraph(data) = msg {
+            let _ = self.data.insert(data);
+            let queue = std::mem::replace(&mut self.queue, Vec::new());
+            ctx.props().progress.emit(Some(RenderingState::ConstructedGraph));
+            ctx.link().send_message_batch(queue);
+            return true;
+        }
+        let mut inst_graph = ctx.props().file.parser.graph.borrow_mut();
+        let Some(inst_graph) = inst_graph.as_mut() else {
+            self.queue.push(msg);
+            return false;
+        };
         match msg {
+            Msg::ConstructedGraph(_) => unreachable!(),
             Msg::WorkerOutput(_out) => false,
             Msg::ApplyFilter(filter) => {
                 log::debug!("Applying filter {}", filter);
-                match filter.apply(&mut self.inst_graph, &mut self.parser.borrow_mut()) {
+                match filter.apply(inst_graph, &mut ctx.props().file.parser.borrow_mut()) {
                     FilterOutput::LongestPath(path) => {
                         self.insts_info_link
                             .borrow()
@@ -164,8 +181,7 @@ impl Component for SVGResult {
                 }
             }
             Msg::SearchMatchingLoops => {
-                self.matching_loop_count = self.inst_graph.search_matching_loops();
-                self.searched_matching_loops = true;
+                inst_graph.search_matching_loops();
                 ctx.link().send_message(Msg::SelectNthMatchingLoop(0));
                 true
             }
@@ -187,7 +203,7 @@ impl Component for SVGResult {
             }
             Msg::ResetGraph => {
                 log::debug!("Resetting graph");
-                self.inst_graph.reset_visibility_to(true);
+                inst_graph.reset_visibility_to(true);
                 false
             }
             Msg::RenderGraph(UserPermission { permission }) => {
@@ -196,7 +212,7 @@ impl Component for SVGResult {
                     edge_count,
                     node_count_decreased,
                     edge_count_decreased,
-                } = self.inst_graph.retain_visible_nodes_and_reconnect();
+                } = inst_graph.retain_visible_nodes_and_reconnect();
                 log::debug!("The current node count is {}", node_count);
                 self.graph_dim.node_count = node_count;
                 self.graph_dim.edge_count = edge_count;
@@ -208,7 +224,7 @@ impl Component for SVGResult {
                     self.async_graph_and_filter_chain = false;
                     log::debug!("Rendering graph");
                     ctx.props().progress.emit(Some(RenderingState::GraphToDot));
-                    let filtered_graph = &self.inst_graph.visible_graph;
+                    let filtered_graph = &inst_graph.visible_graph;
 
                     // Performance observations (default value is in [])
                     //  - splines=false -> 38s | [splines=true] -> ??
@@ -258,8 +274,8 @@ impl Component for SVGResult {
                             ),
                             &|_, (_, node_data)| {
                                 format!("id=node{} label=\"{}\" style=\"{}\" shape={} fillcolor=\"{}\" fontcolor=black gradientangle=90",
-                                        node_data.orig_graph_idx.index(),
-                                        node_data.orig_graph_idx.index(),
+                                        usize::from(node_data.inst_idx),
+                                        usize::from(node_data.inst_idx),
                                         if node_data.mkind.is_mbqi() { "filled,dashed" } else { "filled" },
                                         // match (self.inst_graph.node_has_filtered_children(node_data.orig_graph_idx), 
                                         //        self.inst_graph.node_has_filtered_parents(node_data.orig_graph_idx)) {
@@ -268,8 +284,8 @@ impl Component for SVGResult {
                                         //     (true, false) => format!("{}:{}", self.colour_map.get(&node_data.quant_idx, 0.1), self.colour_map.get(&node_data.quant_idx, 1.0)),
                                         //     (true, true) => format!("{}", self.colour_map.get(&node_data.quant_idx, 0.3)),
                                         // },
-                                        match (self.inst_graph.node_has_filtered_children(node_data.orig_graph_idx),
-                                               self.inst_graph.node_has_filtered_parents(node_data.orig_graph_idx)) {
+                                        match (inst_graph.node_has_filtered_children(node_data.inst_idx),
+                                               inst_graph.node_has_filtered_parents(node_data.inst_idx)) {
                                             (false, false) => "box",
                                             (false, true) => "house",
                                             (true, false) => "invhouse",
@@ -284,6 +300,7 @@ impl Component for SVGResult {
                     ctx.props().progress.emit(Some(RenderingState::RenderingGraph));
                     let link = ctx.link().clone();
                     wasm_bindgen_futures::spawn_local(async move {
+                        gloo_timers::future::TimeoutFuture::new(10).await;
                         let graphviz = VizInstance::new().await;
                         let options = viz_js::Options::default();
                         // options.engine = "twopi".to_string();
@@ -367,63 +384,28 @@ impl Component for SVGResult {
             }
             Msg::UpdateSelectedNodes(nodes) => {
                 self.selected_insts = nodes;
+                let insts = self.selected_insts.iter().map(|i| (i.inst_idx, i.mkind.quant_idx())).collect();
+                ctx.props().selected_insts_cb.emit(insts);
                 true
             }
         }
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {
-        let node_and_edge_count_preview = html! {
-            <h4>{format!{"The filtered graph contains {} nodes and {} edges", self.graph_dim.node_count, self.graph_dim.edge_count}}</h4>
+        let Some(data) = &self.data else {
+            return html! {};
         };
-        let async_graph_and_filter_chain_warning = if self.async_graph_and_filter_chain {
-            html! {<h4 style="color: red;">{"Warning: The filter chain and node/edge count do not correspond to the rendered graph."}</h4>}
-        } else {
-            html! {}
-        };
-        let apply_filter = ctx.link().callback(Msg::ApplyFilter);
-        let reset_graph = ctx.link().callback(|_| Msg::ResetGraph);
-        let render_graph = ctx.link().callback(Msg::RenderGraph);
         let update_selected_nodes = ctx.link().callback(Msg::UpdateSelectedNodes);
         html! {
-            <>
-                <div style="flex: 20%; height: 87vh; overflow-y: auto; ">
-                {if !self.searched_matching_loops {
-                    html! {
-                        <button onclick={ctx.link().callback(|_| Msg::SearchMatchingLoops)}>{"Search matching loops"}</button>
-                    }
-                } else {
-                    html! {
-                        <>
-                        <Indexer 
-                            label="Analyzed matching loops" 
-                            index_consumer={ctx.link().callback(Msg::SelectNthMatchingLoop)}
-                            max={self.matching_loop_count - 1}
-                        />
-                        <button onclick={ctx.link().callback(|_| Msg::ShowMatchingLoopSubgraph)}>{"Show all matching loops"}</button>
-                        </>
-                    }
-                }}
-                <ContextProvider<Vec<InstInfo>> context={self.selected_insts.clone()}>
-                    <FilterChain
-                        apply_filter={apply_filter.clone()}
-                        reset_graph={reset_graph.clone()}
-                        render_graph={render_graph.clone()}
-                        weak_link={self.filter_chain_link.clone()}
-                    />
-                </ContextProvider<Vec<InstInfo>>>
-                {async_graph_and_filter_chain_warning}
-                {node_and_edge_count_preview}
-                </div>
-                <GraphInfo
-                    weak_link={self.insts_info_link.clone()}
-                    node_info={self.get_node_info.clone()}
-                    edge_info={self.get_edge_info.clone()}
-                    parser={self.parser.clone()}
-                    svg_text={&self.svg_text}
-                    {update_selected_nodes}
-                />
-            </>
+            <GraphInfo
+                weak_link={self.insts_info_link.clone()}
+                node_info={data.get_node_info.clone()}
+                edge_info={data.get_edge_info.clone()}
+                parser={ctx.props().file.parser.clone()}
+                svg_text={&self.svg_text}
+                outdated={self.async_graph_and_filter_chain}
+                {update_selected_nodes}
+            />
         }
     }
 }

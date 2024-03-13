@@ -21,22 +21,22 @@ pub fn node_actions(props: &NodeActionsProps) -> Html {
         })
     };
     let show_subtree = callback_from(Box::new(|inst: &InstInfo| {
-        Filter::VisitSubTreeWithRoot(inst.node_index, true)
+        Filter::VisitSubTreeWithRoot(inst.inst_idx, true)
     }));
     let hide_subtree = callback_from(Box::new(|inst: &InstInfo| {
-        Filter::VisitSubTreeWithRoot(inst.node_index, false)
+        Filter::VisitSubTreeWithRoot(inst.inst_idx, false)
     }));
     let show_children = callback_from(Box::new(|inst: &InstInfo| {
-        Filter::ShowNeighbours(inst.node_index, Outgoing)
+        Filter::ShowNeighbours(inst.inst_idx, Outgoing)
     }));
     let show_parents = callback_from(Box::new(|inst: &InstInfo| {
-        Filter::ShowNeighbours(inst.node_index, Incoming)
+        Filter::ShowNeighbours(inst.inst_idx, Incoming)
     }));
     let show_source_tree = callback_from(Box::new(|inst: &InstInfo| {
-        Filter::VisitSourceTree(inst.node_index, true)
+        Filter::VisitSourceTree(inst.inst_idx, true)
     }));
     let hide_source_tree = callback_from(Box::new(|inst: &InstInfo| {
-        Filter::VisitSourceTree(inst.node_index, false)
+        Filter::VisitSourceTree(inst.inst_idx, false)
     }));
     let ignore_quantifier = callback_from(Box::new(|inst: &InstInfo| {
         Filter::IgnoreQuantifier(inst.mkind.quant_idx())
@@ -45,7 +45,7 @@ pub fn node_actions(props: &NodeActionsProps) -> Html {
         Filter::IgnoreAllButQuantifier(inst.mkind.quant_idx())
     }));
     let show_longest_path = callback_from(Box::new(|inst: &InstInfo| {
-        Filter::ShowLongestPath(inst.node_index)
+        Filter::ShowLongestPath(inst.inst_idx)
     }));
     html! {
     <>

@@ -142,7 +142,7 @@ impl<T: AsRef<[u8]> + Unpin> AsyncCursorRead for T {}
 // Parser Execution
 ////////////////////
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ParseState {
     Paused(ReaderState),
     Completed { end_of_stream: bool },
@@ -156,7 +156,7 @@ impl ParseState {
 }
 
 /// Progress information for a parser.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ReaderState {
     /// The number of bytes parsed so far.
     pub bytes_read: usize,
