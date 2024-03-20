@@ -1,9 +1,9 @@
 use fxhash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::fmt::{self, Display};
+use std::fmt;
 use std::num::{NonZeroU32, NonZeroUsize};
-use crate::parsers::z3::egraph::NodeEquality;
+use std::ops::Index;
 use crate::{Result, Error};
 
 pub type StringTable = lasso::Rodeo<lasso::Spur, fxhash::FxBuildHasher>;
@@ -28,12 +28,12 @@ macro_rules! idx {
         }
         impl fmt::Debug for $struct {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, $prefix, self.0)
+                write!(f, $prefix, self.0.get() - 1)
             }
         }
         impl fmt::Display for $struct {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "{}", self.0)
+                write!(f, "{}", self.0.get() - 1)
             }
         }
     };
@@ -44,9 +44,12 @@ idx!(InstIdx, "i{}");
 idx!(StackIdx, "s{}");
 idx!(ENodeIdx, "e{}");
 idx!(MatchIdx, "m{}");
+idx!(EqGivenIdx, "≡{}");
+idx!(EqTransIdx, "={}");
+idx!(GraphIdx, "g{}");
 
 /// A Z3 term and associated data.
-#[derive(Debug, Serialize, Deserialize,PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Clone)]
 pub struct Term {
     pub id: Option<TermId>,
     pub kind: TermKind,
@@ -59,7 +62,7 @@ pub enum TermKind {
     Var(usize),
     ProofOrApp(ProofOrApp),
     Quant(QuantIdx),
-    GeneralizedPrimitive,
+    Generalised,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Copy, PartialEq, Eq, Hash)]
@@ -97,14 +100,19 @@ pub struct Meaning {
     pub value: IString,
 }
 
+/// Returned when indexing with `TermIdx`
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub struct TermAndMeaning<'a> {
+    pub term: &'a Term,
+    pub meaning: Option<&'a Meaning>,
+}
+
 /// A Z3 quantifier and associated data.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Quantifier {
     pub kind: QuantKind,
     pub num_vars: usize,
     pub term: Option<TermIdx>,
-    pub cost: f32,
-    pub instances: Vec<InstIdx>,
     pub vars: Option<VarNames>,
 }
 
@@ -143,12 +151,18 @@ impl QuantKind {
     pub fn is_discovered(&self) -> bool {
         matches!(self, Self::Other(_))
     }
+    pub fn user_name(&self) -> Option<IString> {
+        match self {
+            Self::NamedQuant(name) | Self::Other(name) => Some(*name),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VarNames {
-    TypeOnly(Vec<IString>),
-    NameAndType(Vec<(IString, IString)>),
+    TypeOnly(Box<[IString]>),
+    NameAndType(Box<[(IString, IString)]>),
 }
 impl VarNames {
     pub fn get_name<'a>(strings: &'a StringTable, this: &Option<Self>, idx: usize) -> Cow<'a, str> {
@@ -183,17 +197,12 @@ pub struct Instantiation {
     pub fingerprint: Fingerprint,
     pub proof_id: Option<std::result::Result<TermIdx, TermId>>,
     pub z3_generation: Option<u32>,
-    pub cost: f32,
     pub yields_terms: Box<[ENodeIdx]>,
-    pub yields_equalities: Vec<(ENodeIdx, ENodeIdx)>,
 }
 
 impl Instantiation {
     pub fn get_resulting_term(&self) -> Option<TermIdx> {
         self.proof_id.as_ref()?.as_ref().ok().copied()
-    }
-    pub fn add_yield_eq(&mut self, from: ENodeIdx, to: ENodeIdx) {
-        self.yields_equalities.push((from, to))
     }
 }
 
@@ -201,28 +210,24 @@ impl Instantiation {
 pub struct Match {
     pub kind: MatchKind,
     pub blamed: Box<[BlameKind]>,
-    pub blamed_eqs: Vec<NodeEquality>,
 }
 
 impl Match {
-    // pub fn due_to_enodes(&self) -> impl Iterator<Item = (&BlameKind, ENodeIdx)> + '_ {
-    //     self.blamed
-    //         .iter()
-    //         .filter_map(|x| x.get_blame_node().map(|b| (x, b)))
-    // }
-    pub fn due_to_terms(&self) -> impl Iterator<Item = (&BlameKind, ENodeIdx)> + '_ {
-        self.blamed.iter().filter_map(|x| match x {
-            BlameKind::Term { term } => Some((x, *term)),
-            _ => None,
+    /// A quantifier may have multiple possible triggers where each
+    /// instantiation will be due to matching exactly one. Each of these
+    /// triggers has a sequence of arbitrarily many terms which must all be
+    /// matched. This returns a sequence of `Blame` where each explains how the
+    /// corresponding term in the trigger was matched.
+    pub fn trigger_matches(&self) -> impl Iterator<Item = Blame> {
+        let mut last = 0;
+        let terms = self.blamed.iter().enumerate().flat_map(|(idx, blame)| 
+            matches!(blame, BlameKind::Term { .. }).then(|| idx)
+        ).chain([self.blamed.len()]);
+        terms.skip(1).map(move |idx| {
+            let slice = &self.blamed[last..idx];
+            last = idx;
+            Blame { slice }
         })
-    }
-    pub fn due_to_equalities(&self) -> impl Iterator<Item = &NodeEquality> + '_ {
-        self.blamed_eqs.iter()
-        // self.blamed.iter().filter_map(|x| match x {
-        //     // BlameKind::Equality { eq } => Some(*eq),
-        //     BlameKind::Equality { from, to } => Some((*from, *to)),
-        //     _ => None,
-        // })
     }
 }
 
@@ -230,22 +235,22 @@ impl Match {
 pub enum MatchKind {
     MBQI {
         quant: QuantIdx,
-        bound_terms: Vec<ENodeIdx>,
+        bound_terms: Box<[ENodeIdx]>,
     },
     TheorySolving {
         axiom_id: TermId,
-        bound_terms: Vec<TermIdx>,
+        bound_terms: Box<[TermIdx]>,
         rewrite_of: Option<TermIdx>,
     },
     Axiom {
         axiom: QuantIdx,
         pattern: TermIdx,
-        bound_terms: Vec<TermIdx>,
+        bound_terms: Box<[TermIdx]>,
     },
     Quantifier {
         quant: QuantIdx,
         pattern: TermIdx,
-        bound_terms: Vec<ENodeIdx>,
+        bound_terms: Box<[ENodeIdx]>,
     },
 }
 impl MatchKind {
@@ -298,22 +303,46 @@ impl MatchKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BlameKind {
     Term { term: ENodeIdx },
-    // Equality { eq: ENodeIdx },
-    // Equality { from: ENodeIdx, to: ENodeIdx },
-    Equality,
-    // TODO: why aren't all equalities explained by a prior `eq-expl`?
-    UnknownEquality { from: ENodeIdx, to: ENodeIdx },
+    Equality { eq: EqTransIdx },
+}
+impl BlameKind {
+    fn unwrap_enode(&self) -> &ENodeIdx {
+        match self {
+            Self::Term { term } => term,
+            _ => panic!("expected term"),
+        }
+    }
+    fn unwrap_eq(&self) -> &EqTransIdx {
+        match self {
+            Self::Equality { eq } => eq,
+            _ => panic!("expected equality"),
+        }
+    }
 }
 
-impl BlameKind {
-    pub fn get_blame_node(&self) -> Option<ENodeIdx> {
-        match self {
-            Self::Term { term } => Some(*term),
-            _ => None,
-            // Self::Equality { eq } => Some(*eq),
-            // Self::Equality { from, to } => Some(*from),
-            // Self::UnknownEquality { .. } => None,
-        }
+/// Explains how a term in a trigger was matched. It will always start with an
+/// enode and then have some sequence of equalities used to rewrite distinct
+/// subexpressions of the enode.
+#[derive(Debug, Clone, Copy)]
+pub struct Blame<'a> {
+    slice: &'a [BlameKind],
+}
+impl<'a> Blame<'a> {
+    pub fn enode(self) -> ENodeIdx {
+        *self.slice[0].unwrap_enode()
+    }
+    pub fn len(self) -> usize {
+        self.slice.len() - 1
+    }
+    pub fn equalities(self) -> impl Iterator<Item = EqTransIdx> + 'a {
+        self.slice.iter().skip(1).map(|x| *x.unwrap_eq())
+    }
+
+}
+impl Index<usize> for Blame<'_> {
+    type Output = EqTransIdx;
+    fn index(&self, idx: usize) -> &Self::Output {
+        self.slice[idx + 1].unwrap_eq()
     }
 }
 
@@ -366,6 +395,9 @@ impl TermId {
     }
     pub fn order(&self) -> u32 {
         self.id.map(|id| id.get()).unwrap_or_default()
+    }
+    pub fn display_id(&self) -> Option<u32> {
+        self.id.map(|id| id.get() - 1)
     }
 }
 
@@ -440,7 +472,7 @@ pub enum EqualityExpl {
     },
     Congruence {
         from: ENodeIdx,
-        arg_eqs: Box<[(ENodeIdx, ENodeIdx)]>,
+        arg_eqs: Box<[EqTransIdx]>,
         to: ENodeIdx,
         // add dependent instantiations
     },
@@ -459,10 +491,6 @@ pub enum EqualityExpl {
         args: Box<[IString]>,
         to: ENodeIdx,
     },
-    Synthetic {
-        from: ENodeIdx,
-        to: ENodeIdx,
-    }
 }
 
 impl EqualityExpl {
@@ -474,8 +502,7 @@ impl EqualityExpl {
             | Congruence { from, .. }
             | Theory { from, .. }
             | Axiom { from, .. }
-            | Unknown { from, .. } 
-            | Synthetic { from, .. } => from,
+            | Unknown { from, .. } => from,
         }
     }
     pub fn to(&self) -> ENodeIdx {
@@ -486,35 +513,76 @@ impl EqualityExpl {
             | Congruence { to, .. }
             | Theory { to, .. }
             | Axiom { to, .. }
-            | Unknown { to, .. }
-            | Synthetic { to, .. } => to,
+            | Unknown { to, .. } => to,
         }
     }
-    pub fn dependency_on(&self) -> Option<ENodeIdx> {
-        use EqualityExpl::*;
-        match *self {
-            Root { .. } => None,
-            Literal { eq, .. } => Some(eq),
-            // TODO: other cases
-            Congruence { .. } => None,
-            Theory { .. } => None,
-            Axiom { .. } => None,
-            Unknown { .. } => None,
-            Synthetic { .. } => None,
+    pub fn walk_any(&self, from: ENodeIdx) -> ENodeIdx {
+        let Some(to) = self.walk(from, true).or_else(|| self.walk(from, false)) else {
+            panic!("walking from {from:?} with {:?} <--> {:?}", self.from(), self.to());
+        };
+        to
+    }
+    pub fn walk(&self, from: ENodeIdx, fwd: bool) -> Option<ENodeIdx> {
+        if fwd {
+            (self.from() == from).then(|| self.to())
+        } else {
+            (self.to() == from).then(|| self.from())
+        }
+    }
+    pub fn short_str(&self) -> &'static str {
+        match self {
+            EqualityExpl::Root { .. } => "root",
+            EqualityExpl::Literal { .. } => "literal",
+            EqualityExpl::Congruence { .. } => "congruence",
+            EqualityExpl::Theory { .. } => "theory",
+            EqualityExpl::Axiom { .. } => "axiom",
+            EqualityExpl::Unknown { .. } => "unknown",
+        }
+    
+    }
+}
+
+// Whenever a pair of enodes are said to be equal this uses transitive reasoning
+// with one or more `EqualityExpl` to explain why.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TransitiveExpl {
+    pub path: Box<[TransitiveExplSegment]>,
+    pub given_len: usize,
+    pub to: ENodeIdx,
+}
+pub enum TransitiveExplIter<'a> {
+    Forward(std::slice::Iter<'a, TransitiveExplSegment>),
+    Backward(std::iter::Rev<std::slice::Iter<'a, TransitiveExplSegment>>),
+}
+impl<'a> TransitiveExplIter<'a> {
+    pub fn next(&mut self) -> Option<&'a TransitiveExplSegment> {
+        match self {
+            Self::Forward(iter) => iter.next(),
+            Self::Backward(iter) => iter.next(),
         }
     }
 }
 
-impl Display for EqualityExpl {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            EqualityExpl::Root { id } => write!(f, "root"),
-            EqualityExpl::Literal { from, eq, to } => write!(f, "lit"),
-            EqualityExpl::Congruence { from, arg_eqs, to } => write!(f, "cg"),
-            EqualityExpl::Theory { from, theory, to } => write!(f, "th"),
-            EqualityExpl::Axiom { from, to } => write!(f, "ax"),
-            EqualityExpl::Unknown { kind, from, args, to } => write!(f, "unknown"),
-            EqualityExpl::Synthetic { from, to } => write!(f, "syn"),
+impl TransitiveExpl {
+    pub fn new(i: impl Iterator<Item = TransitiveExplSegment> + ExactSizeIterator, given_len: usize, to: ENodeIdx) -> Result<Self> {
+        let mut path = Vec::new();
+        path.try_reserve_exact(i.len())?;
+        path.extend(i);
+        Ok(Self { path: path.into_boxed_slice(), given_len, to })
+    }
+    pub fn all(&self, fwd: bool) -> TransitiveExplIter {
+        let iter = self.path.iter();
+        if fwd {
+            TransitiveExplIter::Forward(iter)
+        } else {
+            TransitiveExplIter::Backward(iter.rev())
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum TransitiveExplSegment {
+    Leaf(EqGivenIdx),
+    TransitiveFwd(EqTransIdx),
+    TransitiveBwd(EqTransIdx),
 }
