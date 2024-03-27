@@ -10,6 +10,7 @@ use super::{
     },
     worker::Worker,
 };
+use gloo::console::log;
 use material_yew::WeakComponentLink;
 use num_format::{Locale, ToFormattedString};
 use petgraph::dot::{Config, Dot};
@@ -482,11 +483,16 @@ impl QuantIdxToColourMap {
         //     e.g. idx 0 and 2 will be right next to each other (0 -> 0, 1 -> n/2, 2 -> 1, ...).
         //     Luckily we generally get a number somewhat smaller than `n/2` so it's not too bad.
         if let Some(nz) = nz {
-            // according to prime number theorem, the number of primes less than or equal to N is roughly N/ln(N)
-            let nr_primes_smaller_than_n = n as f64 / f64::ln(n as f64);
+            // we try to find a prime close to n/10 such that 0 -> 0, 1 -> n/10, 2 -> 2n/10, ..., 10 -> 1, ...
+            // this way, the indices within a window of size 10 have quite distinct colors. 
+            // For small n, n/10 is close to 0 and hence we would choose a small prime which would again lead to 
+            // visually indistinguishable colors. Therefore, we take the max of the prime close to n/10 and the 6-th prime
+            // It is a compromise to have easily distinguishable colors for both large and small n.
+            let nr_primes_to_skip = primal::StreamingSieve::prime_pi(((n as f64)/10.0).floor() as usize).max(6); 
             primal::Primes::all()
                 // Start from "middle prime" smaller than n since both the very large and very small ones don't permute so nicely.
-                .skip((nr_primes_smaller_than_n / 2.0).ceil() as usize)
+                // .skip((nr_primes_smaller_than_n / 2.0).ceil() as usize)
+                .skip(nr_primes_to_skip)
                 // SAFETY: returned primes will never be zero.
                 .map(|p| unsafe { NonZeroUsize::new_unchecked(p) })
                 // Find the first prime that is coprime to `nz`.
