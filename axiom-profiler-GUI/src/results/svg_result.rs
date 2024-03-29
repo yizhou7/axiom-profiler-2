@@ -293,7 +293,9 @@ impl Component for SVGResult {
                             ],
                             &|fg, edge_data| {
                                 let (from, to) = (fg[edge_data.source()].idx, fg[edge_data.target()].idx);
-                                let info = EdgeInfo { edge: edge_data.weight(), from, to, graph: &*inst_graph, ctxt };
+                                let edge = edge_data.weight();
+                                let kind = &edge.kind(inst_graph);
+                                let info = EdgeInfo { edge, kind, from, to, graph: &*inst_graph, ctxt };
                                 let tooltip = info.tooltip();
                                 let is_indirect = edge_data.weight().is_indirect(inst_graph);
                                 let style = match is_indirect {
@@ -304,11 +306,7 @@ impl Component for SVGResult {
                                     true => "indirect",
                                     false => "direct",
                                 };
-                                let last_node = match edge_data.weight() {
-                                    VisibleEdge::Direct(e) => inst_graph.raw.graph.edge_endpoints(*e).unwrap().0,
-                                    VisibleEdge::Indirect { path } => path.last().copied().unwrap(),
-                                };
-                                let arrowhead = match inst_graph.raw.graph[last_node].kind() {
+                                let arrowhead = match kind.blame(inst_graph) {
                                     NodeKind::GivenEquality(_) | NodeKind::TransEquality(_) => "empty",
                                     _ => "normal",
                                 };
@@ -321,7 +319,7 @@ impl Component for SVGResult {
                             &|_, (_, data)| {
                                 let node_data = &inst_graph.raw.graph[data.idx];
                                 let info = NodeInfo { node: node_data, ctxt };
-                                let tooltip = info.tooltip();
+                                let tooltip = info.tooltip(false, None);
                                 let mut style = Some("filled");
                                 let mut shape = None;
                                 let mut fillcolor = Some("white".to_string());

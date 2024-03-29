@@ -1,10 +1,11 @@
 use gloo::timers::callback::Timeout;
 use material_yew::icon::MatIcon;
-use smt_log_parser::items::{InstIdx, QuantIdx};
+use petgraph::graph::NodeIndex;
+use smt_log_parser::{items::{ENodeIdx, EqGivenIdx, EqTransIdx, InstIdx, QuantIdx}, parsers::z3::graph::raw::{Node, NodeKind}};
 use web_sys::{Element, HtmlElement, HtmlInputElement};
-use yew::{function_component, html, Callback, Component, Context, Html, NodeRef, Properties};
+use yew::{function_component, html, use_context, Callback, Component, Context, Html, NodeRef, Properties};
 
-use crate::{mouse_position, results::filters::graph_filters::Filter, PREVENT_DEFAULT_DRAG_OVER};
+use crate::{configuration::ConfigurationProvider, mouse_position, results::filters::Filter, PREVENT_DEFAULT_DRAG_OVER};
 
 pub enum Msg {
     OnDragStart(usize, usize),
@@ -289,8 +290,14 @@ pub struct ExistingFilterProps {
 
 #[function_component]
 pub fn ExistingFilter(props: &ExistingFilterProps) -> Html {
+    let cfg = use_context::<ConfigurationProvider>().unwrap();
+    let graph = cfg.config.parser.and_then(|p| p.graph);
+    let fc = |i| graph.as_ref().map(|g| {
+        *g.borrow().raw[i].kind()
+    }).unwrap();
     let icon = props.filter.icon();
-    let hover = props.filter.long_text(true);
+    let hover = props.filter.long_text(fc, true);
+    let filter_text = props.filter.short_text(fc);
     let onclick = Some(props.onclick.clone()).filter(|_| !props.editing);
     let onclick = Callback::from(move |e: web_sys::MouseEvent| {
         e.prevent_default();
@@ -319,14 +326,25 @@ pub fn ExistingFilter(props: &ExistingFilterProps) -> Html {
     let filter = props.filter.clone();
     let end_edit = props.end_edit.clone();
     let update = Callback::from(move |(v, s)| {
-        let new_filter = filter.update(v, s);
+        let d = |old, i| {
+            let graph = graph.as_ref().unwrap().borrow();
+            let old: &Node = &graph.raw.graph[old];
+            let kind = match old.kind() {
+                NodeKind::ENode(_) => NodeKind::ENode(ENodeIdx::from(i)),
+                NodeKind::GivenEquality(_) => NodeKind::GivenEquality(EqGivenIdx::from(i)),
+                NodeKind::TransEquality(_) => NodeKind::TransEquality(EqTransIdx::from(i)),
+                NodeKind::Instantiation(_) => NodeKind::Instantiation(InstIdx::from(i)),
+            };
+            graph.raw.index(kind)
+        };
+        let new_filter = filter.update(v, s, d);
         end_edit.emit(new_filter);
     });
     html! {
     <>
         <a href="#" draggable="false" title={hover} onclick={onclick}>
             <div class="material-icons small"><MatIcon>{icon}</MatIcon></div>
-            <ExistingFilterText filter={props.filter.short_text()} editing={props.editing} update={update} />
+            <ExistingFilterText filter={filter_text} editing={props.editing} update={update} />
         </a>
         {overlay}
     </>
@@ -340,19 +358,20 @@ impl Filter {
             _ => true,
         }
     }
-    pub fn update(&self, new_data: Vec<usize>, new_strings: Vec<String>) -> Filter {
+    pub fn update(&self, new_data: Vec<usize>, new_strings: Vec<String>, d: impl Fn(NodeIndex, usize) -> NodeIndex) -> Filter {
         match self {
             Filter::MaxNodeIdx(_) => Filter::MaxNodeIdx(new_data[0]),
+            Filter::MinNodeIdx(_) => Filter::MinNodeIdx(new_data[0]),
             Filter::IgnoreTheorySolving => Filter::IgnoreTheorySolving,
             Filter::IgnoreQuantifier(_) => Filter::IgnoreQuantifier(Some(QuantIdx::from(new_data[0]))),
             Filter::IgnoreAllButQuantifier(_) => Filter::IgnoreAllButQuantifier(Some(QuantIdx::from(new_data[0]))),
             Filter::MaxInsts(_) => Filter::MaxInsts(new_data[0]),
             Filter::MaxBranching(_) => Filter::MaxBranching(new_data[0]),
-            Filter::ShowNeighbours(_, dir) => Filter::ShowNeighbours(InstIdx::from(new_data[0]), *dir),
-            Filter::VisitSourceTree(_, retain) => Filter::VisitSourceTree(InstIdx::from(new_data[0]), *retain),
-            Filter::VisitSubTreeWithRoot(_, retain) => Filter::VisitSubTreeWithRoot(InstIdx::from(new_data[0]), *retain),
+            Filter::ShowNeighbours(old, dir) => Filter::ShowNeighbours(d(*old, new_data[0]), *dir),
+            Filter::VisitSourceTree(old, retain) => Filter::VisitSourceTree(d(*old, new_data[0]), *retain),
+            Filter::VisitSubTreeWithRoot(old, retain) => Filter::VisitSubTreeWithRoot(d(*old, new_data[0]), *retain),
             Filter::MaxDepth(_) => Filter::MaxDepth(new_data[0]),
-            Filter::ShowLongestPath(_) => Filter::ShowLongestPath(InstIdx::from(new_data[0])),
+            Filter::ShowLongestPath(old) => Filter::ShowLongestPath(d(*old, new_data[0])),
             Filter::ShowNamedQuantifier(_) => Filter::ShowNamedQuantifier(new_strings[0].clone()),
             Filter::SelectNthMatchingLoop(_) => Filter::SelectNthMatchingLoop(new_data[0].max(1) - 1),
             Filter::ShowMatchingLoopSubgraph => Filter::ShowMatchingLoopSubgraph,
@@ -385,7 +404,7 @@ impl Component for ExistingFilterText {
 
     fn create(ctx: &Context<Self>) -> Self {
         let inputs = ctx.props().filter.chars()
-            .filter(|&c| c == '|' || c == '"')
+            .filter(|&c| c == '|' || c == '"' || c == '$')
             .enumerate()
             .filter(|(idx, _)| idx % 2 == 0)
             .map(|(_, c)| (c, NodeRef::default()))
@@ -443,7 +462,7 @@ impl Component for ExistingFilterText {
             ctx.link().send_message(FilterTextMsg::UpdateCheck);
         }
 
-        let text = ctx.props().filter.split(['|', '"']).map(|s| s.replace("Hide ", "H ").replace("Show ", "S "));
+        let text = ctx.props().filter.split(['|', '"', '$']).map(|s| s.replace("Hide ", "H ").replace("Show ", "S "));
         if !ctx.props().editing {
             html! { {for text} }
         } else {
@@ -454,6 +473,7 @@ impl Component for ExistingFilterText {
                     let (c, input) = self.inputs[idx / 2].clone();
                     const INPUT_SHRINK: usize = 0;
                     let typ = if c == '"' { "text" } else { "tel" };
+                    let prefix = (c == '$').then(|| text.chars().next().unwrap());
                     let input_ref = input.clone();
                     let oninput = Callback::from(move |_| {
                         let input = input_ref.cast::<HtmlInputElement>().unwrap();
@@ -461,7 +481,7 @@ impl Component for ExistingFilterText {
                             let value = input.value();
                             input.set_size(value.len().max(1) as u32);
                         } else {
-                            let value = input.value().chars().filter(|c| c.is_digit(10)).collect::<String>();
+                            let value = prefix.into_iter().chain(input.value().chars().filter(|c| c.is_digit(10))).collect::<String>();
                             input.set_value(&value);
                             input.set_size((value.len().max(1 + INPUT_SHRINK) - INPUT_SHRINK) as u32);
                         };
@@ -483,10 +503,12 @@ impl Component for ExistingFilterText {
                         value = text;
                         size = Some(value.len().max(1).to_string());
                     } else {
-                        value = text.chars().filter(|c| c.is_digit(10)).collect::<String>();
+                        value = prefix.into_iter().chain(text.chars().filter(|c| c.is_digit(10))).collect::<String>();
                         size = Some((value.len().max(1 + INPUT_SHRINK) - INPUT_SHRINK).to_string());
                     };
-                    html! {<input ref={input} size={size} type={typ} value={value} oninput={oninput} onfocus={onfocus} onblur={onblur} onkeypress={onkeypress} />}
+                    html! {
+                        <input ref={input} size={size} type={typ} value={value} oninput={oninput} onfocus={onfocus} onblur={onblur} onkeypress={onkeypress} />
+                    }
                 }
             });
             html! { {for text} }

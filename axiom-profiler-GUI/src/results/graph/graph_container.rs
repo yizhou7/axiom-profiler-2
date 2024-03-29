@@ -1,39 +1,56 @@
-use petgraph::graph::EdgeIndex;
+use petgraph::graph::{EdgeIndex, NodeIndex};
 use smt_log_parser::items::InstIdx;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, UnwrapThrowExt};
 use web_sys::{Element, HtmlInputElement};
 use yew::prelude::*;
 
-use crate::{CallbackRef, GlobalCallbacksContext, PagePosition};
+use crate::results::svg_result::RenderedGraph;
+use crate::{CallbackRef, GlobalCallbacksContext, PagePosition, PrecisePosition};
 
-use super::svg_graph::Graph;
+use super::svg_graph::{Graph, Svg};
 
 pub enum Msg {
     SetValueTo(f32),
+    SetScrollTo((PrecisePosition, PrecisePosition)),
     Wheel(WheelEvent),
+    Scroll(Event),
     MouseDown(MouseEvent),
     MouseMove(MouseEvent),
     MouseUp(MouseEvent),
-    Noop,
 }
 
 pub struct GraphContainer {
+    graph: Option<(Html, u32)>,
     mouse_closures: Option<Closure<dyn Fn(MouseEvent)>>,
     scroll_window: NodeRef,
     drag_start: Option<(PagePosition, PagePosition, bool)>,
     zoom_factor: f32,
+    scroll_position: PrecisePosition,
+    scroll_bound: PrecisePosition,
     zoom_factor_delta: f32,
     _callback_refs: [CallbackRef; 2],
 }
 
+impl GraphContainer {
+    fn scroll_by(&mut self, x: f64, y: f64) {
+        let pos = PrecisePosition { x: self.scroll_position.x + x, y: self.scroll_position.y + y };
+        self.scroll_to(pos);
+    }
+    fn scroll_to(&mut self, pos: PrecisePosition) {
+        self.scroll_position.x = pos.x.min(self.scroll_bound.x).max(0.0);
+        self.scroll_position.y = pos.y.min(self.scroll_bound.y).max(0.0);
+        self.scroll_window.cast::<Element>().unwrap_throw().scroll_to_with_x_and_y(self.scroll_position.x, self.scroll_position.y);
+    }
+}
+
 #[derive(Properties, PartialEq)]
 pub struct GraphContainerProps {
-    pub svg_text: AttrValue,
-    pub update_selected_nodes: Callback<usize>,
-    pub update_selected_edges: Callback<usize>,
+    pub rendered: Option<RenderedGraph>,
+    pub update_selected_nodes: Callback<NodeIndex>,
+    pub update_selected_edges: Callback<EdgeIndex>,
     pub deselect_all: Callback<()>,
-    pub selected_nodes: Vec<InstIdx>,
+    pub selected_nodes: Vec<NodeIndex>,
     pub selected_edges: Vec<EdgeIndex>,
 }
 
@@ -42,11 +59,19 @@ impl Component for GraphContainer {
     type Properties = GraphContainerProps;
 
     fn create(ctx: &Context<Self>) -> Self {
+        let graph = ctx.props().rendered.as_ref().map(|r| (Html::from_html_unchecked(r.svg_text.clone()), r.graph.generation));
         let registerer = ctx.link().get_callbacks_registerer().unwrap();
         let mouse_move_ref = (registerer.register_mouse_move)(ctx.link().callback(Msg::MouseMove));
         let mouse_up_ref = (registerer.register_mouse_up)(ctx.link().callback(Msg::MouseUp));
         let _callback_refs = [mouse_move_ref, mouse_up_ref];
-        Self { mouse_closures: None, drag_start: None, scroll_window: NodeRef::default(), zoom_factor: 1.0, zoom_factor_delta: 1.0, _callback_refs }
+        let scroll_position = PrecisePosition { x: 0.0, y: 0.0 };
+        let scroll_bound = PrecisePosition { x: 0.0, y: 0.0 };
+        Self { graph, mouse_closures: None, drag_start: None, scroll_window: NodeRef::default(), zoom_factor: 1.0, scroll_position, scroll_bound, zoom_factor_delta: 1.0, _callback_refs }
+    }
+    fn changed(&mut self, ctx: &Context<Self>, _old_props: &Self::Properties) -> bool {
+        self.graph = ctx.props().rendered.as_ref().map(|r| (Html::from_html_unchecked(r.svg_text.clone()), r.graph.generation));
+        self.zoom_factor_delta = 1.0;
+        true
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
@@ -56,6 +81,11 @@ impl Component for GraphContainer {
                 self.zoom_factor_delta = zoom_factor / self.zoom_factor;
                 self.zoom_factor = zoom_factor;
                 true
+            }
+            Msg::SetScrollTo((pos, bound)) => {
+                self.scroll_bound = bound;
+                self.scroll_to(pos);
+                false
             }
             Msg::Wheel(ev) => {
                 if ev.ctrl_key() {
@@ -77,8 +107,16 @@ impl Component for GraphContainer {
                     self.zoom_factor = zoom_factor;
                     true
                 } else {
+                    ev.prevent_default();
+                    self.scroll_by(ev.delta_x(), ev.delta_y());
                     false
                 }
+            }
+            Msg::Scroll(_) => {
+                let scroll_window = self.scroll_window.cast::<Element>().unwrap_throw();
+                self.scroll_position.x = scroll_window.scroll_left() as f64;
+                self.scroll_position.y = scroll_window.scroll_top() as f64;
+                false
             }
             Msg::MouseDown(ev) => {
                 let pos = PagePosition { x: ev.client_x(), y: ev.client_y() };
@@ -86,13 +124,17 @@ impl Component for GraphContainer {
                 false
             }
             Msg::MouseMove(ev) => {
-                if let Some((start, last, drag)) = &mut self.drag_start {
-                    let pos = PagePosition { x: ev.client_x(), y: ev.client_y() };
-                    if (start.x - pos.x).abs() > 5 || (start.y - pos.y).abs() > 5 {
-                        *drag = true;
-                        let (x, y) = (last.x - pos.x, last.y - pos.y);
-                        self.scroll_window.cast::<Element>().unwrap_throw().scroll_by_with_x_and_y(x as f64, y as f64);
-                        *last = pos;
+                if ev.buttons() != 1 {
+                    self.drag_start = None;
+                } else {
+                    if let Some((start, last, drag)) = &mut self.drag_start {
+                        let pos = PagePosition { x: ev.client_x(), y: ev.client_y() };
+                        if (start.x - pos.x).abs() > 5 || (start.y - pos.y).abs() > 5 {
+                            *drag = true;
+                            let (dx, dy) = ((last.x - pos.x) as f64, (last.y - pos.y) as f64);
+                            *last = pos;
+                            self.scroll_by(dx, dy);
+                        }
                     }
                 }
                 false
@@ -105,7 +147,6 @@ impl Component for GraphContainer {
                 }
                 false
             }
-            Msg::Noop => false,
         }
     }
 
@@ -143,29 +184,30 @@ impl Component for GraphContainer {
             let event: Event = blur_event.clone().into();
             set_value(event)
         });
-        let wheel = ctx.link().callback(Msg::Wheel);
+        let onwheel = ctx.link().callback(Msg::Wheel);
+        let onscroll = ctx.link().callback(Msg::Scroll);
         let zoom_factor = format!("{:.3}", self.zoom_factor);
         let idx = zoom_factor.chars().rev().position(|c| c != '0' && c != '.').unwrap_or(zoom_factor.len() - 1);
         let zoom_factor = zoom_factor[0..zoom_factor.len() - idx].to_string();
-        // let mouse_move = ctx.link().callback(Msg::MouseMove);
-        // let mouse_up = ctx.link().callback(Msg::MouseUp);
-        // let mouse_out = ctx.link().callback(Msg::MouseOut);
+        let set_scroll = ctx.link().callback(Msg::SetScrollTo);
         html! {
-        <div ref={&self.scroll_window} style="flex: 70%; overflow: auto; overscroll-behavior-x: none;" onwheel={wheel}>
+        <div ref={&self.scroll_window} style="height: 100%; overflow: auto; overscroll-behavior-x: none;" {onwheel} {onscroll}>
             <div style="position: absolute; bottom: 0; left: 0; z-index: 1;">
                 <label for="input">{"Zoom factor: "}</label>
                 <input ref={input} onkeypress={set_value_on_enter} onblur={set_value_on_blur} id="input" size="5" value={zoom_factor}/>
             </div>
             <Graph
-                svg_text={&ctx.props().svg_text}
+                rendered={ctx.props().rendered.clone()}
                 update_selected_nodes={&ctx.props().update_selected_nodes}
                 update_selected_edges={&ctx.props().update_selected_edges}
                 zoom_factor={self.zoom_factor}
                 zoom_factor_delta={self.zoom_factor_delta}
                 selected_nodes={ctx.props().selected_nodes.clone()}
                 selected_edges={ctx.props().selected_edges.clone()}
+                scroll_position={self.scroll_position.clone()}
+                set_scroll={set_scroll}
                 scroll_window={self.scroll_window.clone()}
-            />
+            ><Svg svg={self.graph.clone()}/></Graph>
         </div>
         }
     }

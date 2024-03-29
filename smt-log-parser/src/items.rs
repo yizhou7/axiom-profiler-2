@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::ops::Index;
+use crate::display_with::DisplayConfiguration;
 use crate::{Result, Error};
 
 pub type StringTable = lasso::Rodeo<lasso::Spur, fxhash::FxBuildHasher>;
@@ -165,13 +166,25 @@ pub enum VarNames {
     NameAndType(Box<[(IString, IString)]>),
 }
 impl VarNames {
-    pub fn get_name<'a>(strings: &'a StringTable, this: &Option<Self>, idx: usize) -> Cow<'a, str> {
-        match this {
+    pub fn get_name<'a>(strings: &'a StringTable, this: Option<&Self>, idx: usize, config: &DisplayConfiguration) -> Cow<'a, str> {
+        let name = match this {
             Some(Self::NameAndType(names)) => Cow::Borrowed(&strings[names[idx].0]),
-            None | Some(Self::TypeOnly(_)) => Cow::Owned(format!("qvar_{idx}")),
+            None | Some(Self::TypeOnly(_)) => Cow::Owned(if config.use_mathematical_symbols {
+                format!("•{idx}")
+            } else {
+                format!("qvar_{idx}")
+            }),
+        };
+        if config.html {
+            const COLORS: [&str; 11] = ["green", "olive", "navy", "maroon", "teal", "purple", "red", "fuchsia", "lime", "blue", "aqua"];
+            let color = COLORS[idx % COLORS.len()];
+            let name = format!("<div style=\"color:{color};display:inline\">{name}</div>");
+            Cow::Owned(name)
+        } else {
+            name
         }
     }
-    pub fn get_type(strings: &StringTable, this: &Option<Self>, idx: usize) -> String {
+    pub fn get_type(strings: &StringTable, this: Option<&Self>, idx: usize) -> String {
         this.as_ref()
             .map(|this| {
                 let ty = match this {

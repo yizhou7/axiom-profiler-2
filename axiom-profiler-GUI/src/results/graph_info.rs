@@ -1,4 +1,4 @@
-use crate::{configuration::{Configuration, ConfigurationContext, ConfigurationProvider}, RcParser};
+use crate::{configuration::{Configuration, ConfigurationContext, ConfigurationProvider}, utils::split_div::SplitDiv, RcParser};
 use indexmap::map::{Entry, IndexMap};
 use material_yew::WeakComponentLink;
 use petgraph::graph::{EdgeIndex, NodeIndex};
@@ -111,13 +111,14 @@ impl Component for GraphInfo {
             }
             Msg::ToggleOpenNode(node) => {
                 let open_value = self.selected_nodes.get_mut(&node).unwrap();
+                log::info!("Toggling node: {:?}, open: {} -> {}", node, *open_value, !*open_value);
                 *open_value = !*open_value;
-                false
+                true
             }
             Msg::ToggleOpenEdge(edge) => {
                 let open_value = self.selected_edges.get_mut(&edge).unwrap();
                 *open_value = !*open_value;
-                false
+                true
             }
             Msg::DeselectAll => {
                 self.selected_nodes.clear();
@@ -168,28 +169,34 @@ impl Component for GraphInfo {
             <li>{term}</li>
         });
         let outdated = ctx.props().outdated.then(|| html! {<div class="outdated"></div>});
+        let hide_right_bar = self.selected_nodes.is_empty() && self.selected_edges.is_empty();
+        let left_bound = if hide_right_bar { 1.0 } else { 0.3 };
         html! {
             <>
-            <GraphContainer
-                rendered={ctx.props().rendered.clone()}
-                update_selected_nodes={&on_node_select}
-                update_selected_edges={&on_edge_select}
-                deselect_all={&deselect_all}
-                selected_nodes={self.selected_nodes.keys().copied().collect::<Vec<NodeIndex>>()}
-                selected_edges={self.selected_edges.keys().copied().collect::<Vec<EdgeIndex>>()}
-            />
-            <div style="flex: 30%; overflow: auto;">
-                <div style="position: sticky; top: 0px; left: 0px">
-                    <label for="term_expander">{"Ignore term IDs "}</label>
-                    <input type="checkbox" checked={self.ignore_term_ids} onclick={toggle} id="term_expander" />
+            <SplitDiv initial_position={0.7} {left_bound} right_bound={1.0} snap_positions={vec![0.3, 0.7, 1.0]}>
+                <GraphContainer
+                    rendered={ctx.props().rendered.clone()}
+                    update_selected_nodes={&on_node_select}
+                    update_selected_edges={&on_edge_select}
+                    deselect_all={&deselect_all}
+                    selected_nodes={self.selected_nodes.keys().copied().collect::<Vec<NodeIndex>>()}
+                    selected_edges={self.selected_edges.keys().copied().collect::<Vec<EdgeIndex>>()}
+                />
+
+                <div style="width:100%; height:100%; overflow-wrap:anywhere; overflow:clip auto;">
+                    <div style="position: sticky; top: 0px; left: 0px">
+                        <label for="term_expander">{"Ignore term IDs "}</label>
+                        <input type="checkbox" checked={self.ignore_term_ids} onclick={toggle} id="term_expander" />
+                    </div>
+                    <SelectedNodesInfo selected_nodes={self.selected_nodes.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>()} on_click={on_node_click} />
+                    <SelectedEdgesInfo selected_edges={self.selected_edges.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>()} rendered={ctx.props().rendered.clone()} on_click={on_edge_click} />
+                    // TODO: re-add matching loops
+                    // <h2>{"Information about displayed matching loop:"}</h2>
+                    // <div>
+                    //     <ul>{for generalized_terms}</ul>
+                    // </div>
                 </div>
-                <SelectedNodesInfo selected_nodes={self.selected_nodes.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>()} on_click={on_node_click} />
-                <SelectedEdgesInfo selected_edges={self.selected_edges.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>()} rendered={ctx.props().rendered.clone()} on_click={on_edge_click} />
-                <h2>{"Information about displayed matching loop:"}</h2>
-                <div>
-                    <ul>{for generalized_terms}</ul>
-                </div>
-            </div>
+            </SplitDiv>
             {outdated}
             </>
         }

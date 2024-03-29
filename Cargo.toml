@@ -1,9 +1,9 @@
 [workspace]
-
 members = [
     "smt-log-parser",
     "axiom-profiler-GUI",
 ]
+resolver = "2"
 
 [profile.test]
 opt-level = 3

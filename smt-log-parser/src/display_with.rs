@@ -73,10 +73,21 @@ impl<'a, 'b, Ctxt, Data, T: DisplayWithCtxt<Ctxt, Data> + Copy> fmt::Display
 
 pub struct DisplayCtxt<'a> {
     pub parser: &'a Z3Parser,
+    pub config: DisplayConfiguration,
+}
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DisplayConfiguration {
     pub display_term_ids: bool,
     pub display_quantifier_name: bool,
     pub use_mathematical_symbols: bool,
+    /// Use tags for formatting
+    pub html: bool,
+
+    // If `limit_enode_chars` is true, then any term longer than
+    // `enode_char_limit` will be truncated.
+    pub enode_char_limit: usize,
+    pub limit_enode_chars: bool,
 }
 
 mod private {
@@ -187,7 +198,16 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for ENodeIdx {
         ctxt: &DisplayCtxt<'_>,
         data: &mut (),
     ) -> fmt::Result {
-        ctxt.parser[self].owner.fmt_with(f, ctxt, data)
+        if ctxt.config.limit_enode_chars {
+            let owner = ctxt.parser[self].owner.with_data(ctxt, data).to_string();
+            if owner.len() <= ctxt.config.enode_char_limit {
+                write!(f, "{owner}")
+            } else {
+                write!(f, "{}...", &owner[..ctxt.config.enode_char_limit - 3])
+            }
+        } else {
+            ctxt.parser[self].owner.fmt_with(f, ctxt, data)
+        }
     }
 }
 
@@ -209,6 +229,40 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for QuantIdx {
         }
     }
 }
+
+impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for EqGivenIdx {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'_>,
+        data: &mut (),
+    ) -> fmt::Result {
+        let eq = &ctxt.parser[self];
+        eq.from().fmt_with(f, ctxt, data)?;
+        write!(f, " = ")?;
+        eq.to().fmt_with(f, ctxt, data)
+    }
+}
+
+impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for EqTransIdx {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'_>,
+        data: &mut (),
+    ) -> fmt::Result {
+        let path = ctxt.parser.egraph.equalities.path(self);
+        path.first().unwrap().fmt_with(f, ctxt, data)?;
+        if ctxt.config.html {
+            write!(f, " =<sup>{}</sup> ", path.len() - 1)?;
+        } else {
+            write!(f, " =[{}] ", path.len() - 1)?;
+        }
+        path.last().unwrap().fmt_with(f, ctxt, data)
+    }
+}
+
+// Others
 
 impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for &MatchKind {
     fn fmt_with(
@@ -242,6 +296,30 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for &MatchKind {
     }
 }
 
+impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for &QuantKind {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'_>,
+        _data: &mut (),
+    ) -> fmt::Result {
+        match *self {
+            QuantKind::Other(kind) => write!(f, "{}", &ctxt.parser.strings[kind]),
+            QuantKind::Lambda => if ctxt.config.use_mathematical_symbols {
+                write!(f, "λ")
+            } else if ctxt.config.html {
+                write!(f, "&lt;null&gt;")
+            } else {
+                write!(f, "<null>")
+            },
+            QuantKind::NamedQuant(name) => write!(f, "{}", &ctxt.parser.strings[name]),
+            QuantKind::UnnamedQuant { name, id } => {
+                write!(f, "{}!{id}", &ctxt.parser.strings[name])
+            }
+        }
+    }
+}
+
 ////////////
 // Item defs
 ////////////
@@ -254,7 +332,7 @@ impl<'a: 'b, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a Term 
         data: &mut DisplayData<'b>,
     ) -> fmt::Result {
         data.with_children(&self.child_ids, |data| {
-            if ctxt.display_term_ids {
+            if ctxt.config.display_term_ids {
                 match self.id {
                     None => write!(f, "[synthetic]")?,
                     Some(id) => {
@@ -284,12 +362,14 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a TermKind 
     ) -> fmt::Result {
         match self {
             &TermKind::Var(mut idx) => {
-                let vars = data.find_quant(&mut idx).map(|q| &q.vars).unwrap_or(&None);
-                write!(f, "{}", VarNames::get_name(&ctxt.parser.strings, vars, idx))
+                let vars = data.find_quant(&mut idx).and_then(|q| q.vars.as_ref());
+                let name = VarNames::get_name(&ctxt.parser.strings, vars, idx, &ctxt.config);
+                write!(f, "{name}")
             }
             TermKind::ProofOrApp(poa) => write!(f, "{}", poa.with_data(ctxt, data)),
             TermKind::Quant(idx) => write!(f, "{}", ctxt.parser[*idx].with_data(ctxt, data)),
-            TermKind::GeneralizedPrimitive => write!(f, "_"),
+            // TODO: it would be nice to display some extra information here
+            TermKind::Generalised => write!(f, "_"),
         }
     }
 }
@@ -313,7 +393,7 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a ProofOrAp
         ctxt: &DisplayCtxt<'b>,
         data: &mut DisplayData<'b>,
     ) -> fmt::Result {
-        let math = ctxt.use_mathematical_symbols;
+        let math = ctxt.config.use_mathematical_symbols;
         use ProofOrAppKind::*;
         let name = &ctxt.parser.strings[self.name];
         let kind = match name {
@@ -439,16 +519,23 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
                 if need_brackets {
                     write!(f, "(")?;
                 }
-                write!(f, "{}", self.kind.with_data(ctxt, data))?;
+                if ctxt.config.use_mathematical_symbols {
+                    write!(f, "∀ ")?;
+                } else {
+                    write!(f, "FORALL ")?;
+                }
+                if ctxt.config.display_quantifier_name {
+                    write!(f, "\"{}\" ", self.kind.with(ctxt))?;
+                }
                 for idx in 0..self.num_vars {
-                    let name = VarNames::get_name(&ctxt.parser.strings, &self.vars, idx);
-                    let ty = VarNames::get_type(&ctxt.parser.strings, &self.vars, idx);
+                    let name = VarNames::get_name(&ctxt.parser.strings, self.vars.as_ref(), idx, &ctxt.config);
+                    let ty = VarNames::get_type(&ctxt.parser.strings, self.vars.as_ref(), idx);
                     if idx != 0 {
                         write!(f, ", ")?;
                     }
                     write!(f, "{name}{ty}")?;
                 }
-                let sep = if ctxt.use_mathematical_symbols {
+                let sep = if ctxt.config.use_mathematical_symbols {
                     "."
                 } else {
                     " ::"
@@ -464,33 +551,5 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
                 Ok(())
             })
         })
-    }
-}
-
-impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a QuantKind {
-    fn fmt_with(
-        self,
-        f: &mut fmt::Formatter<'_>,
-        ctxt: &DisplayCtxt<'a>,
-        _data: &mut DisplayData<'a>,
-    ) -> fmt::Result {
-        if ctxt.use_mathematical_symbols {
-            write!(f, "∀ ")?;
-        } else {
-            write!(f, "FORALL ")?;
-        }
-        if ctxt.display_quantifier_name {
-            write!(f, "\"")?;
-            match *self {
-                QuantKind::Other(kind) => write!(f, "{}", &ctxt.parser.strings[kind])?,
-                QuantKind::Lambda => write!(f, "<null>")?,
-                QuantKind::NamedQuant(name) => write!(f, "{}", &ctxt.parser.strings[name])?,
-                QuantKind::UnnamedQuant { name, id } => {
-                    write!(f, "{}!{id}", &ctxt.parser.strings[name])?
-                }
-            };
-            write!(f, "\" ")?;
-        }
-        Ok(())
     }
 }
