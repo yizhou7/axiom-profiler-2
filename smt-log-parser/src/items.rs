@@ -176,7 +176,7 @@ impl VarNames {
             }),
         };
         if config.html {
-            const COLORS: [&str; 11] = ["green", "olive", "navy", "maroon", "teal", "purple", "red", "fuchsia", "lime", "blue", "aqua"];
+            const COLORS: [&str; 9] = ["blue", "green", "olive", "maroon", "teal", "purple", "red", "fuchsia", "navy"];
             let color = COLORS[idx % COLORS.len()];
             let name = format!("<div style=\"color:{color};display:inline\">{name}</div>");
             Cow::Owned(name)

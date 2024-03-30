@@ -12,7 +12,7 @@ use petgraph::{Direction, Graph};
 use roaring::bitmap::RoaringBitmap;
 use std::cmp::Ordering;
 use std::fmt;
-use std::hash::{Hash};
+use std::hash::Hash;
 use std::iter::zip;
 use typed_index_collections::TiVec;
 

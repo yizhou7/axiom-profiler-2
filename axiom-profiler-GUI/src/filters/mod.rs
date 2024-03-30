@@ -3,12 +3,12 @@ mod manage_filter;
 
 use std::fmt::Display;
 
-use material_yew::icon::MatIcon;
+use material_yew::{icon::MatIcon, switch::MatSwitch};
 use petgraph::{graph::NodeIndex, Direction};
 use smt_log_parser::parsers::{z3::graph::raw::NodeKind, ParseState};
 use yew::{html, Callback, Component, Context, Html, MouseEvent, NodeRef, Properties};
 
-use crate::{filters::{add_filter::AddFilterSidebar, manage_filter::{DraggableList, ExistingFilter}}, infobars::SidebarSectionHeader, results::{filters::{Disabler, Filter, DEFAULT_DISABLER_CHAIN, DEFAULT_FILTER_CHAIN}, svg_result::Msg as SVGMsg}, OpenedFileInfo, RcParser, SIZE_NAMES};
+use crate::{filters::{add_filter::AddFilterSidebar, manage_filter::{DraggableList, ExistingFilter}}, infobars::SidebarSectionHeader, results::{filters::{Disabler, Filter, DEFAULT_DISABLER_CHAIN, DEFAULT_FILTER_CHAIN}, svg_result::Msg as SVGMsg}, utils::toggle_list::ToggleList, OpenedFileInfo, RcParser, SIZE_NAMES};
 
 use self::manage_filter::DragState;
 
@@ -41,6 +41,7 @@ pub struct FiltersState {
     prev_filter_chain: Vec<Filter>,
     selected_filter: Option<usize>,
     edit_filter: Option<usize>,
+    global_section: NodeRef,
 }
 
 impl FiltersState {
@@ -77,7 +78,18 @@ impl Component for FiltersState {
         let filter_chain = DEFAULT_FILTER_CHAIN.to_vec();
         let prev_filter_chain = filter_chain.clone();
         let applied_filter_chain = filter_chain.clone();
-        let mut self_ = Self { disabler_chain, filter_chain, prev_filter_chain, applied_filter_chain, dragging: false, delete_node: NodeRef::default(), will_delete: false, selected_filter: None, edit_filter: None };
+        let mut self_ = Self {
+            disabler_chain,
+            filter_chain,
+            prev_filter_chain,
+            applied_filter_chain,
+            dragging: false,
+            delete_node: NodeRef::default(),
+            will_delete: false,
+            selected_filter: None,
+            edit_filter: None,
+            global_section: NodeRef::default()
+        };
         self_.reset_disabled(&ctx.props().file);
         self_
     }
@@ -268,6 +280,17 @@ impl Component for FiltersState {
             let details = format!("{} nodes, {} edges{mls}", g.graph.graph.node_count(), g.graph.graph.edge_count());
             html! { <li class={class}><a draggable="false" class="trace-file-name">{details}</a></li> }
         });
+        // Disablers
+        let toggle = ctx.link().callback(|idx| Msg::ToggleDisabler(idx));
+        let selected: Vec<_> = DEFAULT_DISABLER_CHAIN.iter().map(|(_, b)| *b).collect();
+        let disablers = self.disabler_chain.iter().map(|(d, b)| {
+            let onclick = Callback::from(move |e: MouseEvent| e.prevent_default());
+            let action = if *b { "Enable " } else { "Disable " };
+            let icon = if *b { "visibility_off" } else { "visibility" };
+            html! { <a draggable="false" href="#" {onclick} class="disabler">
+                <div class="material-icons"><MatIcon>{icon}</MatIcon></div>{action}{d.description()}
+            </a> }
+        });
         html! {
         <>
             <SidebarSectionHeader header_text="Current Trace" collapsed_text="Actions on the current trace"><ul>
@@ -281,11 +304,24 @@ impl Component for FiltersState {
             <SidebarSectionHeader header_text={"Graph Operations"} collapsed_text={"Operations applied to the graph"}><ul>
                 {graph_details}
                 {dragging}
-                <DraggableList elements={elements} hashes={elem_hashes} drag={drag} will_delete={will_delete} delete_node={self.delete_node.clone()} selected={self.selected_filter} editing={self.edit_filter} />
+                <DraggableList hashes={elem_hashes} drag={drag} will_delete={will_delete} delete_node={self.delete_node.clone()} selected={self.selected_filter} editing={self.edit_filter}>
+                    {for elements}
+                </DraggableList>
             </ul></SidebarSectionHeader>
-            <SidebarSectionHeader header_text={"Global Operations"} collapsed_text={"Operations applied globally"}><ul>
+            <SidebarSectionHeader header_text={"Global Operations"} collapsed_text={"Enable/Disable nodes by category"} section={self.global_section.clone()}><ul>
+            <ToggleList {toggle} {selected}>
+                {for disablers}
+            </ToggleList>
             </ul></SidebarSectionHeader>
         </>
+        }
+    }
+
+    fn rendered(&mut self, _ctx: &Context<Self>, first_render: bool) {
+        if first_render {
+            if let Some(global_section) = self.global_section.cast::<web_sys::Element>() {
+                let _ = global_section.class_list().remove_1("expanded");
+            }
         }
     }
 }

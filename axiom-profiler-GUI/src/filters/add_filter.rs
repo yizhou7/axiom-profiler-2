@@ -1,5 +1,5 @@
 use material_yew::icon::MatIcon;
-use petgraph::graph::NodeIndex;
+use petgraph::{graph::NodeIndex, visit::{Dfs, Reversed, Walker}, Direction};
 use smt_log_parser::parsers::z3::graph::raw::{Node, NodeKind};
 use yew::{function_component, html, use_context, Callback, Html, MouseEvent, Properties};
 
@@ -55,22 +55,22 @@ pub fn AddFilterSidebar(props: &AddFilterSidebarProps) -> Html {
         });
         vec![
             nodes.clone()
-                .filter(|&(n, _, _)| graph.raw.graph.neighbors_directed(n, petgraph::Direction::Outgoing).any(|n| graph.raw.graph[n].hidden()))
-                .map(|(n, _, _)| Filter::ShowNeighbours(n, petgraph::Direction::Outgoing)).collect(),
+                .filter(|&(n, _, _)| graph.raw.neighbors_directed(n, Direction::Outgoing).into_iter().any(|n| graph.raw.graph[n].hidden()))
+                .map(|(n, _, _)| Filter::ShowNeighbours(n, Direction::Outgoing)).collect(),
             nodes.clone()
-                .filter(|&(n, _, _)| graph.raw.graph.neighbors_directed(n, petgraph::Direction::Incoming).any(|n| graph.raw.graph[n].hidden()))
-                .map(|(n, _, _)| Filter::ShowNeighbours(n, petgraph::Direction::Incoming)).collect(),
+                .filter(|&(n, _, _)| graph.raw.neighbors_directed(n, Direction::Incoming).into_iter().any(|n| graph.raw.graph[n].hidden()))
+                .map(|(n, _, _)| Filter::ShowNeighbours(n, Direction::Incoming)).collect(),
             nodes.clone()
-                // TODO: filter if all ancestors are visible
-                .filter(|&(n, _, _)| graph.raw.graph.neighbors_directed(n, petgraph::Direction::Incoming).any(|_| true))
+                .filter(|&(n, _, _)| Dfs::new(graph.raw.rev(), n).iter(graph.raw.rev()).any(|n| graph.raw.graph[n].hidden()))
                 .map(|(n, _, _)| Filter::VisitSourceTree(n, true)).collect(),
             nodes.clone()
+                .filter(|&(n, _, _)| Dfs::new(graph.raw.rev(), n).iter(graph.raw.rev()).any(|n| graph.raw.graph[n].visible()))
                 .map(|(n, _, _)| Filter::VisitSourceTree(n, false)).collect(),
             nodes.clone()
-                // TODO: filter if all successors are visible
-                .filter(|&(n, _, _)| graph.raw.graph.neighbors_directed(n, petgraph::Direction::Outgoing).any(|_| true))
+            .filter(|&(n, _, _)| Dfs::new(&graph.raw.graph, n).iter(&graph.raw.graph).any(|n| graph.raw.graph[n].hidden()))
                 .map(|(n, _, _)| Filter::VisitSubTreeWithRoot(n, true)).collect(),
             nodes.clone()
+            .filter(|&(n, _, _)| Dfs::new(&graph.raw.graph, n).iter(&graph.raw.graph).any(|n| graph.raw.graph[n].visible()))
                 .map(|(n, _, _)| Filter::VisitSubTreeWithRoot(n, false)).collect(),
             nodes.clone()
                 .filter(|(_, i, _)| i.is_some())

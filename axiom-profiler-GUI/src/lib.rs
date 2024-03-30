@@ -157,6 +157,7 @@ pub struct FileDataComponent {
     pending_ops: usize,
     progress: LoadingState,
     cancel: Rc<RefCell<bool>>,
+    navigation_section: NodeRef,
     _callback_refs: [CallbackRef; 2],
 }
 
@@ -184,6 +185,7 @@ impl Component for FileDataComponent {
             pending_ops: 0,
             progress: LoadingState::NoFileSelected,
             cancel: Rc::default(),
+            navigation_section: NodeRef::default(),
             _callback_refs,
         }
     }
@@ -310,6 +312,9 @@ impl Component for FileDataComponent {
                     rendered: None,
                 };
                 self.file = Some(file);
+                if let Some(navigation_section) = self.navigation_section.cast::<web_sys::Element>() {
+                    let _ = navigation_section.class_list().remove_1("expanded");
+                }
                 true
             }
             Msg::SelectedNodes(nodes) => {
@@ -408,7 +413,7 @@ impl Component for FileDataComponent {
         <header class="stable"><img src="html/logo_side_small.png" class="brand"/><div class="sidebar-button" onclick={hide_sidebar}><MatIconButton icon="menu"></MatIconButton></div></header>
         <input type="file" ref={&self.file_select} class="trace_file" accept=".log" onchange={on_change} multiple=false/>
         <div class="sidebar-scroll"><div class="sidebar-scroll-container">
-            <SidebarSectionHeader header_text="Navigation" collapsed_text="Open or record a new trace"><ul>
+            <SidebarSectionHeader header_text="Navigation" collapsed_text="Open a new trace" section={self.navigation_section.clone()}><ul>
                 <li><a href="#" draggable="false" id="open_trace_file"><div class="material-icons"><MatIcon>{"folder_open"}</MatIcon></div>{"Open trace file"}</a></li>
             </ul></SidebarSectionHeader>
             {current_trace}

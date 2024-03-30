@@ -9,8 +9,9 @@ pub const DEFAULT_FILTER_CHAIN: &[Filter] = &[
 ];
 pub const DEFAULT_DISABLER_CHAIN: &[(Disabler, bool)] = &[
     (Disabler::Smart, true),
-    (Disabler::GivenEqualities, false),
     (Disabler::ENodes, false),
+    (Disabler::GivenEqualities, false),
+    (Disabler::AllEqualities, false),
 ];
 
 #[derive(Debug, Clone, PartialEq, Hash)]
@@ -46,7 +47,7 @@ impl Filter {
             Filter::MaxInsts(n) => graph.keep_first_n_cost(n),
             Filter::MaxBranching(n) => graph.keep_first_n_children(n),
             Filter::ShowNeighbours(nidx, direction) => {
-                let nodes: Vec<_> = graph.raw.graph.neighbors_directed(nidx, direction).collect();
+                let nodes = graph.raw.neighbors_directed(nidx, direction);
                 graph.raw.set_visibility_many(false, nodes.into_iter())
             }
             Filter::VisitSubTreeWithRoot(nidx, retain) => {
@@ -54,7 +55,7 @@ impl Filter {
                 graph.raw.set_visibility_many(!retain, nodes.into_iter())
             }
             Filter::VisitSourceTree(nidx, retain) => {
-                let nodes: Vec<_> = Dfs::new(Reversed(&graph.raw.graph), nidx).iter(Reversed(&graph.raw.graph)).collect();
+                let nodes: Vec<_> = Dfs::new(graph.raw.rev(), nidx).iter(graph.raw.rev()).collect();
                 graph.raw.set_visibility_many(!retain, nodes.into_iter())
             }
             Filter::MaxDepth(depth) =>
@@ -90,9 +91,10 @@ pub enum FilterOutput {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Disabler {
+    Smart,
     ENodes,
     GivenEqualities,
-    Smart,
+    AllEqualities,
 }
 
 impl Disabler {
@@ -101,6 +103,8 @@ impl Disabler {
         match self {
             Disabler::ENodes => node.kind().enode().is_some(),
             Disabler::GivenEqualities => node.kind().eq_given().is_some(),
+            Disabler::AllEqualities =>
+                node.kind().eq_given().is_some() || node.kind().eq_trans().is_some(),
             Disabler::Smart => match node.kind() {
                 NodeKind::ENode(_) => {
                     // Should only be 0 or 1
@@ -125,5 +129,22 @@ impl Disabler {
     }
     pub fn apply(many: impl Iterator<Item = Disabler> + Clone, graph: &mut InstGraph, parser: &Z3Parser) {
         graph.reset_disabled_to(parser, |node, graph| many.clone().any(|d| d.disable(node, graph, parser)));
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            Disabler::Smart => "trivial nodes",
+            Disabler::ENodes => "yield terms",
+            Disabler::GivenEqualities => "yield equalities",
+            Disabler::AllEqualities => "all equalities",
+        }
+    }
+    pub fn icon(&self) -> &'static str {
+        match self {
+            Disabler::Smart => "low_priority",
+            Disabler::ENodes => "functions",
+            Disabler::GivenEqualities => "compare_arrows",
+            Disabler::AllEqualities => "compare_arrows",
+        }
     }
 }

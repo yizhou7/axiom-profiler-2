@@ -1,6 +1,6 @@
 use std::{fmt, ops::{Index, IndexMut}};
 
-use petgraph::{graph::{DiGraph, NodeIndex}, Direction::{Incoming, Outgoing}};
+use petgraph::{graph::{DiGraph, NodeIndex}, visit::Reversed, Direction::{self, Incoming, Outgoing}};
 use typed_index_collections::TiVec;
 
 use crate::{items::{ENodeIdx, EqGivenIdx, EqTransIdx, EqualityExpl, GraphIdx, InstIdx, TransitiveExplSegment}, Z3Parser};
@@ -130,6 +130,23 @@ impl RawInstGraph {
             NodeKind::TransEquality(eq) => eq.index(self),
             NodeKind::Instantiation(inst) => inst.index(self),
         }
+    }
+
+    pub fn rev(&self) -> Reversed<&DiGraph<Node, EdgeKind>> {
+        Reversed(&self.graph)
+    }
+    pub fn neighbors_directed(&self, node: NodeIndex, dir: Direction) -> Vec<NodeIndex> {
+        let (mut disabled, mut enabled): (Vec<_>, Vec<_>) = self.graph.neighbors_directed(node, dir).partition(|n| self.graph[*n].disabled());
+        while let Some(next) = disabled.pop() {
+            for n in self.graph.neighbors_directed(next, dir) {
+                if self.graph[n].disabled() {
+                    disabled.push(n);
+                } else {
+                    enabled.push(n);
+                }
+            }
+        }
+        enabled
     }
 }
 

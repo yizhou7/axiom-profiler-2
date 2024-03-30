@@ -1,7 +1,7 @@
 use fxhash::FxHashMap;
 use petgraph::{graph::{DiGraph, EdgeIndex, NodeIndex}, visit::{EdgeRef, IntoEdges, NodeFiltered}, Direction};
 
-use crate::items::{ENodeIdx, EqGivenIdx, EqTransIdx};
+use crate::items::{ENodeIdx, EqGivenIdx};
 
 use super::{raw::{EdgeKind, NodeKind}, InstGraph};
 
@@ -17,8 +17,8 @@ impl InstGraph {
         let graph = self.raw.graph.filter_map(
             |idx, node| node.visible().then(|| VisibleNode {
                 idx,
-                has_hidden_parents: self.raw.graph.neighbors_directed(idx, Direction::Incoming).any(|n| self.raw.graph[n].hidden()),
-                has_hidden_children: self.raw.graph.neighbors_directed(idx, Direction::Outgoing).any(|n| self.raw.graph[n].hidden()),
+                hidden_parents: self.raw.neighbors_directed(idx, Direction::Incoming).into_iter().filter(|n| self.raw.graph[*n].hidden()).count() as u32,
+                hidden_children: self.raw.neighbors_directed(idx, Direction::Outgoing).into_iter().filter(|n| self.raw.graph[*n].hidden()).count() as u32,
             }),
             |idx, _| Some(VisibleEdge::Direct(idx))
         );
@@ -103,8 +103,8 @@ impl VisibleInstGraph {
 #[derive(Debug)]
 pub struct VisibleNode {
     pub idx: NodeIndex,
-    pub has_hidden_parents: bool,
-    pub has_hidden_children: bool,
+    pub hidden_parents: u32,
+    pub hidden_children: u32,
 }
 
 #[derive(Clone, PartialEq, Eq)]

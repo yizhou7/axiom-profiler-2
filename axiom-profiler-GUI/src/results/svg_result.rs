@@ -328,11 +328,11 @@ impl Component for SVGResult {
                                     NodeKind::Instantiation(inst) => {
                                         let mkind = &parser[parser[*inst].match_].kind;
                                         style = Some(if mkind.is_mbqi() { "filled,dashed" } else { "filled" });
-                                        let s = match (data.has_hidden_children, data.has_hidden_parents) {
-                                            (false, false) => "box",
-                                            (false, true) => "house",
-                                            (true, false) => "invhouse",
-                                            (true, true) => "diamond",
+                                        let s = match (data.hidden_children, data.hidden_parents) {
+                                            (0, 0) => "box",
+                                            (0, _) => "house",
+                                            (_, 0) => "invhouse",
+                                            (_, _) => "diamond",
                                         };
                                         shape = Some(s);
                                         fillcolor = Some(self.colour_map.get(mkind, NODE_COLOUR_SATURATION).to_string());

@@ -1,4 +1,4 @@
-use petgraph::{graph::{DiGraph, EdgeReference, NodeIndex}, visit::{Bfs, EdgeFiltered, EdgeRef, GraphProp, GraphRef, IntoEdgeReferences, IntoNeighbors, Reversed, ReversedEdgeReference, Visitable, Walker}, Direction};
+use petgraph::{graph::{DiGraph, EdgeReference, NodeIndex}, visit::{Bfs, EdgeFiltered, EdgeRef, Reversed, ReversedEdgeReference, Walker}};
 
 use super::{raw::{EdgeKind, Node, NodeState, RawInstGraph}, InstGraph};
 
@@ -61,7 +61,7 @@ impl RawInstGraph {
     pub fn path_to_root_graph<'a>(&'a self, longest: bool) -> EdgeFiltered<Reversed<&'a DiGraph<Node, EdgeKind>>, impl Fn(ReversedEdgeReference<EdgeReference<EdgeKind>>) -> bool + 'a> {
         let f = move |depth: &Node| if longest { depth.fwd_depth.max } else { depth.fwd_depth.min };
         let filter = move |edge: ReversedEdgeReference<EdgeReference<EdgeKind>>| self.filter_path(edge, f);
-        EdgeFiltered::from_fn(Reversed(&self.graph), filter)
+        EdgeFiltered::from_fn(self.rev(), filter)
     }
     /// A graph with edges that aren't part of any `longest/shortest` path to a
     /// leaf filtered out. The graph can be walked from any node to find the

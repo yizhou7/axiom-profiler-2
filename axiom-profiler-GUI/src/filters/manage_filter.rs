@@ -3,7 +3,7 @@ use material_yew::icon::MatIcon;
 use petgraph::graph::NodeIndex;
 use smt_log_parser::{items::{ENodeIdx, EqGivenIdx, EqTransIdx, InstIdx, QuantIdx}, parsers::z3::graph::raw::{Node, NodeKind}};
 use web_sys::{Element, HtmlElement, HtmlInputElement};
-use yew::{function_component, html, use_context, Callback, Component, Context, Html, NodeRef, Properties};
+use yew::{function_component, html, use_context, Callback, Children, Component, Context, Html, NodeRef, Properties};
 
 use crate::{configuration::ConfigurationProvider, mouse_position, results::filters::Filter, PREVENT_DEFAULT_DRAG_OVER};
 
@@ -109,13 +109,13 @@ impl DraggableList {
 
 #[derive(Properties)]
 pub struct DraggableListProps {
-    pub elements: Vec<Html>,
     pub hashes: Vec<u64>,
     pub drag: Callback<Option<DragState>>,
     pub will_delete: Callback<bool>,
     pub delete_node: NodeRef,
     pub selected: Option<usize>,
     pub editing: Option<usize>,
+    pub children: Children,
 }
 
 impl PartialEq for DraggableListProps {
@@ -132,7 +132,7 @@ impl Component for DraggableList {
         Self {
             drag: None,
             hover: None,
-            display: ctx.props().elements.iter().enumerate().map(|(idx, element)|
+            display: ctx.props().children.iter().enumerate().map(|(idx, element)|
                 DisplayElement { idx, node: element.clone(), node_ref: NodeRef::default() }
             ).collect(),
             hashes: ctx.props().hashes.clone(),
@@ -143,7 +143,7 @@ impl Component for DraggableList {
     fn changed(&mut self, ctx: &Context<Self>, _old_props: &Self::Properties) -> bool {
         self.hashes.clone_from(&ctx.props().hashes);
         self.selected = ctx.props().selected;
-        self.display = ctx.props().elements.iter().enumerate().map(|(idx, element)|
+        self.display = ctx.props().children.iter().enumerate().map(|(idx, element)|
             DisplayElement { idx, node: element.clone(), node_ref: NodeRef::default() }
         ).collect();
         self.drag = None;
@@ -266,7 +266,7 @@ impl Component for DraggableList {
                 html! {}
             };
             html!{
-                <li draggable={draggable.to_string()} ref={&display.node_ref} class={class} ondragstart={ondragstart} ondrag={ondrag} ondragend={ondragend} onmousemove={onmousemove} onmouseleave={onmouseleave}>
+                <li draggable={draggable.to_string()} ref={&display.node_ref} {class} {ondragstart} {ondrag} {ondragend} {onmousemove} {onmouseleave}>
                     {display.node.clone()}
                     {placeholder}
                 </li>}

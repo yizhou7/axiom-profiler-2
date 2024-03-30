@@ -23,9 +23,12 @@ impl RawInstGraph {
     /// Analyses should be reapplied after this function is called!
     pub fn reset_disabled_to_raw(&mut self, f: impl Fn(NodeIndex, &RawInstGraph) -> bool) {
         for node in self.graph.node_indices() {
-            if f(node, self) {
-                self.stats.set_state(&mut self.graph[node], NodeState::Disabled);
-            }
+            let state = if f(node, self) {
+                NodeState::Disabled
+            } else {
+                NodeState::Visible
+            };
+            self.stats.set_state(&mut self.graph[node], state);
         }
     }
 }
