@@ -17,7 +17,7 @@ use super::{
 /// to construct this parser.
 #[derive(Debug)]
 pub struct Z3Parser {
-    pub(super) version_info: Option<VersionInfo>,
+    pub(super) version_info: VersionInfo,
     pub(super) terms: Terms,
 
     pub(super) quantifiers: TiVec<QuantIdx, Quantifier>,
@@ -25,7 +25,7 @@ pub struct Z3Parser {
     pub(super) insts: Insts,
     pub(super) inst_stack: Vec<(InstIdx, Vec<ENodeIdx>)>,
 
-    pub(super) egraph: EGraph,
+    pub(crate) egraph: EGraph,
     pub(super) stack: Stack,
 
     pub strings: StringTable,
@@ -35,7 +35,7 @@ impl Default for Z3Parser {
     fn default() -> Self {
         let mut strings = StringTable::with_hasher(fxhash::FxBuildHasher::default());
         Self {
-            version_info: None,
+            version_info: VersionInfo::default(),
             terms: Terms::new(&mut strings),
             quantifiers: Default::default(),
             insts: Default::default(),
@@ -48,20 +48,10 @@ impl Default for Z3Parser {
 }
 
 impl Z3Parser {
-    pub fn version_info(&self) -> Option<&VersionInfo> {
-        self.version_info.as_ref()
-    }
-    pub fn is_version(&self, major: u64, minor: u64, patch: u64) -> bool {
-        self.version_info.as_ref().is_some_and(|v| v.version == semver::Version::new(major, minor, patch))
-    }
-    pub fn is_ge_version(&self, major: u64, minor: u64, patch: u64) -> bool {
-        self.version_info.as_ref().is_some_and(|v| v.version >= semver::Version::new(major, minor, patch))
-    }
-
     pub fn parse_existing_enode(&mut self, id: &str) -> Result<ENodeIdx> {
         let idx = self.terms.parse_existing_id(&mut self.strings, id)?;
         let enode = self.egraph.get_enode(idx, &self.stack);
-        if self.is_version(4, 12, 2) && enode.is_err() {
+        if self.version_info.is_version(4, 12, 2) && enode.is_err() {
             // Very rarely in version 4.12.2, an `[attach-enode]` is not emitted. Create it here.
             // TODO: log somewhere when this happens.
             self.egraph.new_enode(None, idx, None, &self.stack)?;
@@ -94,7 +84,7 @@ impl Z3Parser {
                 _ => Err(Error::VarNamesListInconsistent),
             });
             let types = [first].into_iter().chain(tuples);
-            Ok(VarNames::TypeOnly(types.collect::<Result<Vec<_>>>()?))
+            Ok(VarNames::TypeOnly(types.collect::<Result<_>>()?))
         } else {
             fn strip_bars(
                 strings: &mut StringTable,
@@ -108,7 +98,7 @@ impl Z3Parser {
             let tuples = t.map(|t| strip_bars(&mut self.strings, t?));
             let names_and_types = [first].into_iter().chain(tuples);
             Ok(VarNames::NameAndType(
-                names_and_types.collect::<Result<Vec<_>>>()?,
+                names_and_types.collect::<Result<_>>()?,
             ))
         }
     }
@@ -158,19 +148,39 @@ impl Z3Parser {
         let inverted_gobble = move |_| gobble().map_or_else(|err| Some(Err(err)), |ok| ok.map(Ok));
         std::iter::repeat(()).map_while(inverted_gobble)
     }
-    fn gobble_enode_pairs<'a>(
+    fn parse_trans_equality(
+        &mut self,
+        can_mismatch: bool,
+    ) -> impl FnMut(&str, &str) -> Result<EqTransIdx> + '_ {
+        move |from, to| {
+            let from = self.parse_existing_enode(from)?;
+            let to = self.parse_existing_enode(to)?;
+            if can_mismatch {
+                // See comment in `EGraph::get_equalities`
+                let can_mismatch = |egraph: &EGraph| self.version_info.is_ge_version(4, 12, 3) &&
+                    self.terms[egraph.get_owner(to)].kind.app_name().is_some_and(|app| &self.strings[app] == "if");
+                self.egraph.new_trans_equality(from, to, &self.stack, can_mismatch)
+            } else {
+                fn cannot_mismatch(_: &EGraph) -> bool { false }
+                self.egraph.new_trans_equality(from, to, &self.stack, cannot_mismatch)
+            }
+        }
+    }
+    fn append_trans_equality_tuples<'a>(
         &mut self,
         l: impl Iterator<Item = &'a str>,
-    ) -> Result<Box<[(ENodeIdx, ENodeIdx)]>> {
-        Self::gobble_tuples::<true>(l)
-            .map(|t| {
-                let (first, second) = t?;
-                let first = self.parse_existing_enode(first)?;
-                let second = self.parse_existing_enode(second)?;
-                Ok((first, second))
-            })
-            .collect()
+        can_mismatch: bool,
+        mut f: impl FnMut(EqTransIdx) -> Result<()>,
+    ) -> Result<()> {
+        let mut pte = self.parse_trans_equality(can_mismatch);
+        for t in Self::gobble_tuples::<true>(l) {
+            let (from, to) = t?;
+            let trans = pte(from, to)?;
+            f(trans)?;
+        }
+        Ok(())
     }
+
     /// Create a new iterator which will only consume elements from `l` until
     /// it finds `end`. The element `end` will also be consumed but no other elements after that will.
     #[must_use]
@@ -193,7 +203,7 @@ impl Z3LogParser for Z3Parser {
         Self::expect_completed(l)?;
         let version = semver::Version::parse(version)?;
         println!("{solver} {version}");
-        self.version_info = Some(VersionInfo { solver, version });
+        self.version_info = VersionInfo::Present { solver, version };
         Ok(())
     }
 
@@ -226,8 +236,6 @@ impl Z3LogParser for Z3Parser {
             num_vars,
             kind: quant_name,
             term: Some(tidx),
-            instances: Vec::new(),
-            cost: 0.0,
             vars: None,
         };
         self.quantifiers.raw.try_reserve(1)?;
@@ -300,7 +308,7 @@ impl Z3LogParser for Z3Parser {
         let id = l.next().ok_or(Error::UnexpectedNewline)?;
         let idx = self.terms.parse_existing_id(&mut self.strings, id);
         let Ok(idx) = idx else {
-            if self.is_version(4, 8, 7) {
+            if self.version_info.is_version(4, 8, 7) {
                 // Z3 4.8.7 seems to have a bug where it can emit a non-existent term id here.
                 return Ok(());
             } else {
@@ -336,13 +344,19 @@ impl Z3LogParser for Z3Parser {
                     let eq = self.parse_existing_enode(eq)?;
                     Self::expect_completed(kind_dependent_info)?;
                     let to = self.parse_existing_enode(l.next().ok_or(Error::UnexpectedNewline)?)?;
-                    EqualityExpl::Literal { from, eq, to }
+                    let eq_expl = EqualityExpl::Literal { from, eq, to };
+                    // self.equalities.push(eq_expl.clone());
+                    eq_expl
                 }
                 "cg" => {
-                    let arg_eqs = self.gobble_enode_pairs(kind_dependent_info)?;
+                    let mut arg_eqs = Vec::new();
+                    self.append_trans_equality_tuples(kind_dependent_info, false, |eq_pair| {
+                        arg_eqs.try_reserve(1)?;
+                        arg_eqs.push(eq_pair);
+                        Ok(())
+                    })?;
                     let to = self.parse_existing_enode(l.next().ok_or(Error::UnexpectedNewline)?)?;
-                    EqualityExpl::Congruence { from, arg_eqs, to }
-                    // For each pair (#A #B), reconstruct dependent equality explanations connecting #A to #B ...
+                    EqualityExpl::Congruence { from, arg_eqs: arg_eqs.into_boxed_slice(), to }
                 }
                 "th" => {
                     let theory = self.strings.get_or_intern(kind_dependent_info.next().ok_or(Error::UnexpectedEnd)?);
@@ -372,7 +386,7 @@ impl Z3LogParser for Z3Parser {
         // Return if there is unexpectedly more data
         Self::expect_completed(l)?;
 
-        self.egraph.new_equality(from, eq_expl, &self.stack)?;
+        self.egraph.new_given_equality(from, eq_expl, &self.stack)?;
         Ok(())
     }
 
@@ -388,7 +402,7 @@ impl Z3LogParser for Z3Parser {
         let kind = if is_axiom {
             let bound_terms = bound_terms
                 .map(|id| self.terms.parse_existing_id(&mut self.strings, id))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<Result<_>>()?;
             MatchKind::Axiom {
                 axiom: quant,
                 pattern,
@@ -397,7 +411,7 @@ impl Z3LogParser for Z3Parser {
         } else {
             let bound_terms = bound_terms
                 .map(|id| self.parse_existing_enode(id))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<Result<_>>()?;
             MatchKind::Quantifier {
                 quant,
                 pattern,
@@ -406,24 +420,28 @@ impl Z3LogParser for Z3Parser {
         };
 
         let mut blamed = Vec::new();
-        while let Some(word) = l.next() {
-            if let Some(first_term) = word.strip_prefix('(') {
-                // assumes that if we see "(#A", the next word in the split is "#B)"
-                let second_term = l.next().ok_or(Error::UnexpectedNewline)?.strip_suffix(')').ok_or(Error::TupleMissingParens)?;
-                let from = self.parse_existing_enode(first_term)?;
-                let to = self.parse_existing_enode(second_term)?;
-                // See comment in `EGraph::get_equalities`
-                let can_mismatch = || self.is_ge_version(4, 12, 3) &&
-                    self.terms[self.egraph.get_owner(to)].kind.app_name().is_some_and(|app| &self.strings[app] == "if");
-                self.egraph.blame_equalities(from, to, &self.stack, &mut blamed, can_mismatch)?;
-            } else {
-                let term = self.parse_existing_enode(word)?;
+        let mut next = l.next();
+        while let Some(word) = next.take() {
+            let term = self.parse_existing_enode(word)?;
+            blamed.try_reserve(1)?;
+            blamed.push(BlameKind::Term { term });
+            // `append_trans_equality_tuples` would gobble the next term otherwise, so capture it instead.
+            let l = l.by_ref().take_while(|s| {
+                let cond = s.as_bytes().first().is_some_and(|f| *f == b'(')
+                    || s.as_bytes().last().is_some_and(|l| *l == b')');
+                if !cond {
+                    next = Some(*s);
+                }
+                cond
+            });
+            self.append_trans_equality_tuples(l, true, |eq| {
                 blamed.try_reserve(1)?;
-                blamed.push(BlameKind::Term { term })
-            };
+                blamed.push(BlameKind::Equality { eq });
+                Ok(())
+            })?;
         }
 
-        let match_ = Match { kind, blamed: blamed.into_boxed_slice() };
+        let match_ = Match { kind, blamed: blamed.into_boxed_slice(), };
         self.insts.new_match(fingerprint, match_)?;
         Ok(())
     }
@@ -445,7 +463,7 @@ impl Z3LogParser for Z3Parser {
 
                 let bound_terms = Self::iter_until_eq(&mut l, ";")
                     .map(|id| self.terms.parse_existing_id(&mut self.strings, id))
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<Result<_>>()?;
 
                 let mut blamed = Vec::new();
                 let mut rewrite_of = None;
@@ -480,7 +498,7 @@ impl Z3LogParser for Z3Parser {
                 let quant = self.terms.quant(quant)?;
                 let bound_terms = l
                     .map(|id| self.parse_existing_enode(id))
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<Result<_>>()?;
                 let kind = MatchKind::MBQI { quant, bound_terms };
                 (kind, Vec::new())
             }
@@ -510,7 +528,6 @@ impl Z3LogParser for Z3Parser {
             proof_id,
             z3_generation,
             yields_terms: Default::default(),
-            cost: 1.0,
         };
         let iidx = self.insts.new_inst(fingerprint, inst)?;
         self.inst_stack.try_reserve(1)?;
@@ -526,8 +543,6 @@ impl Z3LogParser for Z3Parser {
 
     fn eof(&mut self) {
         self.terms.end_of_file();
-        // TODO: this shouldn't be done here.
-        self.compute_costs();
     }
 
     fn push<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
@@ -550,27 +565,6 @@ impl Z3LogParser for Z3Parser {
 }
 
 impl Z3Parser {
-    fn compute_costs(&mut self) {
-        let mut insts = self.insts.insts.as_mut_slice();
-        while let Some((last, others)) = insts.split_last_mut() {
-            insts = others;
-            let match_ = &self.insts.matches[last.match_];
-            let deps: Vec<_> = match_
-                .due_to_enodes()
-                .filter_map(|(_, blame)| self.egraph[blame].created_by)
-                .collect();
-            let num_deps = deps.len() as f32;
-            for blamed in deps {
-                let cost = last.cost / num_deps;
-                let blamed_inst = &mut insts[blamed];
-                blamed_inst.cost += cost;
-                if let Some(qidx) = match_.kind.quant_idx() {
-                    self.quantifiers[qidx].cost += cost;
-                }
-            }
-        }
-    }
-
     pub fn meaning(&self, tidx: TermIdx) -> Option<&Meaning> {
         self.terms.meaning(tidx)
     }
@@ -596,5 +590,35 @@ impl std::ops::Index<ENodeIdx> for Z3Parser {
     type Output = ENode;
     fn index(&self, idx: ENodeIdx) -> &Self::Output {
         &self.egraph[idx]
+    }
+}
+impl std::ops::Index<InstIdx> for Z3Parser {
+    type Output = Instantiation;
+    fn index(&self, idx: InstIdx) -> &Self::Output {
+        &self.insts[idx]
+    }
+}
+impl std::ops::Index<MatchIdx> for Z3Parser {
+    type Output = Match;
+    fn index(&self, idx: MatchIdx) -> &Self::Output {
+        &self.insts[idx]
+    }
+}
+impl std::ops::Index<EqGivenIdx> for Z3Parser {
+    type Output = EqualityExpl;
+    fn index(&self, idx: EqGivenIdx) -> &Self::Output {
+        &self.egraph.equalities.given[idx]
+    }
+}
+impl std::ops::Index<EqTransIdx> for Z3Parser {
+    type Output = TransitiveExpl;
+    fn index(&self, idx: EqTransIdx) -> &Self::Output {
+        &self.egraph.equalities.transitive[idx]
+    }
+}
+impl std::ops::Index<IString> for Z3Parser {
+    type Output = str;
+    fn index(&self, idx: IString) -> &Self::Output {
+        &self.strings[idx]
     }
 }

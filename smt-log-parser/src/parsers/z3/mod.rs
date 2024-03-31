@@ -5,13 +5,13 @@ use super::LogParser;
 
 pub mod egraph;
 pub mod inst;
-pub mod inst_graph;
 pub mod stack;
 pub mod terms;
 /// Original Z3 log parser. Works with Z3 v.4.12.1, should work with other versions
 /// as long as the log format is the same for the important line cases.
 /// Compare with the log files in the `logs/` folder to see if this is the case.
 pub mod z3parser;
+pub mod graph;
 
 impl<T: Z3LogParser + Default> LogParser for T {
     fn is_line_start(&mut self, first_byte: u8) -> bool {
@@ -125,15 +125,35 @@ pub trait Z3LogParser {
 
 /// Type of solver and version number
 #[derive(Debug, PartialEq)]
-pub struct VersionInfo {
-    solver: String,
-    version: semver::Version,
+pub enum VersionInfo {
+    None,
+    Present {
+        solver: String,
+        version: semver::Version,
+    }
 }
 impl VersionInfo {
-    pub fn solver(&self) -> &str {
-        &self.solver
+    pub fn solver(&self) -> Option<&str> {
+        match self {
+            VersionInfo::Present { solver, .. } => Some(solver),
+            VersionInfo::None => None,
+        }
     }
-    pub fn version(&self) -> &semver::Version {
-        &self.version
+    pub fn version(&self) -> Option<&semver::Version> {
+        match self {
+            VersionInfo::Present { version, .. } => Some(version),
+            VersionInfo::None => None,
+        }
+    }
+    pub fn is_version(&self, major: u64, minor: u64, patch: u64) -> bool {
+        self.version().is_some_and(|v| v == &semver::Version::new(major, minor, patch))
+    }
+    pub fn is_ge_version(&self, major: u64, minor: u64, patch: u64) -> bool {
+        self.version().is_some_and(|v| v >= &semver::Version::new(major, minor, patch))
+    }
+}
+impl Default for VersionInfo {
+    fn default() -> Self {
+        VersionInfo::None
     }
 }

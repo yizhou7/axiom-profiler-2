@@ -4,9 +4,10 @@ use std::sync::{Mutex, OnceLock, RwLock};
 
 use gloo_file::File;
 use gloo_file::{callbacks::FileReader, FileList};
-use results::svg_result::{Msg as SVGMsg, RenderingState, SVGResult};
+use petgraph::graph::{EdgeIndex, NodeIndex};
+use results::svg_result::{Msg as SVGMsg, RenderedGraph, RenderingState, SVGResult};
 use smt_log_parser::items::{InstIdx, QuantIdx};
-use smt_log_parser::parsers::z3::inst_graph::InstGraph;
+use smt_log_parser::parsers::z3::graph::InstGraph;
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
 use smt_log_parser::parsers::{AsyncBufferRead, LogParser, ParseState, ReaderState};
 use wasm_bindgen::closure::Closure;
@@ -19,6 +20,7 @@ use yew_router::prelude::*;
 use material_yew::{MatButton, MatIcon, MatIconButton, MatDialog, WeakComponentLink};
 use material_yew::dialog::{ActionType, MatDialogAction};
 
+use crate::configuration::{Configuration, ConfigurationContext, ConfigurationProvider};
 use crate::filters::FiltersState;
 use crate::infobars::{SidebarSectionHeader, Topbar};
 
@@ -29,6 +31,7 @@ mod utils;
 mod infobars;
 mod filters;
 mod global_callbacks;
+pub mod configuration;
 
 const SIZE_NAMES: [&'static str; 5] = ["B", "KB", "MB", "GB", "TB"];
 
@@ -36,11 +39,13 @@ pub static MOUSE_POSITION: OnceLock<RwLock<PagePosition>> = OnceLock::new();
 pub fn mouse_position() -> &'static RwLock<PagePosition> {
     MOUSE_POSITION.get_or_init(|| RwLock::new(PagePosition { x: 0, y: 0 }))
 }
-#[derive(Debug, Clone, Copy)]
-pub struct PagePosition {
-    pub x: i32,
-    pub y: i32,
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Position<T> {
+    pub x: T,
+    pub y: T,
 }
+pub type PagePosition = Position<i32>;
+pub type PrecisePosition = Position<f64>;
 
 pub static PREVENT_DEFAULT_DRAG_OVER: OnceLock<Mutex<bool>> = OnceLock::new();
 
@@ -48,7 +53,9 @@ pub enum Msg {
     File(Option<File>),
     LoadedFile(String, u64, Z3Parser, ParseState, bool),
     LoadingState(LoadingState),
-    SelectedInsts(Vec<(InstIdx, Option<QuantIdx>)>),
+    RenderedGraph(RenderedGraph),
+    SelectedNodes(Vec<NodeIndex>),
+    SelectedEdges(Vec<EdgeIndex>),
     SearchMatchingLoops,
 }
 
@@ -106,20 +113,23 @@ impl ParseProgress {
 pub struct OpenedFileInfo {
     file_name: String,
     file_size: u64,
-    parser: RcParser,
     parser_state: ParseState,
     parser_cancelled: bool,
     update: Rc<RefCell<Result<Callback<SVGMsg>, Vec<SVGMsg>>>>,
-    selected_insts: Vec<(InstIdx, Option<QuantIdx>)>,
+    filter: WeakComponentLink<FiltersState>,
+    selected_nodes: Vec<NodeIndex>,
+    selected_edges: Vec<EdgeIndex>,
+    rendered: Option<RenderedGraph>,
 }
 
 impl PartialEq for OpenedFileInfo {
     fn eq(&self, other: &Self) -> bool {
         self.file_name == other.file_name
             && self.file_size == other.file_size
-            && self.parser == other.parser
             && std::mem::discriminant(&self.parser_state) == std::mem::discriminant(&other.parser_state)
-            && self.selected_insts == other.selected_insts
+            && self.selected_nodes == other.selected_nodes
+            && self.selected_edges == other.selected_edges
+            && self.rendered.as_ref().map(|r| r.graph.generation) == other.rendered.as_ref().map(|r| r.graph.generation)
     }
 }
 
@@ -147,7 +157,8 @@ pub struct FileDataComponent {
     pending_ops: usize,
     progress: LoadingState,
     cancel: Rc<RefCell<bool>>,
-    callback_refs: [CallbackRef; 2],
+    navigation_section: NodeRef,
+    _callback_refs: [CallbackRef; 2],
 }
 
 impl Component for FileDataComponent {
@@ -166,7 +177,7 @@ impl Component for FileDataComponent {
                 event.prevent_default();
             }
         }));
-        let callback_refs = [mouse_move_ref, drag_over_ref];
+        let _callback_refs = [mouse_move_ref, drag_over_ref];
         Self {
             file_select: NodeRef::default(),
             file: None,
@@ -174,16 +185,12 @@ impl Component for FileDataComponent {
             pending_ops: 0,
             progress: LoadingState::NoFileSelected,
             cancel: Rc::default(),
-            callback_refs,
+            navigation_section: NodeRef::default(),
+            _callback_refs,
         }
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
-        self.file.as_mut().map(|f| {
-            let graph = f.parser.graph.borrow();
-            f.parser.graph_loaded = graph.is_some();
-            f.parser.found_mls = graph.as_ref().and_then(|g| g.found_matching_loops());
-        });
         match msg {
             Msg::File(file) => {
                 let Some(file) = file else {
@@ -266,35 +273,71 @@ impl Component for FileDataComponent {
                 self.progress = state;
                 true
             }
+            Msg::RenderedGraph(rendered) => {
+                if let Some(file) = &mut self.file {
+                    let old_len = file.selected_nodes.len();
+                    file.selected_nodes.retain(|n| rendered.graph.contains(*n));
+                    if file.selected_nodes.len() != old_len {
+                        ctx.link().send_message(Msg::SelectedNodes(file.selected_nodes.clone()));
+                    }
+                    if let Some(old) = &file.rendered {
+                        let old_len = file.selected_edges.len();
+                        file.selected_edges.retain(|e| old.graph.graph[*e] == rendered.graph.graph[*e]);
+                        if file.selected_edges.len() != old_len {
+                            ctx.link().send_message(Msg::SelectedEdges(file.selected_edges.clone()));
+                        }
+                    }
+                    file.rendered = Some(rendered);
+                }
+                true
+            }
             Msg::LoadedFile(file_name, file_size, parser, parser_state, parser_cancelled) => {
                 log::info!("Processing \"{file_name}\"");
                 drop(self.reader.take());
+                let parser = RcParser::new(parser);
+                let cfg = ctx.link().get_configuration().unwrap();
+                cfg.update.emit(Configuration {
+                    parser: Some(RcParser::clone(&parser)),
+                    ..cfg.config
+                });
                 let file = OpenedFileInfo {
                     file_name,
                     file_size,
-                    parser: RcParser::new(parser),
                     parser_state,
                     parser_cancelled,
+                    filter: WeakComponentLink::default(),
                     update: Rc::new(RefCell::new(Err(Vec::new()))),
-                    selected_insts: Vec::new(),
+                    selected_nodes: Vec::new(),
+                    selected_edges: Vec::new(),
+                    rendered: None,
                 };
                 self.file = Some(file);
+                if let Some(navigation_section) = self.navigation_section.cast::<web_sys::Element>() {
+                    let _ = navigation_section.class_list().remove_1("expanded");
+                }
                 true
             }
-            Msg::SelectedInsts(insts) => {
-                if let Some(file) = &mut self.file {
-                    file.selected_insts = insts;
-                    true
-                } else {
-                    false
-                }
+            Msg::SelectedNodes(nodes) => {
+                let Some(file) = &mut self.file else {
+                    return false
+                };
+                file.selected_nodes = nodes;
+                true
+            }
+            Msg::SelectedEdges(edges) => {
+                let Some(file) = &mut self.file else {
+                    return false
+                };
+                file.selected_edges = edges;
+                true
             }
             Msg::SearchMatchingLoops => {
                 if let Some(file) = &mut self.file {
-                    if let Some(g) = file.parser.graph.borrow_mut().as_mut() {
-                        file.parser.found_mls = Some(g.search_matching_loops());
-                        return true;
-                    }
+                    // TODO: re-add finding matching loops
+                    // if let Some(g) = file.parser.graph.borrow_mut().as_mut() {
+                    //     file.parser.found_mls = Some(g.search_matching_loops());
+                    //     return true;
+                    // }
                 }
                 false
             }
@@ -352,12 +395,17 @@ impl Component for FileDataComponent {
         });
         let page = self.file.as_ref().map(|f| {
             let (timeout, cancel) = (f.parser_state.is_timeout(), f.parser_cancelled);
+            let link = ctx.link().clone();
             let progress = ctx.link().callback(move |rs| match rs {
-                Some(rs) => Msg::LoadingState(LoadingState::Rendering(rs, timeout, cancel)),
-                None => Msg::LoadingState(LoadingState::FileDisplayed),
+                Err(rs) => Msg::LoadingState(LoadingState::Rendering(rs, timeout, cancel)),
+                Ok(rendered) => {
+                    link.send_message(Msg::RenderedGraph(rendered));
+                    Msg::LoadingState(LoadingState::FileDisplayed)
+                }
             });
-            let selected_insts_cb = ctx.link().callback(Msg::SelectedInsts);
-            Self::view_file(f.clone(), progress, selected_insts_cb)
+            let selected_nodes = ctx.link().callback(Msg::SelectedNodes);
+            let selected_edges = ctx.link().callback(Msg::SelectedEdges);
+            Self::view_file(f.clone(), progress, selected_nodes, selected_edges)
         });
         html! {
 <>
@@ -365,7 +413,7 @@ impl Component for FileDataComponent {
         <header class="stable"><img src="html/logo_side_small.png" class="brand"/><div class="sidebar-button" onclick={hide_sidebar}><MatIconButton icon="menu"></MatIconButton></div></header>
         <input type="file" ref={&self.file_select} class="trace_file" accept=".log" onchange={on_change} multiple=false/>
         <div class="sidebar-scroll"><div class="sidebar-scroll-container">
-            <SidebarSectionHeader header_text="Navigation" collapsed_text="Open or record a new trace"><ul>
+            <SidebarSectionHeader header_text="Navigation" collapsed_text="Open a new trace" section={self.navigation_section.clone()}><ul>
                 <li><a href="#" draggable="false" id="open_trace_file"><div class="material-icons"><MatIcon>{"folder_open"}</MatIcon></div>{"Open trace file"}</a></li>
             </ul></SidebarSectionHeader>
             {current_trace}
@@ -423,10 +471,9 @@ impl Component for FileDataComponent {
 }
 
 impl FileDataComponent {
-    fn view_file(data: OpenedFileInfo, progress: Callback<Option<RenderingState>>, selected_insts_cb: Callback<Vec<(InstIdx, Option<QuantIdx>)>>) -> Html {
-        log::debug!("Viewing file");
+    fn view_file(data: OpenedFileInfo, progress: Callback<Result<RenderedGraph, RenderingState>>, selected_nodes: Callback<Vec<NodeIndex>>, selected_edges: Callback<Vec<EdgeIndex>>) -> Html {
         html! {
-            <SVGResult file={data} progress={progress} selected_insts_cb={selected_insts_cb}/>
+            <SVGResult file={data} {progress} {selected_nodes} {selected_edges}/>
         }
     }
 }
@@ -434,40 +481,16 @@ impl FileDataComponent {
 #[function_component(App)]
 pub fn app() -> Html {
     html! {
-        <main><GlobalCallbacksProvider> <FileDataComponent/> </GlobalCallbacksProvider></main>
+        <main><GlobalCallbacksProvider>
+            <ConfigurationProvider><FileDataComponent/></ConfigurationProvider>
+        </GlobalCallbacksProvider></main>
     }
-}
-
-#[function_component(Test)]
-fn test() -> Html {
-    html! {
-        <div>
-        <h1>{"test"}</h1>
-        </div>
-    }
-}
-
-#[derive(Routable, Clone, PartialEq)]
-enum Route {
-    #[at("/")]
-    App,
-    #[at("/test")]
-    Test,
 }
 
 pub struct RcParser {
-    parser: Rc<RefCell<Z3Parser>>,
-    graph: Rc<RefCell<Option<InstGraph>>>,
-    graph_loaded: bool,
+    parser: Rc<Z3Parser>,
+    graph: Option<Rc<RefCell<InstGraph>>>,
     found_mls: Option<usize>,
-}
-
-impl std::ops::Deref for RcParser {
-    type Target = RefCell<Z3Parser>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.parser
-    }
 }
 
 impl Clone for RcParser {
@@ -475,7 +498,6 @@ impl Clone for RcParser {
         Self {
             parser: self.parser.clone(),
             graph: self.graph.clone(),
-            graph_loaded: self.graph_loaded,
             found_mls: self.found_mls,
         }
     }
@@ -484,17 +506,17 @@ impl Clone for RcParser {
 impl PartialEq for RcParser {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(&*self.parser, &*other.parser)
-        && self.graph_loaded == other.graph_loaded
+        && self.graph.is_some() == other.graph.is_some()
         && self.found_mls == other.found_mls
     }
 }
+impl Eq for RcParser {}
 
 impl RcParser {
     fn new(parser: Z3Parser) -> Self {
         Self {
-            parser: Rc::new(RefCell::new(parser)),
-            graph: Rc::default(),
-            graph_loaded: false,
+            parser: Rc::new(parser),
+            graph: None,
             found_mls: None,
         }
     }

@@ -2,8 +2,7 @@ use fxhash::FxHashMap;
 use typed_index_collections::TiVec;
 
 use crate::{
-    Error, Result,
-    items::{StringTable, Term, TermId, TermIdToIdxMap, TermIdx, TermKind, Meaning, QuantIdx}
+    items::{Meaning, QuantIdx, StringTable, Term, TermAndMeaning, TermId, TermIdToIdxMap, TermIdx, TermKind}, Error, Result
 };
 
 #[derive(Debug)]
@@ -13,7 +12,7 @@ pub struct Terms {
     meanings: FxHashMap<TermIdx, Meaning>,
     parsed_terms: Option<TermIdx>,
 
-    synthetic_terms: FxHashMap<(Term, Option<Meaning>), TermIdx>,
+    synthetic_terms: FxHashMap<TermAndMeaning<'static>, TermIdx>,
 }
 
 impl Terms {
@@ -69,24 +68,39 @@ impl Terms {
         Ok(())
     }
 
+    pub fn get_term(&self, term: TermIdx) -> TermAndMeaning {
+        TermAndMeaning {
+            term: &self.terms[term],
+            meaning: self.meanings.get(&term),
+        }
+    }
+
     pub(super) fn end_of_file(&mut self) {
         self.parsed_terms = Some(self.terms.next_key());
     }
 
-    pub(super) fn new_synthetic_term(&mut self, kind: TermKind, children: Vec<TermIdx>, meaning: Option<Meaning>) -> TermIdx {
-        let term = Term {
-            id: None,
-            kind,
-            child_ids: children.into_boxed_slice(),
-        };
-        let term = self.synthetic_terms.entry((term, meaning));
-        *term.or_insert_with_key(|(term, meaning)| {
-            let term = self.terms.push_and_get_key(term.clone());
+    pub(super) fn new_synthetic_term(&mut self, kind: TermKind, child_ids: Box<[TermIdx]>, meaning: Option<Meaning>) -> TermIdx {
+        let term = Term { id: None, kind, child_ids };
+        let term_and_meaning = TermAndMeaning { term: &term, meaning: meaning.as_ref() };
+        if let Some(&tidx) = self.synthetic_terms.get(&term_and_meaning) {
+            tidx
+        } else {
+            let tidx = self.terms.push_and_get_key(term);
             if let Some(meaning) = meaning {
-                self.meanings.insert(term, *meaning);
+                self.meanings.insert(tidx, meaning);
             }
-            term
-        })
+            let term = self.get_term(tidx);
+            // Safety: this will only ever be stored in the keys of the
+            // `synthetic_terms` map and the API ensures that these keys never
+            // leak out. The keys of the map are dropped at the same time that
+            // the lifetime expires. The existing `Term` and `Meaning` values
+            // are never mutated.
+            let term = unsafe {
+                std::mem::transmute::<TermAndMeaning, TermAndMeaning<'static>>(term)
+            };
+            self.synthetic_terms.insert(term, tidx);
+            tidx
+        }
     }
 }
 

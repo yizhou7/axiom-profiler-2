@@ -1,9 +1,9 @@
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
+use petgraph::{graph::{DiGraph, EdgeIndex, NodeIndex}, visit::EdgeRef};
 use typed_index_collections::TiVec;
 
 use crate::{
-    Result,
-    items::{ENodeIdx, EqualityExpl, InstIdx, StackIdx, TermIdx, BlameKind}, Error
+    items::{ENodeIdx, EqGivenIdx, EqTransIdx, EqualityExpl, InstIdx, StackIdx, TermIdx, TransitiveExpl, TransitiveExplSegment}, Error, Result
 };
 
 use super::stack::Stack;
@@ -11,7 +11,8 @@ use super::stack::Stack;
 #[derive(Debug, Default)]
 pub struct EGraph {
     term_to_enode: FxHashMap<TermIdx, ENodeIdx>,
-    enodes: TiVec<ENodeIdx, ENode>,
+    pub(super) enodes: TiVec<ENodeIdx, ENode>,
+    pub equalities: Equalities,
 }
 
 impl EGraph {
@@ -37,6 +38,7 @@ impl EGraph {
             owner: term,
             z3_generation,
             equalities: Vec::new(),
+            transitive: Vec::new(),
         });
         self.term_to_enode.try_reserve(1)?;
         let _old = self.term_to_enode.insert(term, enode);
@@ -63,9 +65,11 @@ impl EGraph {
         self.enodes[enode].owner
     }
 
-    pub fn new_equality(&mut self, from: ENodeIdx, expl: EqualityExpl, stack: &Stack) -> Result<()> {
-        let enode = &mut self.enodes[from];
+    pub fn new_given_equality(&mut self, from: ENodeIdx, expl: EqualityExpl, stack: &Stack) -> Result<()> {
         let to = expl.to();
+        self.equalities.given.raw.try_reserve(1)?;
+        let expl = self.equalities.given.push_and_get_key(expl);
+        let enode = &mut self.enodes[from];
         let eq = Equality {
             _frame: stack.active_frame(),
             to,
@@ -81,7 +85,7 @@ impl EGraph {
         //         return;
         //     }
         //     let is_root = matches!(old.expl, EqualityExpl::Root { .. });
-        //     let root_unchanged = is_root || (self.path_to_root(old.to)[0] == self.path_to_root(new.to)[0]);
+        //     let root_unchanged = is_root || (self.path_to_root(old.to).last().unwrap() == self.path_to_root(new.to).last().unwrap());
         //     if root_unchanged {
         //         return;
         //     }
@@ -96,59 +100,169 @@ impl EGraph {
         Ok(())
     }
 
-    pub fn path_to_root(&self, from: ENodeIdx, stack: &Stack, depth: usize) -> Vec<ENodeIdx> {
-        if let Some(eq) = &self.enodes[from].get_equality(stack) {
-            if eq.to != from {
-                let mut path = self.path_to_root(eq.to, stack, depth + 1);
-                path.push(from);
-                return path;
-            }
-        }
-        let mut path = Vec::with_capacity(depth + 1);
-        path.push(from);
-        path
+    pub fn new_trans_equality(&mut self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, can_mismatch: impl Fn(&EGraph) -> bool) -> Result<EqTransIdx> {
+        let trans = self.construct_trans_equality(from, to, stack, can_mismatch)?;
+        self.enodes[from].transitive.try_reserve(1)?;
+        self.enodes[from].transitive.push(trans);
+        Ok(trans)
     }
 
-    pub fn get_equalities<'a: 'b, 'b>(&'a self, from: ENodeIdx, to: ENodeIdx, stack: &'b Stack, can_mismatch: impl Fn() -> bool) -> Result<impl Iterator<Item = &'a EqualityExpl> + 'b> {
-        let f_path = self.path_to_root(from, stack, 0);
-        let t_path = self.path_to_root(to, stack, 0);
+    fn path_to_root(&self, mut from: ENodeIdx, root: Option<ENodeIdx>, stack: &Stack) -> Result<(Option<ENodeIdx>, Vec<ENodeIdx>)> {
+        let mut visited = FxHashSet::default();
+        visited.try_reserve(1)?;
+        visited.insert(from);
+
+        let mut path = Vec::new();
+        path.try_reserve(1)?;
+        path.push(from);
+        while let Some(eq) = &self.enodes[from].get_equality(stack) {
+            if visited.contains(&eq.to) {
+                // On rare occasions there is a cycle in the equality graph
+                // (EXPLAIN). Return the path and the root as just before
+                // cycling (`from`).
+                return Ok((Some(from), path));
+            }
+            from = eq.to;
+            visited.try_reserve(1)?;
+            visited.insert(from);
+            path.try_reserve(1)?;
+            path.push(from);
+            if root.is_some_and(|root| root == from) {
+                return Ok((Some(from), path));
+            }
+        }
+        Ok((None, path))
+    }
+
+    fn get_simple_path(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, can_mismatch: impl Fn(&EGraph) -> bool) -> Result<SimplePath> {
+        let (root, f_path) = self.path_to_root(from, None, stack)?;
+        let f_root = f_path.len() - 1;
+        let (_, t_path) = self.path_to_root(to, root, stack)?;
+        let t_root = t_path.len() - 1;
+
         let mut shared = 1;
-        if f_path[0] != t_path[0] {
+        if f_path[f_root] != t_path[t_root] {
             // Root may not always be the same from v4.12.3 onwards if `to` is an `ite` expression. See:
             // https://github.com/Z3Prover/z3/commit/faf14012ba18d21c1fcddbdc321ac127f019fa03#diff-0a9ec50ded668e51578edc67ecfe32380336b9cbf12c5d297e2d3759a7a39847R2417-R2419
-            if !can_mismatch() {
+            if !can_mismatch(self) {
                 return Err(Error::EnodeRootMismatch(from, to));
             }
             // Return an empty iterator if the roots are different.
             shared = f_path.len().max(t_path.len());
         }
-        while shared < f_path.len() && shared < t_path.len() && f_path[shared] == t_path[shared] {
+        while shared < f_path.len() && shared < t_path.len() && f_path[f_root - shared] == t_path[t_root - shared] {
             shared += 1;
         }
-        let all = f_path.into_iter().skip(shared).rev().chain(t_path.into_iter().skip(shared));
-        Ok(all.map(|idx| &self.enodes[idx].get_equality(stack).unwrap().expl))
+        Ok(SimplePath { from_to_root: f_path, to_to_root: t_path, shared })
     }
 
-    pub fn blame_equalities(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, blamed: &mut Vec<BlameKind>, can_mismatch: impl Fn() -> bool) -> Result<()> {
-        for eq in self.get_equalities(from, to, stack, can_mismatch)? {
-            // TODO: figure out if this is all the blames we need.
-            match eq {
-                EqualityExpl::Root { .. } => unreachable!(),
-                &EqualityExpl::Literal { eq, .. } => {
-                    blamed.push(BlameKind::Equality { eq });
-                }
-                EqualityExpl::Congruence { arg_eqs, .. } => {
-                    for (from, to) in arg_eqs.iter() {
-                        fn cannot_mismatch() -> bool { false }
-                        self.blame_equalities(*from, *to, stack, blamed, cannot_mismatch)?;
+    fn construct_trans_equality(&mut self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, can_mismatch: impl Fn(&EGraph) -> bool) -> Result<EqTransIdx> {
+        // Note that it is possible for `from == to`!
+        let simple_path = self.get_simple_path(from, to, stack, can_mismatch)?;
+        // TODO: no need to store the `ENodeIdx` in the graph!
+        let mut graph: DiGraph<(ENodeIdx, u32, EdgeIndex), TransitiveExplSegment> = DiGraph::with_capacity(simple_path.nodes_len(), simple_path.edges_len());
+        let mut last = graph.add_node((from, 0, EdgeIndex::from(u32::MAX)));
+        for (to, eq) in simple_path.all_simple_edges(self, stack) {
+            let next = graph.add_node((to, 0, EdgeIndex::from(u32::MAX)));
+            graph.add_edge(last, next, TransitiveExplSegment::Leaf(eq));
+            last = next;
+        }
+        for (idx, efrom) in simple_path.all_nodes().enumerate() {
+            let nfrom = NodeIndex::new(idx);
+            // TODO: remove, just testing `node_at`
+            debug_assert_eq!(simple_path.node_at(idx as usize), efrom);
+            debug_assert_eq!(efrom, graph[nfrom].0);
+
+            self.enodes[efrom].transitive.retain(|&trans| {
+                let mut prior_simple_edges = (0..idx).rev().map(|idx| EdgeIndex::new(idx)).map(|idx| match graph[idx] {
+                    TransitiveExplSegment::Leaf(eq) => eq,
+                    _ => unreachable!(),
+                });
+                let check_left = prior_simple_edges.len() != 0;
+                if check_left {
+                    match self.equalities.is_equal(trans, false, &mut prior_simple_edges) {
+                        // Unequal straight away at the first one, lets try the other direction
+                        Err((true, mismatch)) => debug_assert!(mismatch),
+                        Err((false, mismatch)) => return !mismatch,
+                        Ok(()) => {
+                            let to = NodeIndex::new(prior_simple_edges.len());
+                            debug_assert_eq!(self.equalities.walk_to(efrom, trans, false), graph[to].0);
+                            debug_assert!(to.index() < nfrom.index());
+                            graph.add_edge(to, nfrom, TransitiveExplSegment::TransitiveBwd(trans));
+                            return true
+                        }
                     }
                 }
-                EqualityExpl::Theory { .. } => (),
-                EqualityExpl::Axiom { .. } => (),
-                EqualityExpl::Unknown { .. } => (),
+                let mut post_simple_edges = (idx..simple_path.edges_len()).map(|idx| EdgeIndex::new(idx)).map(|idx| match graph[idx] {
+                    TransitiveExplSegment::Leaf(eq) => eq,
+                    _ => unreachable!(),
+                });
+                let check_right = prior_simple_edges.len() != 0;
+                if check_right {
+                    let keep = match self.equalities.is_equal(trans, true, &mut post_simple_edges) {
+                        Err((true, mismatch)) => {
+                            debug_assert!(mismatch);
+                            // If we've checked both and both had a mismatch
+                            // then this must be stale.
+                            !check_left
+                        }
+                        Err((false, mismatch)) => !mismatch,
+                        Ok(()) => {
+                            let idx = simple_path.edges_len() - post_simple_edges.len();
+                            let to = NodeIndex::new(idx);
+                            debug_assert_eq!(self.equalities.walk_to(efrom, trans, true), graph[to].0);
+                            debug_assert!(nfrom.index() < to.index());
+                            graph.add_edge(nfrom, to, TransitiveExplSegment::TransitiveFwd(trans));
+                            true
+                        }
+                    };
+                    return keep;
+                }
+                // Reachable only if `from == to`
+                debug_assert_eq!(from, to);
+                true
+            });
+        }
+
+        // Find the shortest path
+        for idx in (0..simple_path.nodes_len() - 1).rev() {
+            let idx = NodeIndex::new(idx);
+            // Use `.rev()` here to prefer transitive edges over leaf edges,
+            // though hopefully the `min_by_key` should be unique.
+            let min = graph.edges(idx).min_by_key(|edge| graph[edge.target()].1).unwrap();
+            let (cost, id) = (graph[min.target()].1, min.id());
+            let idx = &mut graph[idx];
+            idx.1 = cost + 1;
+            idx.2 = id;
+        }
+
+        let start = NodeIndex::new(0);
+        let mut edge = graph[start].2;
+        let path_length = graph[start].1;
+        if path_length == 1 {
+            match graph[edge] {
+                TransitiveExplSegment::TransitiveFwd(idx) => return Ok(idx),
+                TransitiveExplSegment::TransitiveBwd(idx) => {
+                    let trans = &self.equalities.transitive[idx];
+                    if trans.path.len() == 1 {
+                        match trans.path[0] {
+                            TransitiveExplSegment::TransitiveFwd(_) => unreachable!(),
+                            TransitiveExplSegment::TransitiveBwd(idx) => return Ok(idx),
+                            TransitiveExplSegment::Leaf(_) => (),
+                        }
+                    }
+                }
+                TransitiveExplSegment::Leaf(_) => (),
             }
         }
-        Ok(())
+        let trans = TransitiveExpl::new((0..path_length).map(|_| {
+            let kind = &graph[edge];
+            edge = graph[graph.edge_endpoints(edge).unwrap().1].2;
+            kind
+        }).copied(), simple_path.edges_len(), to)?;
+        self.equalities.transitive.raw.try_reserve(1)?;
+        let trans = self.equalities.transitive.push_and_get_key(trans);
+        Ok(trans)
     }
 }
 
@@ -167,6 +281,7 @@ pub struct ENode {
     pub z3_generation: Option<u32>,
 
     equalities: Vec<Equality>,
+    transitive: Vec<EqTransIdx>,
 }
 
 impl ENode {
@@ -181,5 +296,101 @@ impl ENode {
 pub struct Equality {
     _frame: Option<StackIdx>,
     pub to: ENodeIdx,
-    pub expl: EqualityExpl,
+    pub expl: EqGivenIdx,
+}
+
+#[derive(Debug, Default)]
+pub struct Equalities {
+    pub(super) given: TiVec<EqGivenIdx, EqualityExpl>,
+    pub(super) transitive: TiVec<EqTransIdx, TransitiveExpl>,
+}
+
+impl Equalities {
+    pub fn walk_trans<E>(&self, eq: EqTransIdx, fwd: bool, mut f: impl FnMut(EqGivenIdx, bool) -> std::result::Result<(), E>) -> std::result::Result<(), E> {
+        let mut stack = vec![self.transitive[eq].all(fwd)];
+        while let Some(top) = stack.last_mut() {
+            match top.next().copied() {
+                None => {
+                    stack.pop();
+                }
+                Some(TransitiveExplSegment::Leaf(eq)) => f(eq, fwd)?,
+                Some(TransitiveExplSegment::TransitiveFwd(eq)) =>
+                    stack.push(self.transitive[eq].all(true)),
+                Some(TransitiveExplSegment::TransitiveBwd(eq)) =>
+                    stack.push(self.transitive[eq].all(false)),
+            }
+        }
+        Ok(())
+    }
+    pub fn is_equal(&self, eq: EqTransIdx, fwd: bool, simple: &mut impl Iterator<Item = EqGivenIdx>) -> std::result::Result<(), (bool, bool)> {
+        let mut never_eq = true;
+        self.walk_trans(eq, fwd, |eq, eq_fwd| {
+            let simple = simple.next().ok_or((never_eq, false))?;
+            (simple == eq && fwd == eq_fwd).then(|| never_eq = false).ok_or((never_eq, true))
+        })
+    }
+    pub fn walk_to(&self, mut from: ENodeIdx, eq: EqTransIdx, fwd: bool) -> ENodeIdx {
+        #[derive(Debug)]
+        enum Never {}
+        self.walk_trans::<Never>(eq, fwd, |eq, fwd| {
+            from = self.given[eq].walk(from, fwd).unwrap();
+            Ok(())
+        }).unwrap();
+        from
+    }
+    pub fn path(&self, eq: EqTransIdx) -> Vec<ENodeIdx> {
+        let mut path = Vec::new();
+        #[derive(Debug)]
+        enum Never {}
+        self.walk_trans::<Never>(eq, true, |eq, fwd| {
+            let eq = &self.given[eq];
+            let from = if fwd { eq.from() } else { eq.to() };
+            path.push(from);
+            Ok(())
+        }).unwrap();
+        path.push(self.transitive[eq].to);
+        path
+    }
+}
+
+pub struct SimplePath {
+    from_to_root: Vec<ENodeIdx>,
+    to_to_root: Vec<ENodeIdx>,
+    shared: usize,
+}
+impl SimplePath {
+    pub fn edges_len(&self) -> usize {
+        self.from_to_root.len() + self.to_to_root.len() - 2 * self.shared
+    }
+    pub fn all_simple_edges<'a>(&'a self, egraph: &'a EGraph, stack: &'a Stack) -> impl DoubleEndedIterator<Item = (ENodeIdx, EqGivenIdx)> + 'a {
+        let from_to_join = self.from_to_root[..self.from_to_root.len() - self.shared].iter().copied();
+        let from_to_join = from_to_join.map(|e| {
+            let eq = &egraph.enodes[e].get_equality(stack).unwrap();
+            (eq.to, eq.expl)
+        });
+        let join_to_to = self.to_to_root[..self.to_to_root.len() - self.shared].iter().rev().copied();
+        let join_to_to = join_to_to.map(|e| (e, egraph.enodes[e].get_equality(stack).unwrap().expl));
+        from_to_join.chain(join_to_to)
+    }
+
+    pub fn nodes_len(&self) -> usize {
+        self.edges_len() + 1
+    }
+    pub fn all_nodes(&self) -> impl DoubleEndedIterator<Item = ENodeIdx> + '_ {
+        let from_to_join = self.from_to_root[..self.from_to_root.len() + 1 - self.shared].iter();
+        let join_to_to = self.to_to_root[..self.to_to_root.len() - self.shared].iter().rev();
+        from_to_join.chain(join_to_to).copied()
+    }
+    pub fn node_at(&self, idx: usize) -> ENodeIdx {
+        let from_len = self.from_to_root.len() - self.shared;
+        if idx <= from_len {
+            self.from_to_root[idx]
+        } else {
+            let to_len = self.from_to_root.len() - self.shared;
+            self.to_to_root[(to_len + from_len) - idx]
+        }
+    }
+    pub fn all_transitive<'a>(&'a self, egraph: &'a EGraph) -> impl DoubleEndedIterator<Item = impl DoubleEndedIterator<Item = EqTransIdx> + 'a> + 'a {
+        self.all_nodes().map(move |idx| egraph.enodes[idx].transitive.iter().copied())
+    }
 }

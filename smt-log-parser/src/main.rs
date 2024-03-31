@@ -1,7 +1,6 @@
-use serde::Deserialize;
-use smt_log_parser::parsers::z3::z3parser::Z3Parser;
+use smt_log_parser::parsers::z3::{graph::InstGraph, z3parser::Z3Parser};
 use smt_log_parser::parsers::LogParser;
-use std::{borrow::Cow, env, time::Duration};
+use std::{env, time::Duration};
 use wasm_timer::Instant;
 
 fn main() {
@@ -26,12 +25,20 @@ fn main() {
         // let parsed = StreamParser::parse_entire_string(&file, Duration::from_secs_f32(10.0));
         let to = Duration::from_secs_f32(15.0);
         let (_metadata, parser) = Z3Parser::from_file(path).unwrap();
-        let (timeout, _result) = parser.process_all_timeout(to);
+        let (timeout, result) = parser.process_all_timeout(to);
         let elapsed_time = time.elapsed();
         println!(
-            "{} parsing after {} seconds (timeout {timeout:?})\n",
+            "{} parsing after {} seconds (timeout {timeout:?})",
             if timeout.is_timeout() { "Timeout" } else { "Finished" }, elapsed_time.as_secs_f32()
         );
+        let inst_graph = InstGraph::new(&result);
+        let _displayed = inst_graph.to_visible();
+        let process_time = time.elapsed();
+        println!(
+            "Finished analysing after {} seconds",
+            (process_time - elapsed_time).as_secs_f32()
+        );
+
         // result.save_output_to_files(&settings, &time);
         // let render_engine = GraphVizRender;
         // let _svg_result = render_engine.make_svg(OUT_DOT, OUT_SVG);

@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 yew = { version = "0.20", features = ["csr"]}
 gloo = "0.9.0"
-web-sys = {version="0.3.65", features=["DomTokenList","Element","Node","DomRect"]}
+web-sys = {version="0.3.65", features=["DomTokenList","Element","Node","DomRect","Performance","ResizeObserver","ResizeObserverEntry"]}
 log = "0.4.6"
 wasm-logger = "0.2.0"
 gloo-file = "0.2.3"
@@ -27,7 +27,6 @@ wasm-streams = "0.4.0"
 yew-hooks = "0.3.0"
 fxhash = "0.2.1"
 typed-index-collections = "3.1.0"
-primal = "0.3"
 gloo-console = "0.3.0"
 num-format = "0.4.4"
 material-yew = { version = "0.3.0", features = ["full"] }
@@ -38,6 +37,10 @@ indexmap = "2.1.0"
 console_error_panic_hook = "0.1.2"
 wasm-timer = "0.2"
 gloo-timers = { version = "0.3.0", features = ["futures"] }
+
+# For random colour generation
+gcd = "2.3.0"
+palette = "0.7.5"
 
 [build-dependencies]
 vergen = { version = "8.2", features = ["git", "gitcl"] }

@@ -9,12 +9,13 @@ pub struct SidebarSectionHeaderProps {
     pub icon: Option<String>,
     pub header_class: Option<String>,
     pub header_ref: Option<String>,
+    pub section: Option<NodeRef>,
     pub children: Children,
 }
 
 #[function_component]
 pub fn SidebarSectionHeader(props: &SidebarSectionHeaderProps) -> Html {
-    let section = NodeRef::default();
+    let section = props.section.clone().unwrap_or_default();
     let section_ref = section.clone();
     let collapse = Callback::from(move |_| {
         let section: HtmlElement = section_ref.cast::<HtmlElement>().unwrap();

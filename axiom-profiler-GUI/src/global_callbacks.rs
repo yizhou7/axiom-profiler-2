@@ -1,5 +1,6 @@
 use std::{ops::Deref, rc::Rc, sync::Mutex};
-use yew::{html, html::Scope, prelude::{Context, Html}, Callback, Children, Component, ContextProvider, DragEvent, MouseEvent, Properties};
+use wasm_bindgen::{closure::Closure, JsCast};
+use yew::{html, html::Scope, prelude::{Context, Html}, Callback, Children, Component, ContextProvider, DragEvent, Event, MouseEvent, Properties};
 
 // Public interface
 
@@ -17,6 +18,7 @@ pub struct GlobalCallbacks {
     pub register_mouse_up: CallbackRegisterer<MouseEvent>,
     pub register_mouse_out: CallbackRegisterer<MouseEvent>,
     pub register_drag_over: CallbackRegisterer<DragEvent>,
+    pub register_resize: CallbackRegisterer<Event>,
 }
 impl PartialEq for GlobalCallbacks {
     fn eq(&self, _: &Self) -> bool {
@@ -45,8 +47,10 @@ pub struct GlobalCallbacksProvider {
     mouse_up: CallbackHolder<MouseEvent>,
     mouse_out: CallbackHolder<MouseEvent>,
     drag_over: CallbackHolder<DragEvent>,
+    resize: CallbackHolder<Event>,
 
     registerer: Rc<GlobalCallbacks>,
+    onresize: Option<Closure<dyn Fn(Event)>>,
 }
 
 #[derive(Properties, PartialEq)]
@@ -56,6 +60,20 @@ pub struct GlobalCallbacksProviderProps {
 
 // Private
 
+impl CallbackRegisterer<Event> {
+    fn new(link: Scope<GlobalCallbacksProvider>, kind: EventKind) -> Self {
+        let id = Mutex::<usize>::new(0);
+        Self(Box::new(move |callback| {
+            let mut id = id.lock().unwrap();
+            let id_v = *id;
+            *id += 1;
+            drop(id);
+            link.send_message(Msg::Register(kind, id_v, callback));
+            let link = link.clone();
+            CallbackRef(Box::new(move || link.send_message(Msg::DeRegister(kind, id_v))))
+        }))
+    }
+}
 impl CallbackRegisterer<MouseEvent> {
     fn new_mouse(link: Scope<GlobalCallbacksProvider>, kind: MouseEventKind) -> Self {
         let id = Mutex::<usize>::new(0);
@@ -98,6 +116,11 @@ impl GlobalCallbacksProvider {
             DragEventKind::DragOver => &mut self.drag_over,
         }
     }
+    fn get_mut(&mut self, kind: EventKind) -> &mut CallbackHolder<Event> {
+        match kind {
+            EventKind::Resize => &mut self.resize,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -107,10 +130,14 @@ pub enum MouseEventKind {
     MouseOut,
 }
 
-
 #[derive(Debug, Copy, Clone)]
 pub enum DragEventKind {
     DragOver,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum EventKind {
+    Resize,
 }
 
 pub enum Msg {
@@ -121,6 +148,10 @@ pub enum Msg {
     RegisterDrag(DragEventKind, usize, Callback<DragEvent>),
     DeRegisterDrag(DragEventKind, usize),
     OnDrag(DragEventKind, DragEvent),
+
+    Register(EventKind, usize, Callback<Event>),
+    DeRegister(EventKind, usize),
+    On(EventKind, Event),
 }
 
 struct CallbackHolder<T>(Vec<(usize, Callback<T>)>);
@@ -140,14 +171,17 @@ impl Component for GlobalCallbacksProvider {
             register_mouse_up: CallbackRegisterer::new_mouse(ctx.link().clone(), MouseEventKind::MouseUp),
             register_mouse_out: CallbackRegisterer::new_mouse(ctx.link().clone(), MouseEventKind::MouseOut),
             register_drag_over: CallbackRegisterer::new_drag(ctx.link().clone(), DragEventKind::DragOver),
+            register_resize: CallbackRegisterer::new(ctx.link().clone(), EventKind::Resize),
         };
         Self {
             mouse_move: CallbackHolder::default(),
             mouse_up: CallbackHolder::default(),
             mouse_out: CallbackHolder::default(),
             drag_over: CallbackHolder::default(),
+            resize: CallbackHolder::default(),
 
-            registerer: Rc::new(registerer)
+            registerer: Rc::new(registerer),
+            onresize: None,
         }
     }
 
@@ -173,6 +207,16 @@ impl Component for GlobalCallbacksProvider {
             Msg::OnDrag(kind, ev) => for (_, cb) in &self.get_drag_mut(kind).0 {
                 cb.emit(ev.clone());
             },
+            Msg::Register(kind, id, cb) =>
+                self.get_mut(kind).0.push((id, cb)),
+            Msg::DeRegister(kind, id) => {
+                let cbh = self.get_mut(kind);
+                let idx = cbh.0.iter().position(|(i, _)| *i == id).unwrap();
+                cbh.0.swap_remove(idx);
+            }
+            Msg::On(kind, ev) => for (_, cb) in &self.get_mut(kind).0 {
+                cb.emit(ev.clone());
+            },
         }
         false
     }
@@ -188,6 +232,28 @@ impl Component for GlobalCallbacksProvider {
                     {ctx.props().children.clone()}
                 </ContextProvider<Rc<GlobalCallbacks>>>
             </div>
+        }
+    }
+
+    fn rendered(&mut self, ctx: &Context<Self>, first_render: bool) {
+        if first_render {
+            let link = ctx.link().clone();
+            let onresize: Closure<dyn Fn(Event)> = Closure::new(move |ev: Event| link.send_message(Msg::On(EventKind::Resize, ev)));
+            let window = web_sys::window().unwrap();
+            window.add_event_listener_with_callback(
+                "resize",
+                onresize.as_ref().unchecked_ref(),
+            ).unwrap();
+            self.onresize = Some(onresize);
+        }
+    }
+    fn destroy(&mut self, _ctx: &Context<Self>) {
+        if let Some(onresize) = self.onresize.take() {
+            let window = web_sys::window().unwrap();
+            window.remove_event_listener_with_callback(
+                "resize",
+                onresize.as_ref().unchecked_ref(),
+            ).unwrap();
         }
     }
 }

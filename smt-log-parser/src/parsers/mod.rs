@@ -238,6 +238,7 @@ mod wrapper {
 
                 loop {
                     bytes_read += add_await([reader.read_line(&mut buf)]).unwrap();
+                    self.reader_state.lines_read += 1;
                     let peek = add_await([reader.fill_buf()]).unwrap();
                     // Stop reading if this is the end or we don't have a multiline.
                     if peek.is_empty() || self.parser.is_line_start(peek[0]) {
@@ -256,7 +257,6 @@ mod wrapper {
                     Some(ParseState::Completed { end_of_stream: true })
                 } else {
                     self.reader_state.bytes_read += bytes_read;
-                    self.reader_state.lines_read += 1;
                     match self.parser.process_line(&buf, self.reader_state.lines_read) {
                         Ok(true) => None,
                         Ok(false) =>
