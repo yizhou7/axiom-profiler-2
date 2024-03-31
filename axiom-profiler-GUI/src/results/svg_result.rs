@@ -2,13 +2,14 @@ use crate::{
     configuration::{Configuration, ConfigurationContext}, filters, results::{filters::FilterOutput, graph_info::{GraphInfo, Msg as GraphInfoMsg}, node_info::{EdgeInfo, NodeInfo}}, OpenedFileInfo, RcParser
 };
 
-use self::colours::HSVColour;
 use super::{
     filters::{Disabler, Filter},
     worker::Worker,
 };
+use gloo::console::log;
 use material_yew::WeakComponentLink;
 use num_format::{Locale, ToFormattedString};
+use palette::{encoding::Srgb, white_point::D65, FromColor, Hsl, Hsluv, Hsv, LuvHue};
 use petgraph::{dot::{Config, Dot}, graph::NodeIndex, visit::EdgeRef};
 use petgraph::graph::EdgeIndex;
 use smt_log_parser::{
@@ -335,7 +336,8 @@ impl Component for SVGResult {
                                             (_, _) => "diamond",
                                         };
                                         shape = Some(s);
-                                        fillcolor = Some(self.colour_map.get(mkind, NODE_COLOUR_SATURATION).to_string());
+                                        let hue = self.colour_map.get_graphviz_hue(mkind);
+                                        fillcolor = Some(format!("{hue} {NODE_COLOUR_SATURATION} {NODE_COLOUR_VALUE}"));
                                         label = format!("{inst:?}");
                                     }
                                     NodeKind::GivenEquality(eq) =>
@@ -505,20 +507,22 @@ impl QuantIdxToColourMap {
         }
     }
 
-    pub fn get(&self, mkind: &MatchKind, sat: f64) -> HSVColour {
+    pub fn get(&self, mkind: &MatchKind) -> LuvHue<f64> {
         let qidx = mkind.quant_idx();
         debug_assert!(self.non_quant_insts || qidx.is_some());
         let idx = qidx
             .map(usize::from)
             .map(|q| q + self.non_quant_insts as usize)
-            .unwrap_or(0);
+            .unwrap_or_default();
         // debug_assert!(idx < idx);
         let idx_perm = (idx * self.coprime.get() + self.shift) % self.total_count;
-        HSVColour {
-            hue: idx_perm as f64 / self.total_count as f64,
-            sat,
-            val: NODE_COLOUR_VALUE,
-        }
+        LuvHue::new(360. * idx_perm as f64 / self.total_count as f64)
+    }
+    pub fn get_graphviz_hue(&self, mkind: &MatchKind) -> f64 {
+        let hue = self.get(mkind);
+        let colour = Hsluv::<D65, f64>::new(hue, 100.0, 50.0);
+        let colour = Hsv::<Srgb, f64>::from_color(colour);
+        colour.hue.into_positive_degrees() / 360.0
     }
 
     fn find_coprime(n: usize) -> NonZeroUsize {
@@ -527,50 +531,28 @@ impl QuantIdxToColourMap {
             Some(nz) => nz,
             None => [][0],
         };
-        let nz = NonZeroUsize::new(n);
-        // TODO: there are two bugs here:
-        //   - We try to calculate the number of primes less than or equal to `n/2` as `(n/ln(n)) / 2`, rather than
-        //     `n/2 / ln(n/2)` which actually gets closer to the real number (but still underapproximates).
-        //   - Getting a prime as close to `n/2` as possible is not ideal since
-        //     e.g. idx 0 and 2 will be right next to each other (0 -> 0, 1 -> n/2, 2 -> 1, ...).
-        //     Luckily we generally get a number somewhat smaller than `n/2` so it's not too bad.
-        if let Some(nz) = nz {
-            // according to prime number theorem, the number of primes less than or equal to N is roughly N/ln(N)
-            let nr_primes_to_skip = if n <= 2 {
-                0
-            } else {
-                (n as f64 / f64::ln(n as f64) / 2.0).floor() as usize
+        // We try to find a coprime at around `n.30303...` to achieve a period
+        // of around 10 distinct colours for subsequent indices:
+        // 0.303, 0.606, 0.909, 0.212, 0.515, 0.818, 0.121, 0.424, 0.727, 0.030.
+        // That is, we get a group of 10 colours that are at least 0.1 apart,
+        // and then recursively 10 groups of 10 which are at least 0.01 apart, etc.
+        let aim = (n as u128)
+            .checked_mul(99 + 30)
+            .map(|aim| aim / 99 - 1)
+            .and_then(|aim| usize::try_from(aim).ok());
+        let Some(mut aim) = aim.and_then(NonZeroUsize::new) else {
+            return ONE
+        };
+        let Some(n) = NonZeroUsize::new(n) else {
+            return ONE
+        };
+        use gcd::Gcd;
+        while n.gcd(aim) != ONE {
+            let Some(new) = aim.checked_add(1) else {
+                return ONE
             };
-            primal::Primes::all()
-                // Start from "middle prime" smaller than n since both the very large and very small ones don't permute so nicely.
-                .skip(nr_primes_to_skip)
-                // SAFETY: returned primes will never be zero.
-                .map(|p| unsafe { NonZeroUsize::new_unchecked(p) })
-                // Find the first prime that is coprime to `nz`.
-                .find(|&prime| nz.get() % prime.get() != 0)
-                .unwrap()
-            // Will always succeed since any prime larger than `nz / 2` is
-            // coprime. Terminates since `nz != 0`.
-        } else {
-            ONE
+            aim = new;
         }
-    }
-}
-
-/// Private module for generating colors
-mod colours {
-    use std::fmt;
-
-    #[derive(Clone, Copy)]
-    pub struct HSVColour {
-        pub hue: f64,
-        pub sat: f64,
-        pub val: f64,
-    }
-
-    impl fmt::Display for HSVColour {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "{} {} {}", self.hue, self.sat, self.val)
-        }
+        aim
     }
 }
