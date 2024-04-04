@@ -36,12 +36,12 @@ impl VisibleInstGraph {
 
     fn reconnect(&mut self, igraph: &InstGraph) {
         // Look for tuples of 4 indices:
-        //  - `from`: a hidden node
+        //  - `from`: a visible node
         //  - `from_child`: a hidden child of `from`
         //  - `to_parent`: a hidden node reachable from `from_child` but not
         //    reachable by any hidden node also reachable from `from_child`
         //    (note that it's possible for `from_child == to_parent`)
-        //  - `to`: a hidden child of `to_parent`
+        //  - `to`: a visible child of `to_parent`
         //
         // There a 4 nested loops here which could be pretty expensive, however
         // we assume that the connectivity of the graph is rather low and so all
