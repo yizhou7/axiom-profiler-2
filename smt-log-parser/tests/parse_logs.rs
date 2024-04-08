@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 use cap::Cap;
 
-use smt_log_parser::{LogParser, Z3Parser};
+use smt_log_parser::{parsers::z3::graph::InstGraph, LogParser, Z3Parser};
 
 #[global_allocator]
 static ALLOCATOR: Cap<std::alloc::System> = Cap::new(std::alloc::System, usize::max_value());
@@ -50,8 +50,12 @@ fn parse_all_logs() {
                 true
             });
             let elapsed = now.elapsed();
-            println!("Finished parsing in {elapsed:?} ({} kB/ms)", file_size_kb as u128 / elapsed.as_millis());
+            println!("Finished parsing in {elapsed:?} ({} kB/ms). Starting analysis", file_size_kb as u128 / elapsed.as_millis());
+            let inst_graph = InstGraph::new(parser.parser());
+            let elapsed = now.elapsed();
+            println!("Finished analysis in {elapsed:?} ({} kB/ms). {} nodes.", file_size_kb as u128 / elapsed.as_millis(), inst_graph.raw.graph.node_count());
             println!();
+            drop(inst_graph);
             drop(parser);
         });
         t.join().unwrap();

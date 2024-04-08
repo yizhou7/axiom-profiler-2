@@ -19,6 +19,7 @@ jobs:
   test:
     # will wait for new cache on push to main branch, otherwise will run straight away with existing cache
     needs: generate_log
+    if: ${{ always() && !failure() && !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
