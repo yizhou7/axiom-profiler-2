@@ -63,11 +63,20 @@ impl VisibleInstGraph {
                 }
                 let s_from_child = igraph.raw.graph[i_from_child].subgraph.unwrap().1;
 
-                let visible_reachable = sg.reachable_from(s_from_child).filter(|&s| igraph.raw.graph[sg.nodes[s as usize]].visible());
+                let visible_reachable = || sg.reach_fwd.reachable_from(s_from_child).filter(|&s| igraph.raw.graph[sg.nodes[s as usize]].visible());
                 // All nodes reachable from "any visible node reachable from `s_from_child`".
-                let vr_reachable = sg.reachable_from_many(visible_reachable);
-                // visible nodes are ruled out here too (`vr_reachable` is reflexive)
-                let filter = |i| igraph.raw[i].subgraph.is_some_and(|(_, s)| !vr_reachable.contains(s));
+                let fwd_reachable = sg.reach_fwd.reachable_from_many(visible_reachable());
+                if fwd_reachable.is_empty() {
+                    // no visible node reachable from `s_from_child`
+                    continue;
+                }
+                // we do not want to walk any nodes which cannot reach any visible node
+                let bwd_reachable = sg.reach_bwd.reachable_from_many(visible_reachable());
+
+                // visible nodes are ruled out here too (`fwd_reachable` is reflexive)
+                let filter = |i| igraph.raw[i].subgraph.is_some_and(|(_, s)|
+                    !fwd_reachable.contains(s) && bwd_reachable.contains(s)
+                );
                 let filtered = NodeFiltered::from_fn(&igraph.raw.graph, filter);
 
                 let mut path = Vec::new();

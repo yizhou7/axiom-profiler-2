@@ -4,7 +4,10 @@ use roaring::RoaringBitmap;
 
 pub struct Subgraph {
     pub(super) nodes: Vec<NodeIndex>,
-    transitive_closure: Vec<RoaringBitmap>,
+    /// `reach_fwd[idx]` gives the set of nodes that can be reached from `idx`
+    pub reach_fwd: TransitiveClosure,
+    /// `reach_bwd[idx]` gives the set of nodes that can reach `idx`
+    pub reach_bwd: TransitiveClosure,
 }
 
 impl Subgraph {
@@ -32,16 +35,16 @@ impl Subgraph {
         }
 
         // Transitive closure
-        let mut transitive_closure = vec![RoaringBitmap::new(); nodes.len()];
+        let mut reach_fwd = TransitiveClosure(vec![RoaringBitmap::new(); nodes.len()]);
         {
-            let mut transitive_closure = &mut *transitive_closure;
+            let mut reach_fwd = &mut *reach_fwd.0;
             let mut reverse_topo = nodes.iter().enumerate().rev();
-            while let (Some((idx, node)), Some((curr, others))) = (reverse_topo.next(), transitive_closure.split_last_mut()) {
-                transitive_closure = others;
+            while let (Some((idx, node)), Some((curr, others))) = (reverse_topo.next(), reach_fwd.split_last_mut()) {
+                reach_fwd = others;
                 curr.insert(idx as u32);
                 for parent in graph.neighbors_directed(*node, Incoming) {
                     let parent = c(&graph[parent]);
-                    transitive_closure[parent as usize] |= &*curr;
+                    reach_fwd[parent as usize] |= &*curr;
                 }
             }
         }
@@ -52,21 +55,32 @@ impl Subgraph {
         //     tc_combined.append(tc.into_iter().map(|x| x + offset));
         // }
 
-        Self { nodes, transitive_closure }
+        let mut reach_bwd = TransitiveClosure(vec![RoaringBitmap::new(); nodes.len()]);
+        for (idx, reach_bwd) in reach_bwd.0.iter_mut().enumerate() {
+            reach_bwd.append(reach_fwd.0.iter().enumerate().filter_map(
+                |(i, tc)| if tc.contains(idx as u32) { Some(i as u32) } else { None }
+            )).ok();
+        }
+
+        Self { nodes, reach_fwd, reach_bwd }
     }
 
+}
+
+pub struct TransitiveClosure(Vec<RoaringBitmap>);
+impl TransitiveClosure {
     pub fn in_transitive_closure(&self, from: u32, to: u32) -> bool {
-        // self.transitive_closure.contains(from * self.nodes.len() as u32 + to)
-        self.transitive_closure[from as usize].contains(to)
+        // self.reach_fwd.contains(from * self.nodes.len() as u32 + to)
+        self.0[from as usize].contains(to)
     }
     pub fn reachable_from(&self, from: u32) -> impl Iterator<Item = u32> + '_ {
         // (0..self.nodes.len() as u32).filter(move |&to| self.in_transitive_closure(from, to))
-        self.transitive_closure[from as usize].iter()
+        self.0[from as usize].iter()
     }
     pub fn reachable_from_many(&self, from: impl Iterator<Item = u32>) -> RoaringBitmap {
         let mut reachable = RoaringBitmap::new();
         for from in from {
-            reachable |= &self.transitive_closure[from as usize];
+            reachable |= &self.0[from as usize];
         }
         reachable
     }
