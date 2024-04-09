@@ -279,12 +279,10 @@ impl<'a, 'b> EdgeInfo<'a, 'b> {
                 "Equality Fact".to_string(),
             VisibleEdgeKind::Direct(_, EdgeKind::EqualityCongruence) =>
                 "Equality Congruence".to_string(),
-            VisibleEdgeKind::Direct(_, EdgeKind::TEqualitySimple) =>
-                "Simple Equality".to_string(),
-            VisibleEdgeKind::Direct(_, EdgeKind::TEqualityTransitive) =>
-                "Transitive Equality".to_string(),
-            VisibleEdgeKind::Direct(_, EdgeKind::TEqualityTransitiveBwd) =>
-                "Transitive Reverse Equality".to_string(),
+            VisibleEdgeKind::Direct(_, EdgeKind::TEqualitySimple { forward }) =>
+                format!("Simple {}Equality", (!forward).then(|| "Reverse ").unwrap_or_default()),
+            VisibleEdgeKind::Direct(_, EdgeKind::TEqualityTransitive { forward }) =>
+                format!("Transitive {}Equality", (!forward).then(|| "Reverse ").unwrap_or_default()),
             VisibleEdgeKind::YieldBlame { trigger_term, .. } =>
                 format!("Yield/Blame trigger #{trigger_term}"),
             VisibleEdgeKind::YieldEq(_) =>
