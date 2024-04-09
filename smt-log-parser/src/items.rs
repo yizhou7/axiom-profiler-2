@@ -564,11 +564,11 @@ pub struct TransitiveExpl {
     pub to: ENodeIdx,
 }
 pub enum TransitiveExplIter<'a> {
-    Forward(std::slice::Iter<'a, TransitiveExplSegment>),
-    Backward(std::iter::Rev<std::slice::Iter<'a, TransitiveExplSegment>>),
+    Forward(std::iter::Copied<std::slice::Iter<'a, TransitiveExplSegment>>),
+    Backward(std::iter::Map<std::iter::Rev<std::iter::Copied<std::slice::Iter<'a, TransitiveExplSegment>>>, fn(TransitiveExplSegment) -> TransitiveExplSegment>),
 }
 impl<'a> TransitiveExplIter<'a> {
-    pub fn next(&mut self) -> Option<&'a TransitiveExplSegment> {
+    pub fn next(&mut self) -> Option<TransitiveExplSegment> {
         match self {
             Self::Forward(iter) => iter.next(),
             Self::Backward(iter) => iter.next(),
@@ -584,18 +584,34 @@ impl TransitiveExpl {
         Ok(Self { path: path.into_boxed_slice(), given_len, to })
     }
     pub fn all(&self, fwd: bool) -> TransitiveExplIter {
-        let iter = self.path.iter();
+        let iter = self.path.iter().copied();
         if fwd {
             TransitiveExplIter::Forward(iter)
         } else {
-            TransitiveExplIter::Backward(iter.rev())
+            TransitiveExplIter::Backward(TransitiveExplSegment::rev(iter))
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum TransitiveExplSegment {
+pub struct TransitiveExplSegment {
+    pub forward: bool,
+    pub kind: TransitiveExplSegmentKind,
+}
+impl TransitiveExplSegment {
+    pub fn rev<I: Iterator<Item = TransitiveExplSegment> + std::iter::DoubleEndedIterator>(iter: I) -> std::iter::Map<std::iter::Rev<I>, fn(TransitiveExplSegment) -> TransitiveExplSegment> {
+        // Negate the forward direction since we're walking
+        // backwards (`.rev()` above).
+        iter.rev().map(TransitiveExplSegment::rev_single)
+    }
+    fn rev_single(mut self) -> Self {
+        self.forward = !self.forward;
+        self
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum TransitiveExplSegmentKind {
     Leaf(EqGivenIdx),
-    TransitiveFwd(EqTransIdx),
-    TransitiveBwd(EqTransIdx),
+    Transitive(EqTransIdx),
 }

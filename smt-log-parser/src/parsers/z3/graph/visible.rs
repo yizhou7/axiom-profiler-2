@@ -149,9 +149,9 @@ impl VisibleEdge {
                     // Starting at Instantiation
                     [EdgeKind::Yield, EdgeKind::Blame { trigger_term }] =>
                         VisibleEdgeKind::YieldBlame { enode: get_kind(1).enode().unwrap(), trigger_term },
-                    [EdgeKind::Yield, EdgeKind::EqualityFact, EdgeKind::TEqualitySimple] =>
+                    [EdgeKind::Yield, EdgeKind::EqualityFact, EdgeKind::TEqualitySimple { .. }] =>
                         VisibleEdgeKind::YieldEq(get_kind(2).eq_given().unwrap()),
-                    [EdgeKind::Yield, EdgeKind::EqualityFact, EdgeKind::TEqualitySimple, EdgeKind::BlameEq { trigger_term, eq_order }] => {
+                    [EdgeKind::Yield, EdgeKind::EqualityFact, EdgeKind::TEqualitySimple { .. }, EdgeKind::BlameEq { trigger_term, eq_order }] => {
                         let trans = graph.raw.graph.edges_directed(get_node(3), Direction::Incoming).count();
                         let given_eq = get_kind(2).eq_given().unwrap();
                         if trans == 1 {
@@ -163,9 +163,9 @@ impl VisibleEdge {
                     [EdgeKind::Yield, EdgeKind::EqualityFact, ..] =>
                         VisibleEdgeKind::YieldEqOther(get_kind(2).eq_given().unwrap(), edges),
                     // Starting at ENode
-                    [EdgeKind::EqualityFact, EdgeKind::TEqualitySimple] =>
+                    [EdgeKind::EqualityFact, EdgeKind::TEqualitySimple { .. }] =>
                         VisibleEdgeKind::ENodeEq(get_kind(1).eq_given().unwrap()),
-                    [EdgeKind::EqualityFact, EdgeKind::TEqualitySimple, EdgeKind::BlameEq { trigger_term, eq_order }] => {
+                    [EdgeKind::EqualityFact, EdgeKind::TEqualitySimple { .. }, EdgeKind::BlameEq { trigger_term, eq_order }] => {
                         let trans = graph.raw.graph.edges_directed(get_node(2), Direction::Incoming).count();
                         let given_eq = get_kind(1).eq_given().unwrap();
                         if trans == 1 {

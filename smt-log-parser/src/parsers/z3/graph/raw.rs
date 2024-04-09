@@ -3,7 +3,7 @@ use std::{fmt, ops::{Index, IndexMut}};
 use petgraph::{graph::{DiGraph, NodeIndex}, visit::Reversed, Direction::{self, Incoming, Outgoing}};
 use typed_index_collections::TiVec;
 
-use crate::{items::{ENodeIdx, EqGivenIdx, EqTransIdx, EqualityExpl, GraphIdx, InstIdx, TransitiveExplSegment}, Z3Parser};
+use crate::{items::{ENodeIdx, EqGivenIdx, EqTransIdx, EqualityExpl, GraphIdx, InstIdx, TransitiveExplSegmentKind}, Z3Parser};
 
 use super::subgraph::Subgraph;
 
@@ -78,13 +78,11 @@ impl RawInstGraph {
         for (idx, eq) in parser.egraph.equalities.transitive.iter_enumerated() {
             let mut all = eq.all(true);
             while let Some(parent) = all.next() {
-                match parent {
-                    TransitiveExplSegment::Leaf(eq) =>
-                        self_.add_edge(*eq, idx, EdgeKind::TEqualitySimple),
-                    TransitiveExplSegment::TransitiveFwd(eq) =>
-                        self_.add_edge(*eq, idx, EdgeKind::TEqualityTransitive),
-                    TransitiveExplSegment::TransitiveBwd(eq) =>
-                        self_.add_edge(*eq, idx, EdgeKind::TEqualityTransitiveBwd),
+                match parent.kind {
+                    TransitiveExplSegmentKind::Leaf(eq) =>
+                        self_.add_edge(eq, idx, EdgeKind::TEqualitySimple { forward: parent.forward }),
+                    TransitiveExplSegmentKind::Transitive(eq) =>
+                        self_.add_edge(eq, idx, EdgeKind::TEqualityTransitive { forward: parent.forward }),
                 }
             }
         }
@@ -303,12 +301,10 @@ pub enum EdgeKind {
     EqualityFact,
     /// TransEquality -> GivenEquality (`EqualityExpl::Congruence`)
     EqualityCongruence,
-    /// GivenEquality -> TransEquality (`TransitiveExplSegment::Leaf`)
-    TEqualitySimple,
-    /// TransEquality -> TransEquality (`TransitiveExplSegment::TransitiveFwd`)
-    TEqualityTransitive,
-    /// TransEquality -bwd-> TransEquality (`TransitiveExplSegment::TransitiveBwd`)
-    TEqualityTransitiveBwd,
+    /// GivenEquality -> TransEquality (`TransitiveExplSegmentKind::Leaf`)
+    TEqualitySimple { forward: bool },
+    /// TransEquality -> TransEquality (`TransitiveExplSegmentKind::Transitive`)
+    TEqualityTransitive { forward: bool },
 }
 
 pub(super) trait IndexesInstGraph {
