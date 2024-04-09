@@ -258,10 +258,10 @@ impl EGraph {
         }
 
         let start = NodeIndex::new(0);
-        let mut edge = graph[start].2.unwrap();
+        let mut edge = graph[start].2;
         let path_length = graph[start].1;
         if path_length == 1 {
-            match graph[edge] {
+            match graph[edge.unwrap()] {
                 TransitiveExplSegment { forward: true, kind: TransitiveExplSegmentKind::Transitive(idx) }  => return Ok(idx),
                 TransitiveExplSegment { forward: false, kind: TransitiveExplSegmentKind::Transitive(idx) } => {
                     let trans = &self.equalities.transitive[idx];
@@ -277,8 +277,8 @@ impl EGraph {
             }
         }
         let trans = TransitiveExpl::new((0..path_length).map(|_| {
-            let kind = &graph[edge];
-            edge = graph[graph.edge_endpoints(edge).unwrap().1].2.unwrap();
+            let kind = &graph[edge.unwrap()];
+            edge = graph[graph.edge_endpoints(edge.unwrap()).unwrap().1].2;
             kind
         }).copied(), simple_path.edges_len(), to)?;
         self.equalities.transitive.raw.try_reserve(1)?;
