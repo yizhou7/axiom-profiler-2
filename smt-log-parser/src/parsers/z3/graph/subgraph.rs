@@ -1,5 +1,5 @@
 use fxhash::FxHashSet;
-use petgraph::{graph::{DiGraph, EdgeIndex, Neighbors, NodeIndex}, Directed, Direction::{self, Incoming}, Undirected};
+use petgraph::{graph::{DiGraph, EdgeIndex, Neighbors, NodeIndex}, Directed, Direction::{self, Incoming, Outgoing}, Undirected};
 use roaring::RoaringBitmap;
 
 pub struct Subgraph {
@@ -65,10 +65,23 @@ impl Subgraph {
         // }
 
         let mut reach_bwd = TransitiveClosure(vec![RoaringBitmap::new(); nodes.len()]);
-        for (idx, reach_bwd) in reach_bwd.0.iter_mut().enumerate() {
-            reach_bwd.append(reach_fwd.0.iter().enumerate().filter_map(
-                |(i, tc)| if tc.contains(idx as u32) { Some(i as u32) } else { None }
-            )).ok();
+        {
+            let mut reach_bwd = &mut *reach_bwd.0;
+            let mut topo = nodes.iter().enumerate();
+            while let (Some((idx, node)), Some((curr, others))) = (topo.next(), reach_bwd.split_first_mut()) {
+                reach_bwd = others;
+                curr.insert(idx as u32);
+                for child in graph.neighbors_directed(*node, Outgoing) {
+                    let child = c(&graph[child]);
+                    reach_bwd[child as usize - idx - 1] |= &*curr;
+                }
+            }
+            // Alternative, seems to be slightly slower?
+            // for (idx, fwd) in reach_fwd.0.iter().enumerate() {
+            //     for to in fwd.iter() {
+            //         reach_bwd.0[to as usize].insert(idx as u32);
+            //     }
+            // }
         }
 
         (Self { nodes, reach_fwd, reach_bwd }, visit)
