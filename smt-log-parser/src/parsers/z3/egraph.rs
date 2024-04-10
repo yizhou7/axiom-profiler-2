@@ -140,31 +140,48 @@ impl EGraph {
         Ok((None, path))
     }
 
-    fn get_simple_path(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, can_mismatch: impl Fn(&EGraph) -> bool) -> Result<SimplePath> {
+    fn get_simple_path(&self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, can_mismatch: impl Fn(&EGraph) -> bool) -> Result<Option<SimplePath>> {
         let (root, f_path) = self.path_to_root(from, None, stack)?;
         let f_root = f_path.len() - 1;
         let (_, t_path) = self.path_to_root(to, root, stack)?;
         let t_root = t_path.len() - 1;
 
-        let mut shared = 1;
         if f_path[f_root] != t_path[t_root] {
             // Root may not always be the same from v4.12.3 onwards if `to` is an `ite` expression. See:
             // https://github.com/Z3Prover/z3/commit/faf14012ba18d21c1fcddbdc321ac127f019fa03#diff-0a9ec50ded668e51578edc67ecfe32380336b9cbf12c5d297e2d3759a7a39847R2417-R2419
-            if !can_mismatch(self) {
+            if can_mismatch(self) {
+                // Return no path if the roots are different.
+                return Ok(None);
+            } else {
                 return Err(Error::EnodeRootMismatch(from, to));
             }
-            // Return an empty iterator if the roots are different.
-            shared = f_path.len().max(t_path.len());
         }
+        let mut shared = 1;
         while shared < f_path.len() && shared < t_path.len() && f_path[f_root - shared] == t_path[t_root - shared] {
             shared += 1;
         }
-        Ok(SimplePath { from_to_root: f_path, to_to_root: t_path, shared })
+        let path = SimplePath { from_to_root: f_path, to_to_root: t_path, shared };
+        Ok(Some(path))
     }
 
     fn construct_trans_equality(&mut self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, can_mismatch: impl Fn(&EGraph) -> bool) -> Result<EqTransIdx> {
         debug_assert_ne!(from, to);
-        let simple_path = self.get_simple_path(from, to, stack, can_mismatch)?;
+        let Some(simple_path) = self.get_simple_path(from, to, stack, can_mismatch)? else {
+            // There was a root mismatch (and `can_mismatch` was true), so we
+            // can't construct a simple path.
+            if let Some(trans) = self.enodes[from].transitive.iter().copied().find(|t| {
+                let t = &self.equalities.transitive[*t];
+                t.to == to && t.given_len == 0
+            }) {
+                return Ok(trans)
+            };
+            let trans = TransitiveExpl::empty(to);
+            self.equalities.transitive.raw.try_reserve(1)?;
+            let trans = self.equalities.transitive.push_and_get_key(trans);
+            self.enodes[from].transitive.try_reserve(1)?;
+            self.enodes[from].transitive.push(trans);
+            return Ok(trans)
+        };
         let edges_len = simple_path.edges_len();
         debug_assert_ne!(edges_len, 0);
         let mut graph = simple_path.initialise_graph(self, stack);
@@ -271,6 +288,9 @@ pub struct ENode {
     pub z3_generation: Option<u32>,
 
     equalities: Vec<Equality>,
+    /// This will never contain a `TransitiveExpl::to` pointing to itself. It
+    /// may contain `TransitiveExpl::given_len` of 0, but only when
+    /// `get_simple_path` fails but `can_mismatch` is true.
     transitive: Vec<EqTransIdx>,
     self_transitive: Option<EqTransIdx>,
 }
@@ -344,6 +364,7 @@ impl Equalities {
     }
 }
 
+#[derive(Debug)]
 pub struct SimplePath {
     from_to_root: Vec<ENodeIdx>,
     to_to_root: Vec<ENodeIdx>,
