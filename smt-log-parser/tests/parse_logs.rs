@@ -51,7 +51,7 @@ fn parse_all_logs() {
             });
             let elapsed = now.elapsed();
             println!("Finished parsing in {elapsed:?} ({} kB/ms). Starting analysis", file_size_kb as u128 / elapsed.as_millis());
-            let inst_graph = InstGraph::new(parser.parser());
+            let inst_graph = InstGraph::new(parser.parser()).unwrap();
             let elapsed = now.elapsed();
             println!("Finished analysis in {elapsed:?} ({} kB/ms). {} nodes.", file_size_kb as u128 / elapsed.as_millis(), inst_graph.raw.graph.node_count());
             println!();

@@ -112,7 +112,7 @@ impl Disabler {
                     let children = graph.graph.neighbors_directed(idx, Direction::Outgoing).count();
                     children == 0 || (parents == 1 && children == 1)
                 },
-                NodeKind::GivenEquality(_) => {
+                NodeKind::GivenEquality(..) => {
                     let parents = graph.graph.neighbors_directed(idx, Direction::Incoming).count();
                     let children = graph.graph.neighbors_directed(idx, Direction::Outgoing).count();
                     children == 0 || (parents == 1 && children == 1)

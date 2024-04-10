@@ -7,12 +7,17 @@ pub struct Subgraph {
     transitive_closure: Vec<RoaringBitmap>,
 }
 
+pub struct VisitBox<D: VisitMap<NodeIndex>> {
+    pub dfs: D,
+}
+
 impl Subgraph {
-    pub fn new<N, E>(node: NodeIndex, graph: &mut DiGraph<N, E>, mut f: impl FnMut(&mut N, u32), c: impl Fn(&N) -> u32) -> Self {
+    pub fn new<N, E, D: VisitMap<NodeIndex>>(node: NodeIndex, graph: &mut DiGraph<N, E>, mut visit: VisitBox<D>, mut f: impl FnMut(&mut N, u32), c: impl Fn(&N) -> u32) -> (Self, VisitBox<D>) {
         let mut start_nodes = Vec::new();
 
         let mut un_graph = std::mem::replace(graph, DiGraph::new()).into_edge_type::<Undirected>();
-        let mut dfs = petgraph::visit::Dfs::new(&un_graph, node);
+        let mut dfs: Dfs<NodeIndex, _> = petgraph::visit::Dfs::from_parts(Vec::new(), visit.dfs);
+        dfs.move_to(node);
         while let Some(node) = dfs.next(&un_graph) {
             let di_graph = un_graph.into_edge_type::<Directed>();
             let has_parents = di_graph.neighbors_directed(node, Incoming).next().is_some();
@@ -21,7 +26,11 @@ impl Subgraph {
                 start_nodes.push(node);
             }
         }
+        visit.dfs = dfs.discovered;
         *graph = un_graph.into_edge_type();
+
+        // OPTIMISATION: use a `VisitMap` from `VisitBox` to avoid allocating a
+        // `FxHashSet` here (as well as the need for `SubgraphStartNodes`).
         let mut topo = petgraph::visit::Topo::new(&SubgraphStartNodes { start_nodes: &start_nodes, graph });
         let mut nodes = Vec::new();
         let mut count = 0_u32;
@@ -52,7 +61,7 @@ impl Subgraph {
         //     tc_combined.append(tc.into_iter().map(|x| x + offset));
         // }
 
-        Self { nodes, transitive_closure }
+        (Self { nodes, transitive_closure }, visit)
     }
 
     pub fn in_transitive_closure(&self, from: u32, to: u32) -> bool {

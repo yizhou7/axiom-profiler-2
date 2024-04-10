@@ -485,9 +485,10 @@ pub enum EqualityExpl {
     },
     Congruence {
         from: ENodeIdx,
-        arg_eqs: Box<[EqTransIdx]>,
+        arg_eqs: Box<[(ENodeIdx, ENodeIdx)]>,
         to: ENodeIdx,
-        // add dependent instantiations
+        /// The `arg_eqs` need to be evaluated whenever this is used.
+        uses: Vec<Box<[EqTransIdx]>>,
     },
     Theory {
         from: ENodeIdx,
@@ -551,7 +552,6 @@ impl EqualityExpl {
             EqualityExpl::Axiom { .. } => "axiom",
             EqualityExpl::Unknown { .. } => "unknown",
         }
-    
     }
 }
 
@@ -583,6 +583,9 @@ impl TransitiveExpl {
         path.extend(i);
         Ok(Self { path: path.into_boxed_slice(), given_len, to })
     }
+    pub fn empty(to: ENodeIdx) -> Self {
+        Self { path: Box::new([]), given_len: 0, to }
+    }
     pub fn all(&self, fwd: bool) -> TransitiveExplIter {
         let iter = self.path.iter().copied();
         if fwd {
@@ -612,6 +615,14 @@ impl TransitiveExplSegment {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum TransitiveExplSegmentKind {
-    Leaf(EqGivenIdx),
+    Given(EqGivenIdx, Option<NonZeroU32>),
     Transitive(EqTransIdx),
+}
+impl TransitiveExplSegmentKind {
+    pub fn given(self) -> Option<EqGivenIdx> {
+        match self {
+            Self::Given(given, _) => Some(given),
+            _ => None,
+        }
+    }
 }

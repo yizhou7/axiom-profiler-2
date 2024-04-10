@@ -52,7 +52,7 @@ impl CostInitialiser for DefaultCost {
     fn observe(&mut self, node: &Node, parser: &Z3Parser) -> Self::Observed {
         match node.kind() {
             NodeKind::ENode(_) => 1,
-            NodeKind::GivenEquality(_) => 1,
+            NodeKind::GivenEquality(_, _) => 1,
             NodeKind::TransEquality(eq) => parser[*eq].given_len.min(1),
             NodeKind::Instantiation(_) => 1,
         }

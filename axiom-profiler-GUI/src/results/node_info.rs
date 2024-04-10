@@ -39,7 +39,7 @@ impl<'a, 'b> NodeInfo<'a, 'b> {
     pub fn kind(&self) -> &'static str {
         match *self.node.kind() {
             NodeKind::ENode(_) => "ENode",
-            NodeKind::GivenEquality(_) => "Equality",
+            NodeKind::GivenEquality(..) => "Equality",
             NodeKind::TransEquality(_) => "Equality",
             NodeKind::Instantiation(inst) => match &self.ctxt.parser[self.ctxt.parser[inst].match_].kind {
                 MatchKind::MBQI { .. } => "MBQI",
@@ -70,7 +70,7 @@ impl<'a, 'b> NodeInfo<'a, 'b> {
                 ctxt.config.enode_char_limit *= 2;
                 enode.with(&ctxt).to_string()
             }
-            NodeKind::GivenEquality(eq) => eq.with(&ctxt).to_string(),
+            NodeKind::GivenEquality(eq, _) => eq.with(&ctxt).to_string(),
             NodeKind::TransEquality(eq) => eq.with(&ctxt).to_string(),
             NodeKind::Instantiation(inst) => match &ctxt.parser[ctxt.parser[inst].match_].kind {
                 MatchKind::MBQI { quant, .. } =>

@@ -39,6 +39,7 @@ impl EGraph {
             z3_generation,
             equalities: Vec::new(),
             transitive: Vec::new(),
+            self_transitive: None,
         });
         self.term_to_enode.try_reserve(1)?;
         let _old = self.term_to_enode.insert(term, enode);
@@ -101,10 +102,15 @@ impl EGraph {
     }
 
     pub fn new_trans_equality(&mut self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, can_mismatch: impl Fn(&EGraph) -> bool) -> Result<EqTransIdx> {
-        let trans = self.construct_trans_equality(from, to, stack, can_mismatch)?;
-        self.enodes[from].transitive.try_reserve(1)?;
-        self.enodes[from].transitive.push(trans);
-        Ok(trans)
+        if from == to {
+            // Handle the easy and common case of `(#n #n)` separately
+            self.equalities.transitive.raw.try_reserve(1)?;
+            Ok(*self.enodes[from].self_transitive.get_or_insert_with(|| {
+                self.equalities.transitive.push_and_get_key(TransitiveExpl::empty(to))
+            }))
+        } else {
+            self.construct_trans_equality(from, to, stack, can_mismatch)
+        }
     }
 
     fn path_to_root(&self, mut from: ENodeIdx, root: Option<ENodeIdx>, stack: &Stack) -> Result<(Option<ENodeIdx>, Vec<ENodeIdx>)> {
@@ -157,133 +163,95 @@ impl EGraph {
     }
 
     fn construct_trans_equality(&mut self, from: ENodeIdx, to: ENodeIdx, stack: &Stack, can_mismatch: impl Fn(&EGraph) -> bool) -> Result<EqTransIdx> {
-        // Note that it is possible for `from == to`!
+        debug_assert_ne!(from, to);
         let simple_path = self.get_simple_path(from, to, stack, can_mismatch)?;
         let edges_len = simple_path.edges_len();
-        // TODO: no need to store the `ENodeIdx` in the graph!
-        let mut graph: DiGraph<(ENodeIdx, u32, Option<EdgeIndex>), TransitiveExplSegment> = DiGraph::with_capacity(simple_path.nodes_len(), edges_len);
-        let mut last = graph.add_node((from, edges_len as u32, None));
-        for (idx, (to, eq, forward)) in simple_path.all_simple_edges(self, stack).enumerate() {
-            let cost = (edges_len - idx - 1) as u32;
-            let next = graph.add_node((to, cost, None));
-            graph.add_edge(last, next, TransitiveExplSegment {
-                forward,
-                kind: TransitiveExplSegmentKind::Leaf(eq)
-            });
-            last = next;
-        }
-        for (idx, efrom) in simple_path.all_nodes().enumerate() {
-            let nfrom = NodeIndex::new(idx);
-            // TODO: remove, just testing `node_at`
-            debug_assert_eq!(simple_path.node_at(idx as usize), efrom);
-            debug_assert_eq!(efrom, graph[nfrom].0);
+        debug_assert_ne!(edges_len, 0);
+        let mut graph = simple_path.initialise_graph(self, stack);
 
-            self.enodes[efrom].transitive.retain(|&trans| {
-                let trans_node = &self.equalities.transitive[trans];
-                let prior_simple_edges = (0..idx).map(|idx| graph[EdgeIndex::new(idx)]);
-                let mut prior_simple_edges = TransitiveExplSegment::rev(prior_simple_edges).map(|kind| match kind {
-                    TransitiveExplSegment { forward, kind: TransitiveExplSegmentKind::Leaf(eq) } => (eq, forward),
-                    _ => unreachable!(),
+        // Add transitive edges to graph, start by trying to find either forward
+        // or backward full solutions.
+        if let Some((forward, solution)) = graph.add_trans_from(0, self) {
+            debug_assert!(forward);
+            return Ok(solution);
+        }
+        let trans = if let Some((forward, solution)) = graph.add_trans_from(edges_len, self) {
+            debug_assert!(!forward);
+            let inner = &self.equalities.transitive[solution];
+            if inner.path.len() == 1 {
+                match inner.path[0] {
+                    TransitiveExplSegment { forward: false, kind: TransitiveExplSegmentKind::Transitive(idx) } =>
+                        return Ok(idx),
+                    TransitiveExplSegment { forward: true, kind: TransitiveExplSegmentKind::Transitive(_) } =>
+                        unreachable!(),
+                    TransitiveExplSegment { kind: TransitiveExplSegmentKind::Given(..), .. } => (),
+                }
+            }
+            let solution = TransitiveExplSegment { forward, kind: TransitiveExplSegmentKind::Transitive(solution) };
+            TransitiveExpl::new([solution].into_iter(), 1, to)?
+        } else {
+            for idx in 1..edges_len {
+                graph.add_trans_from(idx, self);
+            }
+            // Find the shortest path
+            for idx in (0..edges_len).rev() {
+                let idx = NodeIndex::new(idx);
+                // Use `.rev()` here to prefer transitive edges over leaf edges,
+                // though hopefully the `min_by_key` should be unique.
+                let min = graph.graph.edges(idx).min_by_key(|edge| graph.graph[edge.target()].0).unwrap();
+                let (cost, id) = (graph.graph[min.target()].0, min.id());
+                let idx = &mut graph.graph[idx];
+                idx.0 = cost + 1;
+                idx.1 = Some(id);
+            }
+
+            let start = NodeIndex::new(0);
+            let mut edge = graph.graph[start].1;
+            let path_length = graph.graph[start].0;
+            TransitiveExpl::new((0..path_length).map(|_| {
+                let kind = &graph.graph[edge.unwrap()];
+                edge = graph.graph[graph.graph.edge_endpoints(edge.unwrap()).unwrap().1].1;
+                kind
+            }).copied(), edges_len, to)?
+        };
+        let trans = self.insert_trans_equality(trans, stack)?;
+        debug_assert_eq!(self.equalities.walk_to(from, trans), to);
+        self.enodes[from].transitive.try_reserve(1)?;
+        self.enodes[from].transitive.push(trans);
+        Ok(trans)
+    }
+
+    fn insert_trans_equality(&mut self, mut trans: TransitiveExpl, stack: &Stack) -> Result<EqTransIdx> {
+        // Find the current congruence uses
+        for seg in trans.path.iter_mut() {
+            if let TransitiveExplSegmentKind::Given(cg, idx) = &mut seg.kind {
+                debug_assert_eq!(*idx, None);
+                let EqualityExpl::Congruence { arg_eqs, .. } = &self.equalities.given[*cg] else {
+                    continue;
+                };
+                let mut args = Vec::new();
+                args.try_reserve_exact(arg_eqs.len())?;
+                args.extend(arg_eqs.iter().copied());
+
+                let mut use_ = Vec::new();
+                use_.try_reserve_exact(arg_eqs.len())?;
+                for (from, to) in args {
+                    let trans = self.new_trans_equality(from, to, stack, |_| false)?;
+                    use_.push(trans);
+                }
+                let EqualityExpl::Congruence { uses, .. } = &mut self.equalities.given[*cg] else {
+                    unreachable!()
+                };
+                let real_idx = uses.iter().position(|u| &**u == use_).unwrap_or_else(|| {
+                    uses.push(use_.into_boxed_slice());
+                    uses.len() - 1
                 });
-                let check_left = prior_simple_edges.len() != 0;
-                if check_left {
-                    match self.equalities.is_equal(trans, &mut prior_simple_edges) {
-                        // Unequal straight away at the first one, lets try the other direction
-                        Err((true, mismatch)) => {
-                            debug_assert!(mismatch);
-                            if idx == simple_path.edges_len() {
-                                // Cannot try other direction, just keep
-                                return true;
-                            }
-                        }
-                        Err((false, mismatch)) => return !mismatch,
-                        Ok(()) => {
-                            let to = NodeIndex::new(idx - trans_node.given_len);
-                            debug_assert_eq!(self.equalities.walk_to(efrom, trans), graph[to].0);
-                            debug_assert!(trans_node.given_len == 0 || to.index() < nfrom.index());
-                            let segment = TransitiveExplSegment {
-                                forward: false,
-                                kind: TransitiveExplSegmentKind::Transitive(trans),
-                            };
-                            graph.add_edge(to, nfrom, segment);
-                            return true
-                        }
-                    }
-                }
-                let post_simple_edges = (idx..simple_path.edges_len()).map(|idx| graph[EdgeIndex::new(idx)]);
-                let mut post_simple_edges = post_simple_edges.map(|kind| match kind {
-                    TransitiveExplSegment { forward, kind: TransitiveExplSegmentKind::Leaf(eq) } => (eq, forward),
-                    _ => unreachable!(),
-                });
-                let check_right = post_simple_edges.len() != 0;
-                if check_right {
-                    let keep = match self.equalities.is_equal(trans, &mut post_simple_edges) {
-                        Err((true, mismatch)) => {
-                            debug_assert!(mismatch);
-                            // If we've checked both and both had a mismatch
-                            // then this must be stale.
-                            !check_left
-                        }
-                        Err((false, mismatch)) => !mismatch,
-                        Ok(()) => {
-                            let to = NodeIndex::new(idx + trans_node.given_len);
-                            debug_assert_eq!(self.equalities.walk_to(efrom, trans), graph[to].0);
-                            debug_assert!(trans_node.given_len == 0 || nfrom.index() < to.index());
-                            let segment = TransitiveExplSegment {
-                                forward: true,
-                                kind: TransitiveExplSegmentKind::Transitive(trans),
-                            };
-                            graph.add_edge(nfrom, to, segment);
-                            true
-                        }
-                    };
-                    return keep;
-                }
-                // Reachable only if `from == to`
-                debug_assert_eq!(from, to);
-                true
-            });
-        }
-
-        // Find the shortest path
-        for idx in (0..simple_path.nodes_len() - 1).rev() {
-            let idx = NodeIndex::new(idx);
-            // Use `.rev()` here to prefer transitive edges over leaf edges,
-            // though hopefully the `min_by_key` should be unique.
-            let min = graph.edges(idx).min_by_key(|edge| graph[edge.target()].1).unwrap();
-            let (cost, id) = (graph[min.target()].1, min.id());
-            let idx = &mut graph[idx];
-            idx.1 = cost + 1;
-            idx.2 = Some(id);
-        }
-
-        let start = NodeIndex::new(0);
-        let mut edge = graph[start].2;
-        let path_length = graph[start].1;
-        if path_length == 1 {
-            match graph[edge.unwrap()] {
-                TransitiveExplSegment { forward: true, kind: TransitiveExplSegmentKind::Transitive(idx) }  => return Ok(idx),
-                TransitiveExplSegment { forward: false, kind: TransitiveExplSegmentKind::Transitive(idx) } => {
-                    let trans = &self.equalities.transitive[idx];
-                    if trans.path.len() == 1 {
-                        match trans.path[0] {
-                            TransitiveExplSegment { forward: true, kind: TransitiveExplSegmentKind::Transitive(_) } => unreachable!(),
-                            TransitiveExplSegment { forward: false, kind: TransitiveExplSegmentKind::Transitive(idx) } => return Ok(idx),
-                            TransitiveExplSegment { kind: TransitiveExplSegmentKind::Leaf(_), .. } => (),
-                        }
-                    }
-                }
-                TransitiveExplSegment { kind: TransitiveExplSegmentKind::Leaf(_), .. } => (),
+                *idx = Some(std::num::NonZeroU32::new(real_idx as u32 + 1).unwrap());
             }
         }
-        let trans = TransitiveExpl::new((0..path_length).map(|_| {
-            let kind = &graph[edge.unwrap()];
-            edge = graph[graph.edge_endpoints(edge.unwrap()).unwrap().1].2;
-            kind
-        }).copied(), simple_path.edges_len(), to)?;
+
         self.equalities.transitive.raw.try_reserve(1)?;
         let trans = self.equalities.transitive.push_and_get_key(trans);
-        debug_assert_eq!(self.equalities.walk_to(from, trans), to);
         Ok(trans)
     }
 }
@@ -304,6 +272,7 @@ pub struct ENode {
 
     equalities: Vec<Equality>,
     transitive: Vec<EqTransIdx>,
+    self_transitive: Option<EqTransIdx>,
 }
 
 impl ENode {
@@ -328,31 +297,33 @@ pub struct Equalities {
 }
 
 impl Equalities {
-    pub fn walk_trans<E>(&self, eq: EqTransIdx, mut f: impl FnMut(EqGivenIdx, bool) -> std::result::Result<(), E>) -> std::result::Result<(), E> {
-        let mut stack = vec![self.transitive[eq].all(true)];
-        while let Some(top) = stack.last_mut() {
-            match top.next() {
-                None => {
-                    stack.pop();
-                }
-                Some(TransitiveExplSegment { forward, kind: TransitiveExplSegmentKind::Leaf(eq) }) => f(eq, forward)?,
-                Some(TransitiveExplSegment { forward, kind: TransitiveExplSegmentKind::Transitive(eq) }) =>
-                    stack.push(self.transitive[eq].all(forward)),
+    pub fn walk_trans<E>(&self, fwd: bool, eq: EqTransIdx, f: &mut impl FnMut(EqGivenIdx, bool) -> std::result::Result<(), E>) -> std::result::Result<(), E> {
+        let mut all = self.transitive[eq].all(fwd);
+        while let Some(next) = all.next() {
+            match next {
+                TransitiveExplSegment { forward, kind: TransitiveExplSegmentKind::Given(eq, _) } =>
+                    f(eq, forward)?,
+                TransitiveExplSegment { forward, kind: TransitiveExplSegmentKind::Transitive(eq) } =>
+                    self.walk_trans(forward, eq, f)?,
             }
         }
         Ok(())
     }
-    pub fn is_equal(&self, eq: EqTransIdx, simple: &mut impl Iterator<Item = (EqGivenIdx, bool)>) -> std::result::Result<(), (bool, bool)> {
-        let mut never_eq = true;
-        self.walk_trans(eq, |eq, eq_fwd| {
-            let (simple, fwd) = simple.next().ok_or((never_eq, false))?;
-            (simple == eq && fwd == eq_fwd).then(|| never_eq = false).ok_or((never_eq, true))
-        })
+    pub fn is_equal(&self, eq: EqTransIdx, simple: &mut impl Iterator<Item = (EqGivenIdx, bool)>) -> std::result::Result<bool, ()> {
+        let res = self.walk_trans(true, eq, &mut |eq, eq_fwd| {
+            // Return `Err(false)` if we're out of simple, this should never
+            // happen.
+            let (simple, fwd) = simple.next().ok_or(false)?;
+            // Return `Ok` if equal, else `Err(true)`.
+            (simple == eq && fwd == eq_fwd).then(|| ()).ok_or(true)
+        });
+        // Map `Ok` -> `Ok(true)`, `Err(true)` -> `Ok(false)`, `Err(false)` -> `Err`.
+        res.map_or_else(|e| e.then(|| false).ok_or(()), |_| Ok(true))
     }
     pub fn walk_to(&self, mut from: ENodeIdx, eq: EqTransIdx) -> ENodeIdx {
         #[derive(Debug)]
         enum Never {}
-        self.walk_trans::<Never>(eq, |eq, fwd| {
+        self.walk_trans::<Never>(true, eq, &mut |eq, fwd| {
             from = self.given[eq].walk(from, fwd).unwrap();
             Ok(())
         }).unwrap();
@@ -362,7 +333,7 @@ impl Equalities {
         let mut path = Vec::new();
         #[derive(Debug)]
         enum Never {}
-        self.walk_trans::<Never>(eq, |eq, fwd| {
+        self.walk_trans::<Never>(true, eq, &mut |eq, fwd| {
             let eq = &self.given[eq];
             let from = if fwd { eq.from() } else { eq.to() };
             path.push(from);
@@ -412,5 +383,106 @@ impl SimplePath {
     }
     pub fn all_transitive<'a>(&'a self, egraph: &'a EGraph) -> impl DoubleEndedIterator<Item = impl DoubleEndedIterator<Item = EqTransIdx> + 'a> + 'a {
         self.all_nodes().map(move |idx| egraph.enodes[idx].transitive.iter().copied())
+    }
+
+    pub fn initialise_graph<'a>(self, egraph: &'a EGraph, stack: &'a Stack) -> Graph {
+        let edges_len = self.edges_len();
+        let mut g = Graph {
+            graph: DiGraph::with_capacity(self.nodes_len(), edges_len),
+            path_enodes: self.all_nodes().collect(),
+            edges_len,
+            simple_path: self,
+        };
+        let mut last = g.graph.add_node((edges_len as u32, None));
+        for (idx, (_, eq, forward)) in g.simple_path.all_simple_edges(egraph, stack).enumerate() {
+            let cost = (edges_len - idx - 1) as u32;
+            let next = g.graph.add_node((cost, None));
+            let kind = TransitiveExplSegmentKind::Given(eq, None);
+            g.graph.add_edge(last, next, TransitiveExplSegment { forward, kind });
+            last = next;
+        }
+        g
+    }
+}
+
+pub struct Graph {
+    simple_path: SimplePath,
+    path_enodes: FxHashSet<ENodeIdx>,
+    graph: DiGraph<(u32, Option<EdgeIndex>), TransitiveExplSegment>,
+    edges_len: usize,
+}
+impl Graph {
+    pub fn add_trans_from(&mut self, idx: usize, egraph: &mut EGraph) -> Option<(bool, EqTransIdx)> {
+        let nfrom = NodeIndex::new(idx);
+        let efrom = self.simple_path.node_at(idx as usize);
+
+        let mut solution = None;
+        egraph.enodes[efrom].transitive.retain(|&trans| {
+            self.add_trans_single(idx, nfrom, trans, &egraph.equalities, &mut solution)
+        });
+        solution
+    }
+    fn add_trans_single(&mut self, idx: usize, nfrom: NodeIndex, trans: EqTransIdx, equalities: &Equalities, solution: &mut Option<(bool, EqTransIdx)>) -> bool {
+        let edges_len = self.edges_len;
+
+        let trans_node = &equalities.transitive[trans];
+        let left = trans_node.given_len <= idx && trans_node.to == self.simple_path.node_at(idx - trans_node.given_len);
+        if left {
+            let prior_simple_edges = (0..idx).map(|idx| self.graph[EdgeIndex::new(idx)]);
+            let mut prior_simple_edges = TransitiveExplSegment::rev(prior_simple_edges).map(|seg|
+                (seg.kind.given().unwrap(), seg.forward)
+            );
+            match equalities.is_equal(trans, &mut prior_simple_edges) {
+                // Unequal straight away at the first one, lets try the other direction
+                Err(()) => {
+                    debug_assert!(false);
+                    true
+                }
+                Ok(false) => false,
+                Ok(true) => {
+                    let to = NodeIndex::new(idx - trans_node.given_len);
+                    debug_assert!(trans_node.given_len == 0 || to.index() < nfrom.index());
+                    let segment = TransitiveExplSegment {
+                        forward: false,
+                        kind: TransitiveExplSegmentKind::Transitive(trans),
+                    };
+                    self.graph.add_edge(to, nfrom, segment);
+                    if idx == edges_len && trans_node.given_len == edges_len {
+                        solution.replace((false, trans));
+                    }
+                    true
+                }
+            }
+        } else if {
+            let right = trans_node.given_len <= edges_len - idx && trans_node.to == self.simple_path.node_at(idx + trans_node.given_len);
+            right
+        } {
+            let post_simple_edges = (idx..edges_len).map(|idx| self.graph[EdgeIndex::new(idx)]);
+            let mut post_simple_edges = post_simple_edges.map(|seg|
+                (seg.kind.given().unwrap(), seg.forward)
+            );
+            match equalities.is_equal(trans, &mut post_simple_edges) {
+                Err(()) => {
+                    debug_assert!(false);
+                    true
+                }
+                Ok(false) => false,
+                Ok(true) => {
+                    let to = NodeIndex::new(idx + trans_node.given_len);
+                    debug_assert!(trans_node.given_len == 0 || nfrom.index() < to.index());
+                    let segment = TransitiveExplSegment {
+                        forward: true,
+                        kind: TransitiveExplSegmentKind::Transitive(trans),
+                    };
+                    self.graph.add_edge(nfrom, to, segment);
+                    if idx == 0 && trans_node.given_len == edges_len {
+                        solution.replace((true, trans));
+                    }
+                    true
+                }
+            }
+        } else {
+            !self.path_enodes.contains(&trans_node.to)
+        }
     }
 }

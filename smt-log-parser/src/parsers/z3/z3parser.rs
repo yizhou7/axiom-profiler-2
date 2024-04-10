@@ -350,13 +350,14 @@ impl Z3LogParser for Z3Parser {
                 }
                 "cg" => {
                     let mut arg_eqs = Vec::new();
-                    self.append_trans_equality_tuples(kind_dependent_info, false, |eq_pair| {
-                        arg_eqs.try_reserve(1)?;
-                        arg_eqs.push(eq_pair);
-                        Ok(())
-                    })?;
+                    for t in Self::gobble_tuples::<true>(kind_dependent_info) {
+                        let (from, to) = t?;
+                        let from = self.parse_existing_enode(from)?;
+                        let to = self.parse_existing_enode(to)?;
+                        arg_eqs.push((from, to));
+                    }
                     let to = self.parse_existing_enode(l.next().ok_or(Error::UnexpectedNewline)?)?;
-                    EqualityExpl::Congruence { from, arg_eqs: arg_eqs.into_boxed_slice(), to }
+                    EqualityExpl::Congruence { from, arg_eqs: arg_eqs.into_boxed_slice(), to, uses: Vec::new() }
                 }
                 "th" => {
                     let theory = self.strings.get_or_intern(kind_dependent_info.next().ok_or(Error::UnexpectedEnd)?);

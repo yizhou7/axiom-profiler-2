@@ -1,6 +1,6 @@
 use typed_index_collections::TiVec;
 
-use crate::{items::GraphIdx, Z3Parser};
+use crate::{items::GraphIdx, Z3Parser, Result};
 
 use self::{analysis::Analysis, raw::RawInstGraph, subgraph::Subgraph, visible::VisibleInstGraph};
 
@@ -21,13 +21,13 @@ pub struct InstGraph {
 }
 
 impl InstGraph {
-    pub fn new(parser: &Z3Parser) -> Self {
-        let mut raw = RawInstGraph::new(parser);
+    pub fn new(parser: &Z3Parser) -> Result<Self> {
+        let mut raw = RawInstGraph::new(parser)?;
         let subgraphs = raw.partition();
         let analysis = Analysis::new(raw.graph.node_indices().collect());
         let mut self_ = InstGraph { raw, subgraphs, analysis };
         self_.initialise_default(parser);
-        self_
+        Ok(self_)
     }
 
     pub fn visible_unchanged(&self, old: &VisibleInstGraph) -> bool {

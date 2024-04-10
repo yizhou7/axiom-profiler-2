@@ -129,7 +129,7 @@ impl Component for SVGResult {
             gloo_timers::future::TimeoutFuture::new(10).await;
             let cfg = link.get_configuration().unwrap();
             let mut parser = cfg.config.parser.unwrap();
-            let inst_graph = InstGraph::new(&parser.parser);
+            let inst_graph = InstGraph::new(&parser.parser).unwrap();
             let inst_graph = Rc::new(RefCell::new(inst_graph));
             parser.graph.replace(inst_graph.clone());
             cfg.update.emit(Configuration {
@@ -308,7 +308,7 @@ impl Component for SVGResult {
                                     false => "direct",
                                 };
                                 let arrowhead = match kind.blame(inst_graph) {
-                                    NodeKind::GivenEquality(_) | NodeKind::TransEquality(_) => "empty",
+                                    NodeKind::GivenEquality(..) | NodeKind::TransEquality(_) => "empty",
                                     _ => "normal",
                                 };
                                 format!(
@@ -324,7 +324,7 @@ impl Component for SVGResult {
                                 let mut style = Some("filled");
                                 let mut shape = None;
                                 let mut fillcolor = Some("white".to_string());
-                                let label;
+                                let label = node_data.kind().to_string();
                                 match node_data.kind() {
                                     NodeKind::Instantiation(inst) => {
                                         let mkind = &parser[parser[*inst].match_].kind;
@@ -338,16 +338,11 @@ impl Component for SVGResult {
                                         shape = Some(s);
                                         let hue = self.colour_map.get_graphviz_hue(mkind);
                                         fillcolor = Some(format!("{hue} {NODE_COLOUR_SATURATION} {NODE_COLOUR_VALUE}"));
-                                        label = format!("{inst:?}");
                                     }
-                                    NodeKind::GivenEquality(eq) =>
-                                        label = format!("{eq:?}"),
-                                    NodeKind::TransEquality(eq) =>
-                                        label = format!("{eq:?}"),
-                                    NodeKind::ENode(enode) => {
+                                    NodeKind::ENode(..) => {
                                         fillcolor = Some("lightgrey".to_string());
-                                        label = format!("{enode:?}")
                                     }
+                                    _ => (),
                                 };
                                 let idx = data.idx.index();
                                 let style = style.map(|s| format!(" style=\"{s}\"")).unwrap_or_default();

@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use fxhash::FxHashMap;
 use petgraph::{graph::{DiGraph, EdgeIndex, NodeIndex}, visit::{EdgeRef, IntoEdges, NodeFiltered}, Direction};
 
@@ -188,19 +190,19 @@ pub enum VisibleEdgeKind {
     /// `Instantiation` -> `ENode` -> `Instantiation`
     YieldBlame { enode: ENodeIdx, trigger_term: u16 },
     /// `Instantiation` -> `ENode` -> `GivenEquality` -> `TransEquality`
-    YieldEq(EqGivenIdx),
+    YieldEq((EqGivenIdx, Option<NonZeroU32>)),
     /// `Instantiation` -> `ENode` -> `GivenEquality` ->
     /// `TransEquality` (only 1 parent) -> `Instantiation`
-    YieldBlameEq { given_eq: EqGivenIdx, trigger_term: u16, eq_order: u16 },
+    YieldBlameEq { given_eq: (EqGivenIdx, Option<NonZeroU32>), trigger_term: u16, eq_order: u16 },
     /// `Instantiation` -> `ENode` -> `GivenEquality` -> ...
-    YieldEqOther(EqGivenIdx, Vec<EdgeKind>),
+    YieldEqOther((EqGivenIdx, Option<NonZeroU32>), Vec<EdgeKind>),
 
     /// `ENode` -> `GivenEquality` -> `TransEquality`
-    ENodeEq(EqGivenIdx),
+    ENodeEq((EqGivenIdx, Option<NonZeroU32>)),
     /// `ENode` -> `GivenEquality` -> `TransEquality` -> `Instantiation`
-    ENodeBlameEq { given_eq: EqGivenIdx, trigger_term: u16, eq_order: u16 },
+    ENodeBlameEq { given_eq: (EqGivenIdx, Option<NonZeroU32>), trigger_term: u16, eq_order: u16 },
     /// `ENode` -> `GivenEquality` -> ...
-    ENodeEqOther(EqGivenIdx, Vec<EdgeKind>),
+    ENodeEqOther((EqGivenIdx, Option<NonZeroU32>), Vec<EdgeKind>),
 
     Unknown(EdgeIndex, Vec<EdgeKind>, EdgeIndex),
 }
@@ -218,7 +220,7 @@ impl VisibleEdgeKind {
             VisibleEdgeKind::YieldEqOther(given_eq, _) |
             VisibleEdgeKind::ENodeEq(given_eq) |
             VisibleEdgeKind::ENodeBlameEq { given_eq, .. } |
-            VisibleEdgeKind::ENodeEqOther(given_eq, _) => GivenEquality(*given_eq),
+            VisibleEdgeKind::ENodeEqOther(given_eq, _) => GivenEquality(given_eq.0, given_eq.1),
 
             VisibleEdgeKind::YieldBlame { enode, .. } => ENode(*enode),
         }
