@@ -380,7 +380,8 @@ pub struct SimplePath {
 }
 impl SimplePath {
     pub fn edges_len(&self) -> usize {
-        self.from_to_root.len() + self.to_to_root.len() - 2 * self.shared
+        // self.from_to_root.len() + self.to_to_root.len() - 2 * self.shared
+        self.from_to_root.len() + self.to_to_root.len() - self.shared - 1
     }
     pub fn all_simple_edges<'a>(&'a self, egraph: &'a EGraph, stack: &'a Stack) -> impl DoubleEndedIterator<Item = (ENodeIdx, EqGivenIdx, bool)> + 'a {
         let from_to_join = self.from_to_root[..self.from_to_root.len() - self.shared].iter().copied();
