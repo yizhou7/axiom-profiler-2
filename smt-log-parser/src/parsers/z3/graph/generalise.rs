@@ -1,4 +1,4 @@
-use crate::{items::{Meaning, StringTable, Term, TermIdx, TermKind}, parsers::z3::terms::Terms};
+use crate::{items::{Meaning, Term, TermIdx, TermKind}, parsers::z3::terms::Terms, IString, StringTable};
 
 impl Terms {
     pub fn generalise(&mut self, strings: &mut StringTable, terms: Vec<TermIdx>) -> Option<TermIdx> {
@@ -66,8 +66,8 @@ impl Terms {
         // e.g. if we have `x`, `f(x)`, `f(f(x))`, ... we could generalise to `f^*(c)`.
 
         (value != "_").then(|| Meaning {
-            theory: strings.get_or_intern("generalisation"),
-            value: strings.get_or_intern(value),
+            theory: IString(strings.get_or_intern("generalisation")),
+            value: IString(strings.get_or_intern(value)),
         })
     }
 }

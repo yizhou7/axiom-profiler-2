@@ -8,7 +8,9 @@ pub mod parsers;
 pub mod display_with;
 
 mod error;
+mod mem_dbg;
 
 pub use parsers::z3::z3parser::Z3Parser;
 pub use parsers::LogParser;
 pub use error::{Error, FatalError, Result, FResult};
+pub use mem_dbg::{TiVec, FxHashMap, IString, BoxSlice, StringTable, Graph, DiGraph, UnGraph};

@@ -3,6 +3,7 @@ use std::sync::{Mutex, OnceLock};
 use fxhash::FxHashSet;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use smt_log_parser::items::InstIdx;
+use smt_log_parser::parsers::z3::graph::{RawNodeIndex, VisibleEdgeIndex};
 use wasm_bindgen::prelude::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::{Element, SvgsvgElement};
@@ -15,14 +16,14 @@ use crate::results::svg_result::RenderedGraph;
 #[derive(Properties, PartialEq, Default)]
 pub struct GraphProps {
     pub rendered: Option<RenderedGraph>,
-    pub update_selected_nodes: Callback<NodeIndex>,
-    pub update_selected_edges: Callback<EdgeIndex>,
+    pub update_selected_nodes: Callback<RawNodeIndex>,
+    pub update_selected_edges: Callback<VisibleEdgeIndex>,
     pub zoom_factor: f32,
     pub zoom_factor_delta: f32,
-    /// The `NodeIndex` here refers to the original graph!
-    pub selected_nodes: Vec<NodeIndex>,
-    /// The `EdgeIndex` here refers to the VisibleGraph!
-    pub selected_edges: Vec<EdgeIndex>,
+    /// The `RawNodeIndex` here refers to the original graph!
+    pub selected_nodes: Vec<RawNodeIndex>,
+    /// The `VisibleEdgeIndex` here refers to the VisibleGraph!
+    pub selected_edges: Vec<VisibleEdgeIndex>,
     pub scroll_position: PrecisePosition,
     pub set_scroll: Callback<(PrecisePosition, PrecisePosition)>,
     pub scroll_window: NodeRef,
@@ -118,7 +119,7 @@ pub fn Graph(props: &GraphProps) -> Html {
                     let node = descendant_nodes.item(i).unwrap();
                     let _ = node.class_list().add_1("clickable");
                     let idx = node.id().strip_prefix("node_").unwrap().parse::<usize>();
-                    let idx = NodeIndex::new(idx.unwrap());
+                    let idx = RawNodeIndex(NodeIndex::new(idx.unwrap()));
                     if selected_nodes.contains(&idx) {
                         let _ = node.class_list().add_1("selected");
                     } else {
@@ -145,7 +146,7 @@ pub fn Graph(props: &GraphProps) -> Html {
                     let edge = descendant_edges.item(i).unwrap();
                     let _ = edge.class_list().add_1("clickable");
                     let idx = edge.id().strip_prefix("edge_").unwrap().parse::<usize>();
-                    let idx = EdgeIndex::new(idx.unwrap());
+                    let idx = VisibleEdgeIndex(EdgeIndex::new(idx.unwrap()));
                     if selected_edges.contains(&idx) {
                         let _ = edge.class_list().add_1("selected");
                     } else {
@@ -190,7 +191,7 @@ pub fn Graph(props: &GraphProps) -> Html {
                             }
                         }
                         let idx = node.id().strip_prefix("node_").unwrap().parse::<usize>();
-                        let idx = NodeIndex::new(idx.unwrap());
+                        let idx = RawNodeIndex(NodeIndex::new(idx.unwrap()));
                         // attach event listener to node
                         let callback = nodes_callback.clone();
                         let mousedown: Closure<dyn Fn(Event)> = Closure::new(move |e: Event| {
@@ -233,7 +234,7 @@ pub fn Graph(props: &GraphProps) -> Html {
                             }
                         }
                         let idx = edge.id().strip_prefix("edge_").unwrap().parse::<usize>();
-                        let idx = EdgeIndex::new(idx.unwrap());
+                        let idx = VisibleEdgeIndex(EdgeIndex::new(idx.unwrap()));
                         // attach event listener to edge
                         let callback = edges_callback.clone();
                         let mousedown: Closure<dyn Fn(Event)> = Closure::new(move |e: Event| {

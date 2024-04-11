@@ -1,29 +1,42 @@
 pub mod cost;
 pub mod depth;
 
-use petgraph::{graph::NodeIndex, Direction};
+use mem_dbg::{MemDbg, MemSize};
+use petgraph::Direction;
 
-use crate::Z3Parser;
+use crate::{Result, Z3Parser};
 
 use self::{cost::DefaultCost, depth::DefaultDepth};
 
-use super::{raw::Node, InstGraph};
+use super::{raw::Node, InstGraph, RawNodeIndex};
 
-#[derive(Default)]
+#[derive(Debug, Default, MemSize, MemDbg)]
 pub struct Analysis {
     // Highest to lowest
-    pub cost: Vec<NodeIndex>,
+    pub cost: Vec<RawNodeIndex>,
     // Most to least
-    pub children: Vec<NodeIndex>,
+    pub children: Vec<RawNodeIndex>,
     // Most to least
-    pub fwd_depth_min: Vec<NodeIndex>,
+    pub fwd_depth_min: Vec<RawNodeIndex>,
     // // Most to least
-    // pub(super) max_depth: Vec<NodeIndex>,
+    // pub(super) max_depth: Vec<RawNodeIndex>,
 }
 
 impl Analysis {
-    pub fn new(nodes: Vec<NodeIndex>) -> Self {
-        Self { cost: nodes.clone(), children: nodes.clone(), fwd_depth_min: nodes }//.clone(), max_depth: nodes }
+    pub fn new(nodes: impl ExactSizeIterator<Item = RawNodeIndex> + Clone) -> Result<Self> {
+        // Alloc `children` vector
+        let mut cost = Vec::new();
+        cost.try_reserve_exact(nodes.len())?;
+        cost.extend(nodes.clone());
+        // Alloc `children` vector
+        let mut children = Vec::new();
+        children.try_reserve_exact(nodes.len())?;
+        children.extend(nodes.clone());
+        // Alloc `fwd_depth_min` vector
+        let mut fwd_depth_min = Vec::new();
+        fwd_depth_min.try_reserve_exact(nodes.len())?;
+        fwd_depth_min.extend(nodes.clone());
+        Ok(Self { cost, children, fwd_depth_min })
     }
 }
 
@@ -35,12 +48,12 @@ impl InstGraph {
             initialiser.assign(node, base);
         }
 
-        for subgraph in &self.subgraphs {
+        for subgraph in self.subgraphs.iter() {
             initialiser.reset();
-            let for_each = |idx: NodeIndex| {
-                let from_all = || self.raw.graph.neighbors_directed(idx, I::direction()).map(|i| &self.raw.graph[i]);
-                let value = initialiser.collect(&self.raw.graph[idx], from_all);
-                initialiser.assign(&mut self.raw.graph[idx], value);
+            let for_each = |idx: RawNodeIndex| {
+                let from_all = || self.raw.graph.neighbors_directed(idx.0, I::direction()).map(|i| &self.raw.graph[i]);
+                let value = initialiser.collect(&self.raw.graph[idx.0], from_all);
+                initialiser.assign(&mut self.raw.graph[idx.0], value);
             };
             let iter = subgraph.nodes.iter().copied();
             if FORWARD {
@@ -57,14 +70,14 @@ impl InstGraph {
             let base = initialiser.base(node, parser);
             initialiser.assign(node, base);
         }
-        for subgraph in &self.subgraphs {
+        for subgraph in self.subgraphs.iter() {
             initialiser.reset();
-            let for_each = |idx: NodeIndex| {
-                let incoming: Vec<_> = self.raw.graph.neighbors_directed(idx, I::direction()).map(|i| initialiser.observe(&self.raw.graph[i], parser)).collect();
-                let mut neighbors = self.raw.graph.neighbors_directed(idx, I::direction()).detach();
+            let for_each = |idx: RawNodeIndex| {
+                let incoming: Vec<_> = self.raw.graph.neighbors_directed(idx.0, I::direction()).map(|i| initialiser.observe(&self.raw.graph[i], parser)).collect();
+                let mut neighbors = self.raw.graph.neighbors_directed(idx.0, I::direction()).detach();
                 let mut i = 0;
                 while let Some((_, neighbor)) = neighbors.next(&self.raw.graph) {
-                    let transfer = initialiser.transfer(&self.raw.graph[idx], i, &incoming);
+                    let transfer = initialiser.transfer(&self.raw.graph[idx.0], i, &incoming);
                     initialiser.add(&mut self.raw.graph[neighbor], transfer);
                     i += 1;
                 }
@@ -87,18 +100,18 @@ impl InstGraph {
 
     pub fn analyse(&mut self) {
         self.analysis.cost.sort_by(|&a, &b|
-            self.raw.graph[a].cost.total_cmp(&self.raw.graph[b].cost).reverse().then_with(|| a.index().cmp(&b.index()))
+            self.raw.graph[a.0].cost.total_cmp(&self.raw.graph[b.0].cost).reverse().then_with(|| a.cmp(&b))
         );
         self.analysis.children.sort_by(|&a, &b| {
-            let ac = self.raw.graph.neighbors_directed(a, Direction::Outgoing).count();
-            let bc = self.raw.graph.neighbors_directed(b, Direction::Outgoing).count();
-            ac.cmp(&bc).reverse().then_with(|| a.index().cmp(&b.index()))
+            let ac = self.raw.graph.neighbors_directed(a.0, Direction::Outgoing).count();
+            let bc = self.raw.graph.neighbors_directed(b.0, Direction::Outgoing).count();
+            ac.cmp(&bc).reverse().then_with(|| a.cmp(&b))
         });
         self.analysis.fwd_depth_min.sort_by(|&a, &b|
-            self.raw.graph[a].fwd_depth.min.cmp(&self.raw.graph[b].fwd_depth.min).reverse().then_with(|| a.index().cmp(&b.index()))
+            self.raw.graph[a.0].fwd_depth.min.cmp(&self.raw.graph[b.0].fwd_depth.min).reverse().then_with(|| a.cmp(&b))
         );
         // self.analysis.max_depth.sort_by(|&a, &b|
-        //     self.raw.graph[a].max_depth.cmp(&self.raw.graph[b].max_depth).reverse().then_with(|| a.index().cmp(&b.index()))
+        //     self.raw.graph[a.0].max_depth.cmp(&self.raw.graph[b.0].max_depth).reverse().then_with(|| a.cmp(&b))
         // );
     }
 }

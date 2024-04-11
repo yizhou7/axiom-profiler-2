@@ -1,8 +1,8 @@
-use typed_index_collections::TiVec;
+use mem_dbg::{MemDbg, MemSize};
 
-use crate::{items::StackIdx, Result, Error};
+use crate::{items::StackIdx, Error, Result, TiVec};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, MemSize, MemDbg)]
 pub struct Stack {
     pub(super) stack: Vec<StackIdx>,
     pub(super) stack_frames: TiVec<StackIdx, StackFrame>,
@@ -60,7 +60,7 @@ impl Stack {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, MemSize, MemDbg)]
 pub struct StackFrame {
     pub active: bool,
 }

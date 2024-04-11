@@ -326,18 +326,7 @@ pub fn ExistingFilter(props: &ExistingFilterProps) -> Html {
     let filter = props.filter.clone();
     let end_edit = props.end_edit.clone();
     let update = Callback::from(move |(v, s)| {
-        let d = |old, i| {
-            let graph = graph.as_ref().unwrap().borrow();
-            let old: &Node = &graph.raw.graph[old];
-            let kind = match old.kind() {
-                NodeKind::ENode(_) => NodeKind::ENode(ENodeIdx::from(i)),
-                NodeKind::GivenEquality(_) => NodeKind::GivenEquality(EqGivenIdx::from(i)),
-                NodeKind::TransEquality(_) => NodeKind::TransEquality(EqTransIdx::from(i)),
-                NodeKind::Instantiation(_) => NodeKind::Instantiation(InstIdx::from(i)),
-            };
-            graph.raw.index(kind)
-        };
-        let new_filter = filter.update(v, s, d);
+        let new_filter = filter.update(v, s);
         end_edit.emit(new_filter);
     });
     html! {
@@ -354,11 +343,12 @@ pub fn ExistingFilter(props: &ExistingFilterProps) -> Html {
 impl Filter {
     pub fn is_editable(&self) -> bool {
         match self {
-            Filter::IgnoreTheorySolving | Filter::ShowMatchingLoopSubgraph | Filter::IgnoreQuantifier(None) | Filter::IgnoreAllButQuantifier(None) => false,
+            Filter::IgnoreTheorySolving | Filter::ShowMatchingLoopSubgraph | Filter::IgnoreQuantifier(None) | Filter::IgnoreAllButQuantifier(None) |
+            Filter::ShowNeighbours(..) | Filter::VisitSourceTree(..) | Filter::VisitSourceTree(..) | Filter::VisitSubTreeWithRoot(..) | Filter::ShowLongestPath(..) => false,
             _ => true,
         }
     }
-    pub fn update(&self, new_data: Vec<usize>, new_strings: Vec<String>, d: impl Fn(NodeIndex, usize) -> NodeIndex) -> Filter {
+    pub fn update(&self, new_data: Vec<usize>, new_strings: Vec<String>) -> Filter {
         match self {
             Filter::MaxNodeIdx(_) => Filter::MaxNodeIdx(new_data[0]),
             Filter::MinNodeIdx(_) => Filter::MinNodeIdx(new_data[0]),
@@ -367,11 +357,11 @@ impl Filter {
             Filter::IgnoreAllButQuantifier(_) => Filter::IgnoreAllButQuantifier(Some(QuantIdx::from(new_data[0]))),
             Filter::MaxInsts(_) => Filter::MaxInsts(new_data[0]),
             Filter::MaxBranching(_) => Filter::MaxBranching(new_data[0]),
-            Filter::ShowNeighbours(old, dir) => Filter::ShowNeighbours(d(*old, new_data[0]), *dir),
-            Filter::VisitSourceTree(old, retain) => Filter::VisitSourceTree(d(*old, new_data[0]), *retain),
-            Filter::VisitSubTreeWithRoot(old, retain) => Filter::VisitSubTreeWithRoot(d(*old, new_data[0]), *retain),
+            Filter::ShowNeighbours(old, dir) => Filter::ShowNeighbours(*old, *dir),
+            Filter::VisitSourceTree(old, retain) => Filter::VisitSourceTree(*old, *retain),
+            Filter::VisitSubTreeWithRoot(old, retain) => Filter::VisitSubTreeWithRoot(*old, *retain),
             Filter::MaxDepth(_) => Filter::MaxDepth(new_data[0]),
-            Filter::ShowLongestPath(old) => Filter::ShowLongestPath(d(*old, new_data[0])),
+            Filter::ShowLongestPath(old) => Filter::ShowLongestPath(*old),
             Filter::ShowNamedQuantifier(_) => Filter::ShowNamedQuantifier(new_strings[0].clone()),
             Filter::SelectNthMatchingLoop(_) => Filter::SelectNthMatchingLoop(new_data[0].max(1) - 1),
             Filter::ShowMatchingLoopSubgraph => Filter::ShowMatchingLoopSubgraph,

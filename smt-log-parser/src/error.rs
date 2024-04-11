@@ -1,9 +1,32 @@
 use std::{collections::TryReserveError, num::ParseIntError};
 
+use mem_dbg::{MemDbg, MemSize};
+use serde::{Deserialize, Serialize};
+
 use crate::items::{TermId, TermIdx, StackIdx, ENodeIdx, BlameKind, Fingerprint};
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type FResult<T> = std::result::Result<T, FatalError>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, MemSize, MemDbg, Serialize, Deserialize)]
+pub enum Either<T, U> {
+    Left(T),
+    Right(U),
+}
+impl<T, U> Either<T, U> {
+    pub fn as_result(self) -> std::result::Result<T, U> {
+        match self {
+            Self::Left(t) => Ok(t),
+            Self::Right(u) => Err(u),
+        }
+    }
+    pub fn as_result_ref(&self) -> std::result::Result<&T, &U> {
+        match self {
+            Self::Left(t) => Ok(t),
+            Self::Right(u) => Err(u),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum Error {
