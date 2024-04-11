@@ -17,7 +17,7 @@ duplicate = "1.0"
 gloo-console = "0.3.0"
 roaring = "0.10"
 lasso = { version = "0.7", features = ["serialize"] }
-mem_dbg = "0.1.8"
+mem_dbg = { version = "0.1.8", features = ["std", "derive"], default-features = false }
 
 [dev-dependencies]
 memory-stats = "1.1.0"
