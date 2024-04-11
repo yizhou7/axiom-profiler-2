@@ -193,6 +193,9 @@ impl Component for FileDataComponent {
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
             Msg::File(file) => {
+                // reset the configuration to default
+                let cfg = ctx.link().get_configuration().unwrap();
+                cfg.update.emit(Configuration::default());
                 let Some(file) = file else {
                     return false;
                 };
