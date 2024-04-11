@@ -1,9 +1,7 @@
-use typed_index_collections::TiVec;
+use mem_dbg::{MemDbg, MemSize};
 
 use crate::{
-    Error, Result,
-    items::*,
-    parsers::z3::{VersionInfo, Z3LogParser},
+    items::*, parsers::z3::{VersionInfo, Z3LogParser}, Error, IString, Result, StringTable, TiVec
 };
 
 use super::{
@@ -15,7 +13,7 @@ use super::{
 
 /// A parser for Z3 log files. Use one of the various `Z3Parser::from_*` methods
 /// to construct this parser.
-#[derive(Debug)]
+#[derive(Debug, MemSize, MemDbg)]
 pub struct Z3Parser {
     pub(super) version_info: VersionInfo,
     pub(super) terms: Terms,
@@ -78,9 +76,9 @@ impl Z3Parser {
         // replace with default case.
         let (first, second) = t.next().ok_or(Error::UnexpectedEnd)??;
         if first == "" {
-            let first = Ok(self.strings.get_or_intern(second));
+            let first = Ok(IString(self.strings.get_or_intern(second)));
             let tuples = t.map(|t| match t? {
-                ("", second) => Ok(self.strings.get_or_intern(second)),
+                ("", second) => Ok(IString(self.strings.get_or_intern(second))),
                 _ => Err(Error::VarNamesListInconsistent),
             });
             let types = [first].into_iter().chain(tuples);
@@ -92,7 +90,7 @@ impl Z3Parser {
             ) -> Result<(IString, IString)> {
                 let first = first.strip_prefix('|').ok_or(Error::VarNamesNoBar)?.strip_suffix('|').ok_or(Error::VarNamesNoBar)?;
                 let second = second.strip_prefix('|').ok_or(Error::VarNamesNoBar)?.strip_suffix('|').ok_or(Error::VarNamesNoBar)?;
-                Ok((strings.get_or_intern(first), strings.get_or_intern(second)))
+                Ok((IString(strings.get_or_intern(first)), IString(strings.get_or_intern(second))))
             }
             let first = strip_bars(&mut self.strings, (first, second));
             let tuples = t.map(|t| strip_bars(&mut self.strings, t?));
@@ -158,7 +156,7 @@ impl Z3Parser {
             if can_mismatch {
                 // See comment in `EGraph::get_equalities`
                 let can_mismatch = |egraph: &EGraph| self.version_info.is_ge_version(4, 12, 3) &&
-                    self.terms[egraph.get_owner(to)].kind.app_name().is_some_and(|app| &self.strings[app] == "if");
+                    self.terms[egraph.get_owner(to)].kind.app_name().is_some_and(|app| &self.strings[*app] == "if");
                 self.egraph.new_trans_equality(from, to, &self.stack, can_mismatch)
             } else {
                 fn cannot_mismatch(_: &EGraph) -> bool { false }
@@ -271,7 +269,7 @@ impl Z3LogParser for Z3Parser {
             .next()
             .ok_or(Error::UnexpectedNewline)?;
         let full_id = TermId::parse(&mut self.strings, full_id)?;
-        let name = self.strings.get_or_intern(l.next().ok_or(Error::UnexpectedNewline)?);
+        let name = IString(self.strings.get_or_intern(l.next().ok_or(Error::UnexpectedNewline)?));
         let kind = TermKind::parse_proof_app(is_proof, name);
         // TODO: add rewrite, monotonicity cases
         let child_ids = self.gobble_children(l)?;
@@ -286,8 +284,8 @@ impl Z3LogParser for Z3Parser {
 
     fn attach_meaning<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
         let id = l.next().ok_or(Error::UnexpectedNewline)?;
-        let theory = self.strings.get_or_intern(l.next().ok_or(Error::UnexpectedNewline)?);
-        let value = self.strings.get_or_intern(l.collect::<Vec<_>>().join(" "));
+        let theory = IString(self.strings.get_or_intern(l.next().ok_or(Error::UnexpectedNewline)?));
+        let value = IString(self.strings.get_or_intern(l.collect::<Vec<_>>().join(" ")));
         let meaning = Meaning { theory, value };
         let idx = self.terms.parse_existing_id(&mut self.strings, id)?;
         self.terms.new_meaning(idx, meaning)?;
@@ -360,7 +358,7 @@ impl Z3LogParser for Z3Parser {
                     EqualityExpl::Congruence { from, arg_eqs: arg_eqs.into_boxed_slice(), to, uses: Vec::new() }
                 }
                 "th" => {
-                    let theory = self.strings.get_or_intern(kind_dependent_info.next().ok_or(Error::UnexpectedEnd)?);
+                    let theory = IString(self.strings.get_or_intern(kind_dependent_info.next().ok_or(Error::UnexpectedEnd)?));
                     Self::expect_completed(kind_dependent_info)?;
                     let to = self.parse_existing_enode(l.next().ok_or(Error::UnexpectedNewline)?)?;
                     EqualityExpl::Theory { from, theory, to }
@@ -372,11 +370,11 @@ impl Z3LogParser for Z3Parser {
                 }
                 kind => {
                     let args = kind_dependent_info
-                        .map(|s| self.strings.get_or_intern(s))
+                        .map(|s| IString(self.strings.get_or_intern(s)))
                         .collect();
                     let to = self.parse_existing_enode(l.next().ok_or(Error::UnexpectedNewline)?)?;
                     EqualityExpl::Unknown {
-                        kind: self.strings.get_or_intern(kind),
+                        kind: IString(self.strings.get_or_intern(kind)),
                         from,
                         args,
                         to,
@@ -620,6 +618,6 @@ impl std::ops::Index<EqTransIdx> for Z3Parser {
 impl std::ops::Index<IString> for Z3Parser {
     type Output = str;
     fn index(&self, idx: IString) -> &Self::Output {
-        &self.strings[idx]
+        &self.strings[*idx]
     }
 }

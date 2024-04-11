@@ -1,9 +1,8 @@
-use fxhash::FxHashMap;
-use typed_index_collections::TiVec;
+use mem_dbg::{MemDbg, MemSize};
 
-use crate::{items::{Fingerprint, InstIdx, Instantiation, Match, MatchIdx}, Result};
+use crate::{items::{Fingerprint, InstIdx, Instantiation, Match, MatchIdx}, FxHashMap, Result, TiVec};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, MemSize, MemDbg)]
 pub struct Insts {
     // `theory-solving` fingerprints are always 0, others rarely repeat.
     fingerprint_to_match: FxHashMap<Fingerprint, (MatchIdx, Option<InstIdx>)>,

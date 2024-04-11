@@ -1,20 +1,19 @@
-use fxhash::FxHashMap;
+use mem_dbg::{MemDbg, MemSize};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::ops::Index;
 use crate::display_with::DisplayConfiguration;
+use crate::error::Either;
+use crate::{BoxSlice, FxHashMap, IString, StringTable};
 use crate::{Result, Error};
-
-pub type StringTable = lasso::Rodeo<lasso::Spur, fxhash::FxBuildHasher>;
-pub type IString = lasso::Spur;
 
 #[macro_export]
 macro_rules! idx {
     ($struct:ident, $prefix:tt) => {
         #[derive(
-            Clone, Copy, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord, Hash,
+            Clone, Copy, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord, Hash, MemSize, MemDbg,
         )]
         pub struct $struct(NonZeroUsize);
         impl From<usize> for $struct {
@@ -50,7 +49,7 @@ idx!(EqTransIdx, "={}");
 idx!(GraphIdx, "g{}");
 
 /// A Z3 term and associated data.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Clone, MemSize, MemDbg)]
 pub struct Term {
     pub id: Option<TermId>,
     pub kind: TermKind,
@@ -58,7 +57,7 @@ pub struct Term {
     pub child_ids: Box<[TermIdx]>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, Copy, PartialEq, Eq, Hash, MemSize, MemDbg)]
 pub enum TermKind {
     Var(usize),
     ProofOrApp(ProofOrApp),
@@ -66,7 +65,7 @@ pub enum TermKind {
     Generalised,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, Copy, PartialEq, Eq, Hash, MemSize, MemDbg)]
 pub struct ProofOrApp {
     pub is_proof: bool,
     pub name: IString,
@@ -93,7 +92,7 @@ impl TermKind {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy, Hash, MemSize, MemDbg)]
 pub struct Meaning {
     /// The theory in which the value should be interpreted (e.g. `bv`)
     pub theory: IString,
@@ -102,14 +101,14 @@ pub struct Meaning {
 }
 
 /// Returned when indexing with `TermIdx`
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, MemSize, MemDbg)]
 pub struct TermAndMeaning<'a> {
     pub term: &'a Term,
     pub meaning: Option<&'a Meaning>,
 }
 
 /// A Z3 quantifier and associated data.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, MemSize, MemDbg, Serialize, Deserialize)]
 pub struct Quantifier {
     pub kind: QuantKind,
     pub num_vars: usize,
@@ -118,7 +117,7 @@ pub struct Quantifier {
 }
 
 /// Represents an ID string of the form `name!id`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, MemSize, MemDbg, Serialize, Deserialize)]
 pub enum QuantKind {
     Other(IString), // From `[inst-discovered]` with `theory-solving` or `MBQI`
     Lambda,
@@ -144,10 +143,10 @@ impl QuantKind {
             .next()
             .and_then(|id| id.parse::<usize>().ok())
             .map(|id| Self::UnnamedQuant {
-                name: strings.get_or_intern(name),
+                name: IString(strings.get_or_intern(name)),
                 id,
             })
-            .unwrap_or_else(|| Self::NamedQuant(strings.get_or_intern(value)))
+            .unwrap_or_else(|| Self::NamedQuant(IString(strings.get_or_intern(value))))
     }
     pub fn is_discovered(&self) -> bool {
         matches!(self, Self::Other(_))
@@ -160,7 +159,7 @@ impl QuantKind {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, MemSize, MemDbg, Serialize, Deserialize)]
 pub enum VarNames {
     TypeOnly(Box<[IString]>),
     NameAndType(Box<[(IString, IString)]>),
@@ -168,7 +167,7 @@ pub enum VarNames {
 impl VarNames {
     pub fn get_name<'a>(strings: &'a StringTable, this: Option<&Self>, idx: usize, config: &DisplayConfiguration) -> Cow<'a, str> {
         let name = match this {
-            Some(Self::NameAndType(names)) => Cow::Borrowed(&strings[names[idx].0]),
+            Some(Self::NameAndType(names)) => Cow::Borrowed(&strings[*names[idx].0]),
             None | Some(Self::TypeOnly(_)) => Cow::Owned(if config.use_mathematical_symbols {
                 format!("•{idx}")
             } else {
@@ -191,7 +190,7 @@ impl VarNames {
                     Self::TypeOnly(names) => names[idx],
                     Self::NameAndType(names) => names[idx].1,
                 };
-                format!(": {}", &strings[ty])
+                format!(": {}", &strings[*ty])
             })
             .unwrap_or_default()
     }
@@ -204,22 +203,22 @@ impl VarNames {
 }
 
 /// A Z3 instantiation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, MemSize, MemDbg, Serialize, Deserialize)]
 pub struct Instantiation {
     pub match_: MatchIdx,
     pub fingerprint: Fingerprint,
-    pub proof_id: Option<std::result::Result<TermIdx, TermId>>,
+    pub proof_id: Option<Either<TermIdx, TermId>>,
     pub z3_generation: Option<u32>,
     pub yields_terms: Box<[ENodeIdx]>,
 }
 
 impl Instantiation {
     pub fn get_resulting_term(&self) -> Option<TermIdx> {
-        self.proof_id.as_ref()?.as_ref().ok().copied()
+        self.proof_id.as_ref()?.as_result_ref().ok().copied()
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, MemSize, MemDbg, Serialize, Deserialize)]
 pub struct Match {
     pub kind: MatchKind,
     pub blamed: Box<[BlameKind]>,
@@ -244,7 +243,7 @@ impl Match {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, MemSize, MemDbg, Serialize, Deserialize)]
 pub enum MatchKind {
     MBQI {
         quant: QuantIdx,
@@ -313,7 +312,7 @@ impl MatchKind {
 /// The kind of dependency between two quantifier instantiations.
 /// - Term: one instantiation produced a term that the other triggered on
 /// - Equality: dependency based on an equality.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, MemSize, MemDbg, Serialize, Deserialize)]
 pub enum BlameKind {
     Term { term: ENodeIdx },
     Equality { eq: EqTransIdx },
@@ -361,7 +360,7 @@ impl Index<usize> for Blame<'_> {
 
 /// An identifier for a Z3 quantifier instantiation (called "fingerprint" in the original Axiom Profiler).
 /// Represented as a 16-digit hexadecimal number in log files.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, MemSize, MemDbg, Serialize, Deserialize)]
 pub struct Fingerprint(pub u64);
 impl Fingerprint {
     pub fn parse(value: &str) -> Result<Self> {
@@ -386,7 +385,7 @@ impl fmt::Display for Fingerprint {
 }
 
 /// Represents an ID string of the form `name#id` or `name#`.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, MemSize, MemDbg, Serialize, Deserialize, Default, Hash, PartialEq, Eq)]
 pub struct TermId {
     pub namespace: IString,
     pub id: Option<NonZeroU32>,
@@ -398,7 +397,7 @@ impl TermId {
     pub fn parse(strings: &mut StringTable, value: &str) -> Result<Self> {
         let hash_idx = value.bytes().position(|b| b == b'#');
         let hash_idx = hash_idx.ok_or_else(|| Error::InvalidIdHash(value.to_string()))?;
-        let namespace = strings.get_or_intern(&value[..hash_idx]);
+        let namespace = IString(strings.get_or_intern(&value[..hash_idx]));
         let id = &value[hash_idx + 1..];
         let id = match id {
             "" => None,
@@ -418,7 +417,7 @@ impl TermId {
 /// of terms but `TermId`s don't map to this nicely, additionally the `TermId`s
 /// may repeat and so we want to map to the latest current `TermIdx`. Has a
 /// special fast path for the common empty namespace case.
-#[derive(Debug)]
+#[derive(Debug, MemSize, MemDbg)]
 pub struct TermIdToIdxMap {
     empty_string: IString,
     empty_namespace: Vec<Option<TermIdx>>,
@@ -427,7 +426,7 @@ pub struct TermIdToIdxMap {
 impl TermIdToIdxMap {
     pub fn new(strings: &mut StringTable) -> Self {
         Self {
-            empty_string: strings.get_or_intern_static(""),
+            empty_string: IString(strings.get_or_intern_static("")),
             empty_namespace: Vec::new(),
             namespace_map: FxHashMap::default(),
         }
@@ -472,7 +471,7 @@ impl TermIdToIdxMap {
 /// A Z3 equality explanation.
 /// Root represents a term that is a root of its equivalence class.
 /// All other variants represent an equality between two terms and where it came from.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, MemSize, MemDbg)]
 pub enum EqualityExpl {
     Root {
         id: ENodeIdx,
@@ -488,7 +487,7 @@ pub enum EqualityExpl {
         arg_eqs: Box<[(ENodeIdx, ENodeIdx)]>,
         to: ENodeIdx,
         /// The `arg_eqs` need to be evaluated whenever this is used.
-        uses: Vec<Box<[EqTransIdx]>>,
+        uses: Vec<BoxSlice<EqTransIdx>>,
     },
     Theory {
         from: ENodeIdx,
@@ -557,7 +556,7 @@ impl EqualityExpl {
 
 // Whenever a pair of enodes are said to be equal this uses transitive reasoning
 // with one or more `EqualityExpl` to explain why.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, MemSize, MemDbg, Serialize, Deserialize)]
 pub struct TransitiveExpl {
     pub path: Box<[TransitiveExplSegment]>,
     pub given_len: usize,
@@ -596,7 +595,7 @@ impl TransitiveExpl {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, MemSize, MemDbg, Serialize, Deserialize)]
 pub struct TransitiveExplSegment {
     pub forward: bool,
     pub kind: TransitiveExplSegmentKind,
@@ -613,7 +612,7 @@ impl TransitiveExplSegment {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, MemSize, MemDbg, Serialize, Deserialize)]
 pub enum TransitiveExplSegmentKind {
     Given(EqGivenIdx, Option<NonZeroU32>),
     Transitive(EqTransIdx),

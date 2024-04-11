@@ -1,6 +1,6 @@
 use material_yew::icon::MatIcon;
-use petgraph::{graph::NodeIndex, visit::{Dfs, Reversed, Walker}, Direction};
-use smt_log_parser::parsers::z3::graph::raw::{Node, NodeKind};
+use petgraph::{visit::{Dfs, Reversed, Walker}, Direction};
+use smt_log_parser::parsers::z3::graph::{raw::{Node, NodeKind}, RawNodeIndex};
 use yew::{function_component, html, use_context, Callback, Html, MouseEvent, Properties};
 
 use crate::{configuration::ConfigurationProvider, results::{filters::Filter, svg_result::DEFAULT_NODE_COUNT}, RcParser};
@@ -9,7 +9,7 @@ use crate::{configuration::ConfigurationProvider, results::{filters::Filter, svg
 pub struct AddFilterSidebarProps {
     pub new_filter: Callback<Filter>,
     pub found_mls: Option<usize>,
-    pub nodes: Vec<NodeIndex>,
+    pub nodes: Vec<RawNodeIndex>,
     pub general_filters: bool,
 }
 
@@ -46,7 +46,7 @@ pub fn AddFilterSidebar(props: &AddFilterSidebarProps) -> Html {
         outer_graph = Some(graph.clone());
         let graph = graph.borrow();
         let nodes = props.nodes.iter().map(|n| {
-            let i = match *graph.raw.graph[*n].kind() {
+            let i = match *graph.raw[*n].kind() {
                 NodeKind::Instantiation(i) => Some(i),
                 _ => None
             };
@@ -55,22 +55,22 @@ pub fn AddFilterSidebar(props: &AddFilterSidebarProps) -> Html {
         });
         vec![
             nodes.clone()
-                .filter(|&(n, _, _)| graph.raw.neighbors_directed(n, Direction::Outgoing).into_iter().any(|n| graph.raw.graph[n].hidden()))
+                .filter(|&(n, _, _)| graph.raw.neighbors_directed(n, Direction::Outgoing).into_iter().any(|n| graph.raw[n].hidden()))
                 .map(|(n, _, _)| Filter::ShowNeighbours(n, Direction::Outgoing)).collect(),
             nodes.clone()
-                .filter(|&(n, _, _)| graph.raw.neighbors_directed(n, Direction::Incoming).into_iter().any(|n| graph.raw.graph[n].hidden()))
+                .filter(|&(n, _, _)| graph.raw.neighbors_directed(n, Direction::Incoming).into_iter().any(|n| graph.raw[n].hidden()))
                 .map(|(n, _, _)| Filter::ShowNeighbours(n, Direction::Incoming)).collect(),
             nodes.clone()
-                .filter(|&(n, _, _)| Dfs::new(graph.raw.rev(), n).iter(graph.raw.rev()).any(|n| graph.raw.graph[n].hidden()))
+                .filter(|&(n, _, _)| Dfs::new(graph.raw.rev(), n.0).iter(graph.raw.rev()).any(|n| graph.raw.graph[n].hidden()))
                 .map(|(n, _, _)| Filter::VisitSourceTree(n, true)).collect(),
             nodes.clone()
-                .filter(|&(n, _, _)| Dfs::new(graph.raw.rev(), n).iter(graph.raw.rev()).any(|n| graph.raw.graph[n].visible()))
+                .filter(|&(n, _, _)| Dfs::new(graph.raw.rev(), n.0).iter(graph.raw.rev()).any(|n| graph.raw.graph[n].visible()))
                 .map(|(n, _, _)| Filter::VisitSourceTree(n, false)).collect(),
             nodes.clone()
-            .filter(|&(n, _, _)| Dfs::new(&graph.raw.graph, n).iter(&graph.raw.graph).any(|n| graph.raw.graph[n].hidden()))
+            .filter(|&(n, _, _)| Dfs::new(&*graph.raw.graph, n.0).iter(&*graph.raw.graph).any(|n| graph.raw.graph[n].hidden()))
                 .map(|(n, _, _)| Filter::VisitSubTreeWithRoot(n, true)).collect(),
             nodes.clone()
-            .filter(|&(n, _, _)| Dfs::new(&graph.raw.graph, n).iter(&graph.raw.graph).any(|n| graph.raw.graph[n].visible()))
+            .filter(|&(n, _, _)| Dfs::new(&*graph.raw.graph, n.0).iter(&*graph.raw.graph).any(|n| graph.raw.graph[n].visible()))
                 .map(|(n, _, _)| Filter::VisitSubTreeWithRoot(n, false)).collect(),
             nodes.clone()
                 .filter(|(_, i, _)| i.is_some())

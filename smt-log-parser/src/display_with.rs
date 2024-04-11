@@ -225,7 +225,7 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for QuantIdx {
             let QuantKind::Other(name) = quant.kind else {
                 panic!()
             };
-            write!(f, "{}", &ctxt.parser.strings[name])
+            write!(f, "{}", &ctxt.parser[name])
         }
     }
 }
@@ -280,7 +280,7 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for &MatchKind {
                 write!(
                     f,
                     "[TheorySolving] {}#",
-                    &ctxt.parser.strings[axiom_id.namespace],
+                    &ctxt.parser[axiom_id.namespace],
                 )?;
                 if let Some(id) = axiom_id.id {
                     write!(f, "{id}")?;
@@ -304,7 +304,7 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for &QuantKind {
         _data: &mut (),
     ) -> fmt::Result {
         match *self {
-            QuantKind::Other(kind) => write!(f, "{}", &ctxt.parser.strings[kind]),
+            QuantKind::Other(kind) => write!(f, "{}", &ctxt.parser[kind]),
             QuantKind::Lambda => if ctxt.config.use_mathematical_symbols {
                 write!(f, "λ")
             } else if ctxt.config.html {
@@ -312,9 +312,9 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for &QuantKind {
             } else {
                 write!(f, "<null>")
             },
-            QuantKind::NamedQuant(name) => write!(f, "{}", &ctxt.parser.strings[name]),
+            QuantKind::NamedQuant(name) => write!(f, "{}", &ctxt.parser[name]),
             QuantKind::UnnamedQuant { name, id } => {
-                write!(f, "{}!{id}", &ctxt.parser.strings[name])
+                write!(f, "{}!{id}", &ctxt.parser[name])
             }
         }
     }
@@ -336,7 +336,7 @@ impl<'a: 'b, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a Term 
                 match self.id {
                     None => write!(f, "[synthetic]")?,
                     Some(id) => {
-                        let namespace = &ctxt.parser.strings[id.namespace];
+                        let namespace = &ctxt.parser[id.namespace];
                         let id = id.id.map(|id| (u32::from(id) - 1).to_string()).unwrap_or_default();
                         write!(f, "[{namespace}#{id}]")?
                     }
@@ -395,7 +395,7 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a ProofOrAp
     ) -> fmt::Result {
         let math = ctxt.config.use_mathematical_symbols;
         use ProofOrAppKind::*;
-        let name = &ctxt.parser.strings[self.name];
+        let name = &ctxt.parser[self.name];
         let kind = match name {
             name if self.is_proof => Proof(name),
             "not" => Unary(if math { "¬" } else { "!" }),
@@ -494,8 +494,8 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Meaning {
         ctxt: &DisplayCtxt<'a>,
         _data: &mut DisplayData<'a>,
     ) -> fmt::Result {
-        let theory = &ctxt.parser.strings[self.theory];
-        let value = &ctxt.parser.strings[self.value];
+        let theory = &ctxt.parser[self.theory];
+        let value = &ctxt.parser[self.value];
         match theory {
             "arith" | "bv" => write!(f, "{value}"),
             theory => write!(f, "/{theory} {value}\\"),

@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 use cap::Cap;
 
+use mem_dbg::*;
 use smt_log_parser::{parsers::z3::graph::InstGraph, LogParser, Z3Parser};
 
 #[global_allocator]
@@ -8,56 +9,98 @@ static ALLOCATOR: Cap<std::alloc::System> = Cap::new(std::alloc::System, usize::
 
 #[test]
 fn parse_all_logs() {
-    let mem = std::env::var("SLP_MEMORY_LIMIT_GB").ok().and_then(|mem| mem.parse().ok());
-    // Default to limit of 16GiB.
-    let mem = mem.unwrap_or(16) * 1024 * 1024 * 1024;
-    ALLOCATOR.set_limit(mem).unwrap();
     std::env::set_var("SLP_TEST_MODE", "true");
+
+    let mem = std::env::var("SLP_MEMORY_LIMIT_GB").ok().and_then(|mem| mem.parse().ok());
+    // Default to limit of 32GiB.
+    let mem = mem.unwrap_or(32) as u64 * 1024 * 1024 * 1024;
+    // Parse files only up to 1/5 of the memory limit, since the parser
+    // data-structure is 2-3x larger than the file size, and we need to leave
+    // space for analysis and some left-over allocated memory from a prior loop.
+    const PARSER_OVERHEAD: u64 = 3;
+    const ANALYSIS_OVERHEAD: u64 = 10;
+    let parse_limit = mem / (PARSER_OVERHEAD + ANALYSIS_OVERHEAD + 1);
+    let (mut max_parse_ovhd, mut max_analysis_ovhd) = (0.0, 0.0);
 
     let mut all_logs: Vec<_> = std::fs::read_dir("../logs").unwrap().map(|r| r.unwrap()).collect();
     all_logs.sort_by_key(|dir| dir.path());
     for log in all_logs {
         // Put things in a thread to isolate memory usage more than the default.
         let t = std::thread::spawn(move || {
+            // Some memory usage is still left over from previous loop iterations, so we'll need to subtract that.
+            let start_alloc = ALLOCATOR.allocated() as u64;
+
             let filename = log.path();
             let (metadata, mut parser) = Z3Parser::from_file(&filename).unwrap();
             let file_size = metadata.len();
-            let file_size_kb = file_size / 1024;
+            let parse_bytes = file_size.min(parse_limit);
+            let mb = 1024_u64 * 1024_u64;
+            let file_info = (file_size != parse_bytes).then(|| format!(" / {} MB", file_size / mb)).unwrap_or_default();
 
             // Gives 100 millis per MB (or 100 secs per GB)
-            let timeout = Duration::from_millis(500 + (file_size_kb / 10));
+            let timeout = Duration::from_millis(parse_bytes / (10 * 1024) + 500);
+            // Limit memory usage to `PARSER_OVERHEAD`x the parse amount + 64MiB. Reduce this if
+            // we optimise memory usage more.
+            let fixed_overhead = 64 * mb;
+            let mem_limit = start_alloc + parse_bytes * PARSER_OVERHEAD + fixed_overhead;
+            assert!(mem_limit <= mem, "{start_alloc} + {parse_bytes}/{parse_limit} * {PARSER_OVERHEAD} + {fixed_overhead} > {mem}");
+            ALLOCATOR.set_limit(mem_limit as usize).unwrap();
             println!(
-                "Parsing {} ({} MB) with timeout of {timeout:?}",
+                "Parsing {} ({} MB{file_info}). MemC {} MB, MemL {} MB ({} MB), TimeL {timeout:?}.",
                 filename.display(),
-                file_size_kb / 1024
+                parse_bytes / mb,
+                start_alloc / mb,
+                (mem_limit - start_alloc) / mb,
+                mem_limit / mb,
             );
-            // Some memory usage is still left over from previous loop iterations, so we'll need to subtract that.
-            let start_mem = memory_stats::memory_stats().unwrap().physical_mem as u64;
-            // TODO: optimize memory usage and reduce `max_mem`.
-            let max_mem = start_mem + 2 * file_size + 1024 * 1024 * 1024;
             let now = Instant::now();
 
-            parser.process_check_every(Duration::from_millis(100), |_, _| {
+            parser.process_check_every(Duration::from_millis(100), |_, s| {
                 assert!(now.elapsed() < timeout, "Parsing took longer than timeout");
-                let physical_mem = memory_stats::memory_stats().unwrap().physical_mem as u64;
-                assert!(
-                    physical_mem < max_mem,
-                    "Memory usage was {} MB, but file size was {} MB (max mem {} MB)",
-                    physical_mem / 1024 / 1024,
-                    file_size / 1024 / 1024,
-                    max_mem / 1024 / 1024
-                );
-                true
+                parse_limit > s.bytes_read as u64
             });
             let elapsed = now.elapsed();
-            println!("Finished parsing in {elapsed:?} ({} kB/ms). Starting analysis", file_size_kb as u128 / elapsed.as_millis());
+            max_parse_ovhd = f64::max(max_parse_ovhd, (ALLOCATOR.allocated() as u64 - start_alloc) as f64 / parse_bytes as f64);
+            let parse_bytes_kb = parse_bytes / 1024;
+            println!(
+                "Finished parsing in {elapsed:?} ({} kB/ms). Memory use {} MB / {} MB:",
+                parse_bytes_kb / elapsed.as_millis() as u64,
+                ALLOCATOR.allocated() / mb as usize,
+                ALLOCATOR.limit() / mb as usize,
+            );
+            parser.parser().mem_dbg(DbgFlags::default()).ok();
+
+            let middle_alloc = ALLOCATOR.allocated() as u64;
+            // Limit memory usage to `ANALYSIS_OVERHEAD`x the parse amount + 64MiB. Reduce this if
+            // we optimise memory usage more.
+            let mem_limit = middle_alloc + parse_bytes * ANALYSIS_OVERHEAD + fixed_overhead;
+            println!(
+                "Running analysis. MemC {} MB, MemL {} MB ({} MB)",
+                middle_alloc / mb,
+                (mem_limit - middle_alloc) / mb,
+                mem_limit / mb,
+            );
+            ALLOCATOR.set_limit(mem_limit as usize).unwrap();
             let inst_graph = InstGraph::new(parser.parser()).unwrap();
             let elapsed = now.elapsed();
-            println!("Finished analysis in {elapsed:?} ({} kB/ms). {} nodes.", file_size_kb as u128 / elapsed.as_millis(), inst_graph.raw.graph.node_count());
+            max_analysis_ovhd = f64::max(max_analysis_ovhd, (ALLOCATOR.allocated() as u64 - middle_alloc) as f64 / parse_bytes as f64);
+            println!(
+                "Finished analysis in {elapsed:?} ({} kB/ms). {} nodes. Memory use {} MB / {} MB:",
+                parse_bytes_kb / elapsed.as_millis() as u64,
+                inst_graph.raw.graph.node_count(),
+                ALLOCATOR.allocated() / mb as usize,
+                ALLOCATOR.limit() / mb as usize,
+            );
+            inst_graph.mem_dbg(DbgFlags::default()).ok();
             println!();
+            println!("===");
             drop(inst_graph);
             drop(parser);
+            (max_parse_ovhd, max_analysis_ovhd)
         });
-        t.join().unwrap();
+        let (p, a) = t.join().unwrap();
+        max_parse_ovhd = p;
+        max_analysis_ovhd = a;
     }
+    println!("Max parse overhead: {max_parse_ovhd:.2}x, max analysis overhead: {max_analysis_ovhd:.2}x");
 }

@@ -4,10 +4,9 @@ use std::sync::{Mutex, OnceLock, RwLock};
 
 use gloo_file::File;
 use gloo_file::{callbacks::FileReader, FileList};
-use petgraph::graph::{EdgeIndex, NodeIndex};
 use results::svg_result::{Msg as SVGMsg, RenderedGraph, RenderingState, SVGResult};
 use smt_log_parser::items::{InstIdx, QuantIdx};
-use smt_log_parser::parsers::z3::graph::InstGraph;
+use smt_log_parser::parsers::z3::graph::{InstGraph, VisibleEdgeIndex, RawNodeIndex};
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
 use smt_log_parser::parsers::{AsyncBufferRead, LogParser, ParseState, ReaderState};
 use wasm_bindgen::closure::Closure;
@@ -54,8 +53,8 @@ pub enum Msg {
     LoadedFile(String, u64, Z3Parser, ParseState, bool),
     LoadingState(LoadingState),
     RenderedGraph(RenderedGraph),
-    SelectedNodes(Vec<NodeIndex>),
-    SelectedEdges(Vec<EdgeIndex>),
+    SelectedNodes(Vec<RawNodeIndex>),
+    SelectedEdges(Vec<VisibleEdgeIndex>),
     SearchMatchingLoops,
 }
 
@@ -117,8 +116,8 @@ pub struct OpenedFileInfo {
     parser_cancelled: bool,
     update: Rc<RefCell<Result<Callback<SVGMsg>, Vec<SVGMsg>>>>,
     filter: WeakComponentLink<FiltersState>,
-    selected_nodes: Vec<NodeIndex>,
-    selected_edges: Vec<EdgeIndex>,
+    selected_nodes: Vec<RawNodeIndex>,
+    selected_edges: Vec<VisibleEdgeIndex>,
     rendered: Option<RenderedGraph>,
 }
 
@@ -282,7 +281,7 @@ impl Component for FileDataComponent {
                     }
                     if let Some(old) = &file.rendered {
                         let old_len = file.selected_edges.len();
-                        file.selected_edges.retain(|e| old.graph.graph[*e] == rendered.graph.graph[*e]);
+                        file.selected_edges.retain(|e| old.graph[*e] == rendered.graph[*e]);
                         if file.selected_edges.len() != old_len {
                             ctx.link().send_message(Msg::SelectedEdges(file.selected_edges.clone()));
                         }
@@ -471,7 +470,7 @@ impl Component for FileDataComponent {
 }
 
 impl FileDataComponent {
-    fn view_file(data: OpenedFileInfo, progress: Callback<Result<RenderedGraph, RenderingState>>, selected_nodes: Callback<Vec<NodeIndex>>, selected_edges: Callback<Vec<EdgeIndex>>) -> Html {
+    fn view_file(data: OpenedFileInfo, progress: Callback<Result<RenderedGraph, RenderingState>>, selected_nodes: Callback<Vec<RawNodeIndex>>, selected_edges: Callback<Vec<VisibleEdgeIndex>>) -> Html {
         html! {
             <SVGResult file={data} {progress} {selected_nodes} {selected_edges}/>
         }

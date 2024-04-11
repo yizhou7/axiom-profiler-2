@@ -1,11 +1,10 @@
-use fxhash::FxHashMap;
-use typed_index_collections::TiVec;
+use mem_dbg::{MemDbg, MemSize};
 
 use crate::{
-    items::{Meaning, QuantIdx, StringTable, Term, TermAndMeaning, TermId, TermIdToIdxMap, TermIdx, TermKind}, Error, Result
+    error::Either, items::{Meaning, QuantIdx, Term, TermAndMeaning, TermId, TermIdToIdxMap, TermIdx, TermKind}, Error, FxHashMap, Result, StringTable, TiVec
 };
 
-#[derive(Debug)]
+#[derive(Debug, MemSize, MemDbg)]
 pub struct Terms {
     term_id_map: TermIdToIdxMap,
     terms: TiVec<TermIdx, Term>,
@@ -19,7 +18,7 @@ impl Terms {
     pub(super) fn new(strings: &mut StringTable) -> Self {
         Self {
             term_id_map: TermIdToIdxMap::new(strings),
-            terms: TiVec::new(),
+            terms: TiVec::default(),
             meanings: FxHashMap::default(),
             parsed_terms: None,
 
@@ -41,12 +40,12 @@ impl Terms {
         &self,
         strings: &mut StringTable,
         id: &str,
-    ) -> Result<std::result::Result<TermIdx, TermId>> {
+    ) -> Result<Either<TermIdx, TermId>> {
         let term_id = TermId::parse(strings, id)?;
-        Ok(self.term_id_map.get_term(&term_id).ok_or_else(|| term_id))
+        Ok(self.term_id_map.get_term(&term_id).map(Either::Left).unwrap_or(Either::Right(term_id)))
     }
     pub(super) fn parse_existing_id(&self, strings: &mut StringTable, id: &str) -> Result<TermIdx> {
-        self.parse_id(strings, id)?.map_err(Error::UnknownId)
+        self.parse_id(strings, id)?.as_result().map_err(Error::UnknownId)
     }
 
     pub fn meaning(&self, tidx: TermIdx) -> Option<&Meaning> {

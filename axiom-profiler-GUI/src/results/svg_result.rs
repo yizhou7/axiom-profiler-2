@@ -10,13 +10,12 @@ use gloo::console::log;
 use material_yew::WeakComponentLink;
 use num_format::{Locale, ToFormattedString};
 use palette::{encoding::Srgb, white_point::D65, FromColor, Hsl, Hsluv, Hsv, LuvHue};
-use petgraph::{dot::{Config, Dot}, graph::NodeIndex, visit::EdgeRef};
-use petgraph::graph::EdgeIndex;
+use petgraph::{dot::{Config, Dot}, visit::EdgeRef};
 use smt_log_parser::{
     display_with::DisplayCtxt, items::{BlameKind, InstIdx, MatchKind, QuantIdx}, parsers::{
         z3::{
             // inst_graph::{EdgeInfo, EdgeType, InstGraph, InstInfo, Node, NodeInfo, VisibleGraphInfo},
-            graph::{raw::{EdgeKind, NodeKind}, visible::{VisibleEdge, VisibleInstGraph}, InstGraph}, z3parser::Z3Parser
+            graph::{raw::{EdgeKind, NodeKind}, visible::{VisibleEdge, VisibleInstGraph}, InstGraph, RawNodeIndex, VisibleEdgeIndex}, z3parser::Z3Parser
         },
         LogParser,
     }
@@ -55,7 +54,7 @@ pub enum Msg {
     ResetGraph,
     GetUserPermission(GraphDimensions, bool),
     WorkerOutput(super::worker::WorkerOutput),
-    // UpdateSelectedNodes(Vec<NodeIndex>),
+    // UpdateSelectedNodes(Vec<RawNodeIndex>),
     // SearchMatchingLoops,
     // SelectNthMatchingLoop(usize),
     // ShowMatchingLoopSubgraph,
@@ -88,23 +87,23 @@ pub struct SVGResult {
     permissions: GraphDimensions,
     worker: Option<Box<dyn yew_agent::Bridge<Worker>>>,
     async_graph_and_filter_chain: bool,
-    // selected_insts: Vec<NodeIndex>,
+    // selected_insts: Vec<RawNodeIndex>,
     // data: Option<SVGData>,
     queue: Vec<Msg>,
     constructed_graph: Option<Rc<RefCell<InstGraph>>>,
 }
 
 // pub struct SVGData {
-//     get_node_info: Callback<(NodeIndex, bool, RcParser), NodeInfo>,
-//     get_edge_info: Callback<(EdgeIndex, bool, RcParser), EdgeInfo>,
+//     get_node_info: Callback<(RawNodeIndex, bool, RcParser), NodeInfo>,
+//     get_edge_info: Callback<(VisibleEdgeIndex, bool, RcParser), EdgeInfo>,
 // }
 
 #[derive(Properties, PartialEq)]
 pub struct SVGProps {
     pub file: OpenedFileInfo,
     pub progress: Callback<Result<RenderedGraph, RenderingState>>,
-    pub selected_nodes: Callback<Vec<NodeIndex>>,
-    pub selected_edges: Callback<Vec<EdgeIndex>>,
+    pub selected_nodes: Callback<Vec<RawNodeIndex>>,
+    pub selected_edges: Callback<Vec<VisibleEdgeIndex>>,
 }
 
 impl Component for SVGResult {
@@ -138,13 +137,13 @@ impl Component for SVGResult {
             });
             // let get_node_info = Callback::from({
             //     let node_info_map = inst_graph.get_node_info_map();
-            //     move |(node, ignore_ids, parser): (NodeIndex, bool, RcParser)| {
+            //     move |(node, ignore_ids, parser): (RawNodeIndex, bool, RcParser)| {
             //         node_info_map.get_instantiation_info(node.index(), &parser.borrow(), ignore_ids)
             //     }
             // });
             // let get_edge_info = Callback::from({
             //     let edge_info_map = inst_graph.get_edge_info_map();
-            //     move |(edge, ignore_ids, parser): (EdgeIndex, bool, RcParser)| {
+            //     move |(edge, ignore_ids, parser): (VisibleEdgeIndex, bool, RcParser)| {
             //         edge_info_map.get_edge_info(edge, &parser.borrow(), ignore_ids)
             //     }
             // });
@@ -313,12 +312,12 @@ impl Component for SVGResult {
                                 };
                                 format!(
                                     "id=edge_{} tooltip=\"{tooltip}\" style={style} class={class} arrowhead={arrowhead}",
-                                    // For edges the `id` is the `EdgeIndex` from the VisibleGraph!
+                                    // For edges the `id` is the `VisibleEdgeIndex` from the VisibleGraph!
                                     edge_data.id().index(),
                                 )
                             },
                             &|_, (_, data)| {
-                                let node_data = &inst_graph.raw.graph[data.idx];
+                                let node_data = &inst_graph.raw[data.idx];
                                 let info = NodeInfo { node: node_data, ctxt };
                                 let tooltip = info.tooltip(false, None);
                                 let mut style = Some("filled");
@@ -344,11 +343,11 @@ impl Component for SVGResult {
                                     }
                                     _ => (),
                                 };
-                                let idx = data.idx.index();
+                                let idx = data.idx.0.index();
                                 let style = style.map(|s| format!(" style=\"{s}\"")).unwrap_or_default();
                                 let shape = shape.map(|s| format!(" shape={s}")).unwrap_or_default();
                                 let fillcolor = fillcolor.map(|s| format!(" fillcolor=\"{s}\"")).unwrap_or_default();
-                                // For nodes the `id` is the `NodeIndex` from the original graph!
+                                // For nodes the `id` is the `RawNodeIndex` from the original graph!
                                 format!("id=node_{idx} tooltip=\"{tooltip}\" label=\"{label}\"{style}{shape}{fillcolor}")
                             },
                         )

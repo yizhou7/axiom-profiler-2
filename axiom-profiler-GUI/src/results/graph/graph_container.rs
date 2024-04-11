@@ -1,4 +1,4 @@
-use petgraph::graph::{EdgeIndex, NodeIndex};
+use smt_log_parser::parsers::z3::graph::{RawNodeIndex, VisibleEdgeIndex};
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::{JsCast, UnwrapThrowExt};
 use web_sys::{Element, HtmlInputElement, ResizeObserver, ResizeObserverEntry};
@@ -89,11 +89,11 @@ impl GraphWindow {
 #[derive(Properties, PartialEq)]
 pub struct GraphContainerProps {
     pub rendered: Option<RenderedGraph>,
-    pub update_selected_nodes: Callback<NodeIndex>,
-    pub update_selected_edges: Callback<EdgeIndex>,
+    pub update_selected_nodes: Callback<RawNodeIndex>,
+    pub update_selected_edges: Callback<VisibleEdgeIndex>,
     pub deselect_all: Callback<()>,
-    pub selected_nodes: Vec<NodeIndex>,
-    pub selected_edges: Vec<EdgeIndex>,
+    pub selected_nodes: Vec<RawNodeIndex>,
+    pub selected_edges: Vec<VisibleEdgeIndex>,
 }
 
 impl Component for GraphContainer {

@@ -1,5 +1,4 @@
-use petgraph::graph::{EdgeIndex, NodeIndex};
-use smt_log_parser::{display_with::{DisplayCtxt, DisplayWithCtxt}, items::{MatchKind, VarNames}, parsers::z3::graph::{raw::{EdgeKind, Node, NodeKind}, visible::{VisibleEdge, VisibleEdgeKind}, InstGraph}};
+use smt_log_parser::{display_with::{DisplayCtxt, DisplayWithCtxt}, items::{MatchKind, VarNames}, parsers::z3::graph::{raw::{EdgeKind, Node, NodeKind}, visible::{VisibleEdge, VisibleEdgeKind}, InstGraph, VisibleEdgeIndex, RawNodeIndex}};
 use yew::{function_component, html, use_context, AttrValue, Callback, Html, MouseEvent, Properties};
 
 use crate::configuration::ConfigurationProvider;
@@ -147,8 +146,8 @@ impl<'a, 'b> NodeInfo<'a, 'b> {
 
 #[derive(Properties, PartialEq)]
 pub struct SelectedNodesInfoProps {
-    pub selected_nodes: Vec<(NodeIndex, bool)>,
-    pub on_click: Callback<NodeIndex>,
+    pub selected_nodes: Vec<(RawNodeIndex, bool)>,
+    pub on_click: Callback<RawNodeIndex>,
 }
 
 #[function_component]
@@ -182,7 +181,7 @@ pub fn SelectedNodesInfo(
                     on_click.emit(node)
                 })
             };
-            let info = NodeInfo { node: &graph.raw.graph[node], ctxt };
+            let info = NodeInfo { node: &graph.raw[node], ctxt };
             let index = info.index();
             let header_text = info.kind();
             let summary = format!("[{index}] {header_text}: ");
@@ -250,8 +249,8 @@ pub fn SelectedNodesInfo(
 pub struct EdgeInfo<'a, 'b> {
     pub edge: &'a VisibleEdge,
     pub kind: &'a VisibleEdgeKind,
-    pub from: NodeIndex,
-    pub to: NodeIndex,
+    pub from: RawNodeIndex,
+    pub to: RawNodeIndex,
     pub graph: &'a InstGraph,
     pub ctxt: &'b DisplayCtxt<'b>,
 }
@@ -263,8 +262,8 @@ impl<'a, 'b> EdgeInfo<'a, 'b> {
             true => "↝",
             false => "→",
         };
-        let from = NodeInfo { node: &self.graph.raw.graph[self.from], ctxt: self.ctxt };
-        let to = NodeInfo { node: &self.graph.raw.graph[self.to], ctxt: self.ctxt };
+        let from = NodeInfo { node: &self.graph.raw[self.from], ctxt: self.ctxt };
+        let to = NodeInfo { node: &self.graph.raw[self.to], ctxt: self.ctxt };
         format!("{} {arrow} {}", from.index(), to.index())
     }
     pub fn kind(&self) -> String {
@@ -299,8 +298,8 @@ impl<'a, 'b> EdgeInfo<'a, 'b> {
                 "ENode Equality Other".to_string(),
             VisibleEdgeKind::Unknown(start, _, end) => {
                 let ctxt = self.ctxt;
-                let hidden_from = self.graph.raw.graph.edge_endpoints(*start).unwrap().1;
-                let hidden_to = self.graph.raw.graph.edge_endpoints(*end).unwrap().0;
+                let hidden_from = self.graph.raw.graph.edge_endpoints(start.0).unwrap().1;
+                let hidden_to = self.graph.raw.graph.edge_endpoints(end.0).unwrap().0;
                 let hidden_from = NodeInfo { node: &self.graph.raw.graph[hidden_from], ctxt };
                 let hidden_to = NodeInfo { node: &self.graph.raw.graph[hidden_to], ctxt };
                 format!("Compound {} to {}", hidden_from.kind(), hidden_to.kind())
@@ -314,9 +313,9 @@ impl<'a, 'b> EdgeInfo<'a, 'b> {
 
 #[derive(Properties, PartialEq)]
 pub struct SelectedEdgesInfoProps {
-    pub selected_edges: Vec<(EdgeIndex, bool)>,
+    pub selected_edges: Vec<(VisibleEdgeIndex, bool)>,
     pub rendered: Option<RenderedGraph>,
-    pub on_click: Callback<EdgeIndex>,
+    pub on_click: Callback<VisibleEdgeIndex>,
 }
 
 #[function_component]
@@ -351,16 +350,16 @@ pub fn SelectedEdgesInfo(
                 let on_click = on_click.clone();
                 Callback::from(move |_| on_click.emit(edge))
             };
-            let (from, to) = rendered.graph.graph.edge_endpoints(edge).unwrap();
+            let (from, to) = rendered.graph.graph.edge_endpoints(edge.0).unwrap();
             let (from, to) = (rendered.graph.graph[from].idx, rendered.graph.graph[to].idx);
-            let edge = &rendered.graph.graph[edge];
+            let edge = &rendered.graph[edge];
             let kind = &edge.kind(&graph);
             let info = EdgeInfo { edge, kind, from, to, graph: &*graph, ctxt };
 
             let summary = format!("[{}] {}", info.index(), info.kind());
             // Get info about blamed node
             let blame = graph.raw.index(info.kind.blame(&graph));
-            let blame = NodeInfo { node: &graph.raw.graph[blame], ctxt };
+            let blame = NodeInfo { node: &graph.raw[blame], ctxt };
             let blame = blame.tooltip(true, None);
             html! {
                 <details {open} {onclick}>

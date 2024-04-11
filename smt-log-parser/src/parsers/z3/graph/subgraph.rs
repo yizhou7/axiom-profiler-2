@@ -1,26 +1,30 @@
 use fxhash::FxHashSet;
-use petgraph::{graph::{DiGraph, EdgeIndex, Neighbors, NodeIndex}, Directed, Direction::{self, Incoming, Outgoing}, Undirected};
+use mem_dbg::{MemDbg, MemSize};
+use petgraph::{graph::{DiGraph, EdgeIndex, Neighbors, NodeIndex, IndexType}, Directed, Direction::{self, Incoming, Outgoing}, Undirected};
 use roaring::RoaringBitmap;
 
+use super::{raw::RawIx, RawNodeIndex};
+
+#[derive(Debug, MemSize, MemDbg)]
 pub struct Subgraph {
-    pub(super) nodes: Vec<NodeIndex>,
+    pub(super) nodes: Vec<RawNodeIndex>,
     /// `reach_fwd[idx]` gives the set of nodes that can be reached from `idx`
     pub reach_fwd: TransitiveClosure,
     /// `reach_bwd[idx]` gives the set of nodes that can reach `idx`
     pub reach_bwd: TransitiveClosure,
 }
 
-pub struct VisitBox<D: VisitMap<NodeIndex>> {
+pub struct VisitBox<D: VisitMap<NodeIndex<RawIx>>> {
     pub dfs: D,
 }
 
 impl Subgraph {
-    pub fn new<N, E, D: VisitMap<NodeIndex>>(node: NodeIndex, graph: &mut DiGraph<N, E>, mut visit: VisitBox<D>, mut f: impl FnMut(&mut N, u32), c: impl Fn(&N) -> u32) -> (Self, VisitBox<D>) {
+    pub fn new<N, E, D: VisitMap<NodeIndex<RawIx>>>(node: RawNodeIndex, graph: &mut DiGraph<N, E, RawIx>, mut visit: VisitBox<D>, mut f: impl FnMut(&mut N, u32), c: impl Fn(&N) -> u32) -> Result<(Self, VisitBox<D>)> {
         let mut start_nodes = Vec::new();
 
-        let mut un_graph = std::mem::replace(graph, DiGraph::new()).into_edge_type::<Undirected>();
-        let mut dfs: Dfs<NodeIndex, _> = petgraph::visit::Dfs::from_parts(Vec::new(), visit.dfs);
-        dfs.move_to(node);
+        let mut un_graph = std::mem::replace(graph, DiGraph::<N, E, RawIx>::with_capacity(0, 0)).into_edge_type::<Undirected>();
+        let mut dfs: Dfs<NodeIndex<RawIx>, _> = petgraph::visit::Dfs::from_parts(Vec::new(), visit.dfs);
+        dfs.move_to(node.0);
         while let Some(node) = dfs.next(&un_graph) {
             let di_graph = un_graph.into_edge_type::<Directed>();
             let has_parents = di_graph.neighbors_directed(node, Incoming).next().is_some();
@@ -40,7 +44,8 @@ impl Subgraph {
         while let Some(node) = topo.next(&SubgraphStartNodes { start_nodes: &start_nodes, graph }) {
             f(&mut graph[node], count as u32);
             count += 1;
-            nodes.push(node);
+            nodes.try_reserve(1)?;
+            nodes.push(RawNodeIndex(node));
         }
 
         // Transitive closure
@@ -51,7 +56,7 @@ impl Subgraph {
             while let (Some((idx, node)), Some((curr, others))) = (reverse_topo.next(), reach_fwd.split_last_mut()) {
                 reach_fwd = others;
                 curr.insert(idx as u32);
-                for parent in graph.neighbors_directed(*node, Incoming) {
+                for parent in graph.neighbors_directed(node.0, Incoming) {
                     let parent = c(&graph[parent]);
                     reach_fwd[parent as usize] |= &*curr;
                 }
@@ -71,7 +76,7 @@ impl Subgraph {
             while let (Some((idx, node)), Some((curr, others))) = (topo.next(), reach_bwd.split_first_mut()) {
                 reach_bwd = others;
                 curr.insert(idx as u32);
-                for child in graph.neighbors_directed(*node, Outgoing) {
+                for child in graph.neighbors_directed(node.0, Outgoing) {
                     let child = c(&graph[child]);
                     reach_bwd[child as usize - idx - 1] |= &*curr;
                 }
@@ -84,11 +89,12 @@ impl Subgraph {
             // }
         }
 
-        (Self { nodes, reach_fwd, reach_bwd }, visit)
+        Ok((Self { nodes, reach_fwd, reach_bwd }, visit))
     }
 
 }
 
+#[derive(Debug)]
 pub struct TransitiveClosure(Vec<RoaringBitmap>);
 impl TransitiveClosure {
     pub fn in_transitive_closure(&self, from: u32, to: u32) -> bool {
@@ -106,39 +112,46 @@ impl TransitiveClosure {
         }
         reachable
     }
+
+    pub(crate) fn inner(&self) -> &Vec<RoaringBitmap> {
+        &self.0
+    }
 }
 
 // Graph wrapper for Topo walk
 
-pub(super) struct SubgraphStartNodes<'g, N, E> {
-    pub(super) start_nodes: &'g Vec<NodeIndex>,
-    pub(super) graph: &'g DiGraph<N, E>,
+pub(super) struct SubgraphStartNodes<'g, N, E, Ix: IndexType> {
+    pub(super) start_nodes: &'g Vec<NodeIndex<Ix>>,
+    pub(super) graph: &'g DiGraph<N, E, Ix>,
 }
 use petgraph::visit::*;
-impl<N, E> GraphBase for SubgraphStartNodes<'_, N, E> {
-    type NodeId = NodeIndex;
+
+use crate::Result;
+
+impl<N, E, Ix: IndexType> GraphBase for SubgraphStartNodes<'_, N, E, Ix> {
+    type NodeId = NodeIndex<Ix>;
     type EdgeId = EdgeIndex;
 }
-impl<'a, N, E> IntoNodeIdentifiers for &'a SubgraphStartNodes<'_, N, E> {
-    type NodeIdentifiers = std::iter::Copied<std::slice::Iter<'a, NodeIndex>>;
+impl<'a, N, E, Ix: IndexType> IntoNodeIdentifiers for &'a SubgraphStartNodes<'_, N, E, Ix> {
+    type NodeIdentifiers = std::iter::Copied<std::slice::Iter<'a, NodeIndex<Ix>>>;
     fn node_identifiers(self) -> Self::NodeIdentifiers {
         self.start_nodes.iter().copied()
     }
 }
-impl<'a, N, E> IntoNeighbors for &'a SubgraphStartNodes<'_, N, E> {
-    type Neighbors = Neighbors<'a, E>;
+impl<'a, N, E, Ix: IndexType> IntoNeighbors for &'a SubgraphStartNodes<'_, N, E, Ix> {
+    type Neighbors = Neighbors<'a, E, Ix>;
     fn neighbors(self, n: Self::NodeId) -> Self::Neighbors {
         self.graph.neighbors(n)
     }
 }
-impl<'a, N, E> IntoNeighborsDirected for &'a SubgraphStartNodes<'_, N, E> {
-    type NeighborsDirected = Neighbors<'a, E>;
+impl<'a, N, E, Ix: IndexType> IntoNeighborsDirected for &'a SubgraphStartNodes<'_, N, E, Ix> {
+    type NeighborsDirected = Neighbors<'a, E, Ix>;
     fn neighbors_directed(self, n: Self::NodeId, d: Direction) -> Self::NeighborsDirected {
         self.graph.neighbors_directed(n, d)
     }
 }
-impl<'a, N, E> Visitable for &'a SubgraphStartNodes<'_, N, E> {
-    type Map = FxHashSet<NodeIndex>;
+impl<'a, N, E, Ix: IndexType> Visitable for &'a SubgraphStartNodes<'_, N, E, Ix> {
+    type Map = FxHashSet<NodeIndex<Ix>>;
     fn visit_map(&self) -> Self::Map {
         FxHashSet::default()
     }

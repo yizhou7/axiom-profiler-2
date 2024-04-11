@@ -1,14 +1,14 @@
-use fxhash::{FxHashMap, FxHashSet};
+use fxhash::FxHashSet;
+use mem_dbg::{MemDbg, MemSize};
 use petgraph::{graph::{DiGraph, EdgeIndex, NodeIndex}, visit::EdgeRef};
-use typed_index_collections::TiVec;
 
 use crate::{
-    items::{ENodeIdx, EqGivenIdx, EqTransIdx, EqualityExpl, InstIdx, StackIdx, TermIdx, TransitiveExpl, TransitiveExplSegment, TransitiveExplSegmentKind}, Error, Result
+    items::{ENodeIdx, EqGivenIdx, EqTransIdx, EqualityExpl, InstIdx, StackIdx, TermIdx, TransitiveExpl, TransitiveExplSegment, TransitiveExplSegmentKind}, FxHashMap, Error, Result, BoxSlice, TiVec
 };
 
 use super::stack::Stack;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, MemSize, MemDbg)]
 pub struct EGraph {
     term_to_enode: FxHashMap<TermIdx, ENodeIdx>,
     pub(super) enodes: TiVec<ENodeIdx, ENode>,
@@ -260,7 +260,7 @@ impl EGraph {
                     unreachable!()
                 };
                 let real_idx = uses.iter().position(|u| &**u == use_).unwrap_or_else(|| {
-                    uses.push(use_.into_boxed_slice());
+                    uses.push(BoxSlice(use_.into_boxed_slice()));
                     uses.len() - 1
                 });
                 *idx = Some(std::num::NonZeroU32::new(real_idx as u32 + 1).unwrap());
@@ -280,7 +280,7 @@ impl std::ops::Index<ENodeIdx> for EGraph {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, MemSize, MemDbg)]
 pub struct ENode {
     frame: Option<StackIdx>,
     pub created_by: Option<InstIdx>,
@@ -303,14 +303,14 @@ impl ENode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, MemSize, MemDbg)]
 pub struct Equality {
     _frame: Option<StackIdx>,
     pub to: ENodeIdx,
     pub expl: EqGivenIdx,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, MemSize, MemDbg)]
 pub struct Equalities {
     pub(super) given: TiVec<EqGivenIdx, EqualityExpl>,
     pub(super) transitive: TiVec<EqTransIdx, TransitiveExpl>,

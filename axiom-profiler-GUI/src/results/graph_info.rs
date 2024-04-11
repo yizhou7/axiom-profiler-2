@@ -1,11 +1,10 @@
 use crate::{configuration::{Configuration, ConfigurationContext, ConfigurationProvider}, utils::split_div::SplitDiv, RcParser};
 use indexmap::map::{Entry, IndexMap};
 use material_yew::WeakComponentLink;
-use petgraph::graph::{EdgeIndex, NodeIndex};
 use scraper::node;
 // use smt_log_parser::parsers::z3::inst_graph::{EdgeType, NodeInfo};
 use smt_log_parser::{
-    display_with::DisplayConfiguration, items::BlameKind, parsers::z3::graph::raw::NodeKind
+    display_with::DisplayConfiguration, items::BlameKind, parsers::z3::graph::{raw::NodeKind, RawNodeIndex, VisibleEdgeIndex}
     // parsers::z3::inst_graph::{EdgeInfo, InstInfo},
 };
 use web_sys::HtmlElement;
@@ -14,8 +13,8 @@ use yew::prelude::*;
 use super::{graph::graph_container::GraphContainer, node_info::{SelectedEdgesInfo, SelectedNodesInfo}, svg_result::RenderedGraph};
 
 pub struct GraphInfo {
-    selected_nodes: IndexMap<NodeIndex, bool>,
-    selected_edges: IndexMap<EdgeIndex, bool>,
+    selected_nodes: IndexMap<RawNodeIndex, bool>,
+    selected_edges: IndexMap<VisibleEdgeIndex, bool>,
     ignore_term_ids: bool,
     generalized_terms: Vec<String>,
 }
@@ -45,11 +44,11 @@ fn toggle_selected<T: Copy + Eq + std::hash::Hash>(map: &mut IndexMap<T, bool>, 
 }
 
 pub enum Msg {
-    UserSelectedNode(NodeIndex),
-    UserSelectedEdge(EdgeIndex),
-    ToggleOpenNode(NodeIndex),
-    ToggleOpenEdge(EdgeIndex),
-    // SelectNodes(Vec<NodeIndex>),
+    UserSelectedNode(RawNodeIndex),
+    UserSelectedEdge(VisibleEdgeIndex),
+    ToggleOpenNode(RawNodeIndex),
+    ToggleOpenEdge(VisibleEdgeIndex),
+    // SelectNodes(Vec<RawNodeIndex>),
     DeselectAll,
     ToggleIgnoreTermIds,
     ShowGeneralizedTerms(Vec<String>),
@@ -58,14 +57,14 @@ pub enum Msg {
 #[derive(Properties, PartialEq)]
 pub struct GraphInfoProps {
     pub weak_link: WeakComponentLink<GraphInfo>,
-    // pub node_info: Callback<(NodeIndex, bool, RcParser), NodeInfo>,
-    // pub edge_info: Callback<(EdgeIndex, bool, RcParser), EdgeInfo>,
+    // pub node_info: Callback<(RawNodeIndex, bool, RcParser), NodeInfo>,
+    // pub edge_info: Callback<(VisibleEdgeIndex, bool, RcParser), EdgeInfo>,
     // pub parser: RcParser,
     pub rendered: Option<RenderedGraph>,
-    pub selected_nodes: Vec<NodeIndex>,
-    pub update_selected_nodes: Callback<Vec<NodeIndex>>,
-    pub selected_edges: Vec<EdgeIndex>,
-    pub update_selected_edges: Callback<Vec<EdgeIndex>>,
+    pub selected_nodes: Vec<RawNodeIndex>,
+    pub update_selected_nodes: Callback<Vec<RawNodeIndex>>,
+    pub selected_edges: Vec<VisibleEdgeIndex>,
+    pub update_selected_edges: Callback<Vec<VisibleEdgeIndex>>,
     pub outdated: bool,
 }
 
@@ -155,11 +154,11 @@ impl Component for GraphInfo {
     fn view(&self, ctx: &Context<Self>) -> Html {
         let on_node_click = {
             let link = ctx.link().clone();
-            Callback::from(move |node: NodeIndex| link.send_message(Msg::ToggleOpenNode(node)))
+            Callback::from(move |node: RawNodeIndex| link.send_message(Msg::ToggleOpenNode(node)))
         };
         let on_edge_click = {
             let link = ctx.link().clone();
-            Callback::from(move |edge: EdgeIndex| link.send_message(Msg::ToggleOpenEdge(edge)))
+            Callback::from(move |edge: VisibleEdgeIndex| link.send_message(Msg::ToggleOpenEdge(edge)))
         };
         let toggle = ctx.link().callback(|_| Msg::ToggleIgnoreTermIds);
         let on_node_select = ctx.link().callback(Msg::UserSelectedNode);
@@ -179,8 +178,8 @@ impl Component for GraphInfo {
                     update_selected_nodes={&on_node_select}
                     update_selected_edges={&on_edge_select}
                     deselect_all={&deselect_all}
-                    selected_nodes={self.selected_nodes.keys().copied().collect::<Vec<NodeIndex>>()}
-                    selected_edges={self.selected_edges.keys().copied().collect::<Vec<EdgeIndex>>()}
+                    selected_nodes={self.selected_nodes.keys().copied().collect::<Vec<RawNodeIndex>>()}
+                    selected_edges={self.selected_edges.keys().copied().collect::<Vec<VisibleEdgeIndex>>()}
                 />
 
                 <div style="width:100%; height:100%; overflow-wrap:anywhere; overflow:clip auto;">
