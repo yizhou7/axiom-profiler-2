@@ -2,8 +2,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Mutex, OnceLock, RwLock};
 
+use fxhash::{FxHashMap, FxHashSet};
 use gloo_file::File;
 use gloo_file::{callbacks::FileReader, FileList};
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use results::svg_result::{Msg as SVGMsg, RenderedGraph, RenderingState, SVGResult};
 use smt_log_parser::items::{InstIdx, QuantIdx};
 use smt_log_parser::parsers::z3::graph::{InstGraph, VisibleEdgeIndex, RawNodeIndex};
@@ -285,7 +287,26 @@ impl Component for FileDataComponent {
                     }
                     if let Some(old) = &file.rendered {
                         let old_len = file.selected_edges.len();
-                        file.selected_edges.retain(|e| old.graph[*e] == rendered.graph[*e]);
+                        // Update selected edges
+                        let mut to_update: FxHashMap<_, _> = file.selected_edges.iter_mut().flat_map(|e| {
+                            let old_edge = &old.graph[*e];
+                            let different = !rendered.graph.graph.edge_weight(e.0).is_some_and(|edge| edge == old_edge);
+                            different.then(|| (old_edge, e))
+                        }).collect();
+                        if !to_update.is_empty() {
+                            for new_edge in rendered.graph.graph.edge_references() {
+                                if let Some(e) = to_update.remove(new_edge.weight()) {
+                                    *e = VisibleEdgeIndex(new_edge.id());
+                                    if to_update.is_empty() {
+                                        break;
+                                    }
+                                }
+                            }
+                            if !to_update.is_empty() {
+                                let to_remove: FxHashSet<_> = to_update.into_iter().map(|(_, v)| *v).collect();
+                                file.selected_edges.retain(|e| !to_remove.contains(e));
+                            }
+                        }
                         if file.selected_edges.len() != old_len {
                             ctx.link().send_message(Msg::SelectedEdges(file.selected_edges.clone()));
                         }

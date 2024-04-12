@@ -166,7 +166,7 @@ pub struct VisibleNode {
     pub hidden_children: u32,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum VisibleEdge {
     Direct(RawEdgeIndex),
     Indirect(Vec<RawEdgeIndex>),
