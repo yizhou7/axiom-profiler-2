@@ -18,6 +18,11 @@ pub fn Homepage(props: &HomepageProps) -> Html {
             gloo::utils::window().location().set_href("/axiom-profiler-2/canary/").unwrap();
         }
     });
+    let switch_text = if is_canary {
+        "Feeling cautious? Switch to the reliable Stable version"
+    } else {
+        "Feeling adventurous? Try the bleeding edge Canary version"
+    };
     html! {
         <div class="page home-page"><div class="home-page-center">
             <div class="home-page-title">
@@ -29,7 +34,7 @@ pub fn Homepage(props: &HomepageProps) -> Html {
                 // </ul>
             </div>
             <div class="channel-select">
-                <div>{"Feeling adventurous? Try our bleeding edge Canary version"}</div>
+                <div>{switch_text}</div>
                 <fieldset>
                     <input type="radio" name="chan" id="chan_stable" checked={!is_canary} />
                     <label for="chan_stable" onclick={stable}>{"stable"}</label>
