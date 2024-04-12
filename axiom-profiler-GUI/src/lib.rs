@@ -361,6 +361,8 @@ impl Component for FileDataComponent {
             "https://github.com/viperproject/axiom-profiler-2/tree/{}",
             env!("VERGEN_GIT_SHA")
         );
+        let href = gloo::utils::window().location().href().unwrap_or_default();
+        let is_canary = href.contains("/canary/");
 
         let sidebar = NodeRef::default();
         let scrollable_dialog_link: WeakComponentLink<MatDialog> = WeakComponentLink::default();
@@ -410,12 +412,13 @@ impl Component for FileDataComponent {
             let selected_edges = ctx.link().callback(Msg::SelectedEdges);
             Self::view_file(f.clone(), progress, selected_nodes, selected_edges)
         }).unwrap_or_else(|| {
-            html!{<homepage::Homepage/>}
+            html!{<homepage::Homepage {is_canary}/>}
         });
+        let header_class = if is_canary { "canary" } else { "stable" };
         html! {
 <>
     <nav class="sidebar" ref={sidebar}>
-        <header class="stable"><img src="html/logo_side_small.png" class="brand"/><div class="sidebar-button" onclick={hide_sidebar}><MatIconButton icon="menu"></MatIconButton></div></header>
+        <header class={header_class}><img src="html/logo_side_small.png" class="brand"/><div class="sidebar-button" onclick={hide_sidebar}><MatIconButton icon="menu"></MatIconButton></div></header>
         <input type="file" ref={&self.file_select} class="trace_file" accept=".log" onchange={on_change} multiple=false/>
         <div class="sidebar-scroll"><div class="sidebar-scroll-container">
             <SidebarSectionHeader header_text="Navigation" collapsed_text="Open a new trace" section={self.navigation_section.clone()}><ul>

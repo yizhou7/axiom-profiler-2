@@ -1,18 +1,21 @@
-use gloo::utils::window;
-use yew::{function_component, html, Callback, Html};
+use yew::{function_component, html, Callback, Html, Properties};
+
+#[derive(Properties, Clone, PartialEq)]
+pub struct HomepageProps {
+    pub is_canary: bool,
+}
 
 #[function_component]
-pub fn Homepage() -> Html {
-    let href = window().location().href().unwrap_or_default();
-    let is_canary = href.contains("/canary/");
+pub fn Homepage(props: &HomepageProps) -> Html {
+    let is_canary = props.is_canary;
     let stable = Callback::from(move |_| {
         if is_canary {
-            window().location().set_href("/axiom-profiler-2/").unwrap();
+            gloo::utils::window().location().set_href("/axiom-profiler-2/").unwrap();
         }
     });
     let canary = Callback::from(move |_| {
         if !is_canary {
-            window().location().set_href("/axiom-profiler-2/canary/").unwrap();
+            gloo::utils::window().location().set_href("/axiom-profiler-2/canary/").unwrap();
         }
     });
     html! {

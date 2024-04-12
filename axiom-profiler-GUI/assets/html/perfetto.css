@@ -316,6 +316,21 @@ body > main > div {
     display: flex;
 }
 
+.sidebar > header.canary::before {
+	content: "CANARY";
+	color: hsl(0, 100%, 40%);
+	display: block;
+	position: absolute;
+	font-size: 10px;
+	line-height: 5px;
+	font-family: "Roboto", sans-serif;
+	top: 7px;
+	right: 48px;
+}
+.sidebar > header::before {
+	z-index: 10;
+}
+
 .sidebar > header .brand {
 	height: 36px;
 	margin-top: 4px;
