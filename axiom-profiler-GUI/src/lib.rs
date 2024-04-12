@@ -31,6 +31,7 @@ mod infobars;
 mod filters;
 mod global_callbacks;
 pub mod configuration;
+pub mod homepage;
 
 const SIZE_NAMES: [&'static str; 5] = ["B", "KB", "MB", "GB", "TB"];
 
@@ -408,6 +409,8 @@ impl Component for FileDataComponent {
             let selected_nodes = ctx.link().callback(Msg::SelectedNodes);
             let selected_edges = ctx.link().callback(Msg::SelectedEdges);
             Self::view_file(f.clone(), progress, selected_nodes, selected_edges)
+        }).unwrap_or_else(|| {
+            html!{<homepage::Homepage/>}
         });
         html! {
 <>
@@ -436,9 +439,7 @@ impl Component for FileDataComponent {
         <Topbar progress={self.progress.clone()} />
     </div>
     <div class="alerts"></div>
-    <div class="page">
-        {page}
-    </div>
+    {page}
 
     // Shortcuts dialog
     <section tabindex="0">
@@ -475,7 +476,9 @@ impl Component for FileDataComponent {
 impl FileDataComponent {
     fn view_file(data: OpenedFileInfo, progress: Callback<Result<RenderedGraph, RenderingState>>, selected_nodes: Callback<Vec<RawNodeIndex>>, selected_edges: Callback<Vec<VisibleEdgeIndex>>) -> Html {
         html! {
-            <SVGResult file={data} {progress} {selected_nodes} {selected_edges}/>
+            <div class="page">
+                <SVGResult file={data} {progress} {selected_nodes} {selected_edges}/>
+            </div>
         }
     }
 }
