@@ -126,15 +126,13 @@ impl Component for SVGResult {
         let link = ctx.link().clone();
         wasm_bindgen_futures::spawn_local(async move {
             gloo_timers::future::TimeoutFuture::new(10).await;
-            let cfg = link.get_configuration().unwrap();
+            let mut cfg = link.get_configuration().unwrap();
             let mut parser = cfg.config.parser.unwrap();
             let inst_graph = InstGraph::new(&parser.parser).unwrap();
             let inst_graph = Rc::new(RefCell::new(inst_graph));
             parser.graph.replace(inst_graph.clone());
-            cfg.update.emit(Configuration {
-                parser: Some(parser),
-                ..cfg.config
-            });
+            cfg.config.parser = Some(parser);
+            cfg.update.emit(cfg.config);
             // let get_node_info = Callback::from({
             //     let node_info_map = inst_graph.get_node_info_map();
             //     move |(node, ignore_ids, parser): (RawNodeIndex, bool, RcParser)| {
@@ -192,7 +190,7 @@ impl Component for SVGResult {
             Msg::WorkerOutput(_out) => false,
             Msg::ApplyFilter(filter) => {
                 log::debug!("Applying filter {:?}", filter);
-                match filter.apply(inst_graph, parser, cfg.config.display) {
+                match filter.apply(inst_graph, parser, cfg.config.persistent.display) {
                     FilterOutput::LongestPath(path) => {
                         ctx.props().selected_nodes.emit(path);
                         // self.insts_info_link
@@ -265,7 +263,7 @@ impl Component for SVGResult {
                     let filtered_graph = &calculated.graph;
                     let ctxt = &DisplayCtxt {
                         parser,
-                        config: cfg.config.display,
+                        config: cfg.config.persistent.display,
                     };
 
                     // Performance observations (default value is in [])

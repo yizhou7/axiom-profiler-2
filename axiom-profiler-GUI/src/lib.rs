@@ -203,7 +203,7 @@ impl Component for FileDataComponent {
             Msg::File(file) => {
                 // reset the configuration to default
                 let cfg = ctx.link().get_configuration().unwrap();
-                cfg.update.emit(Configuration::default());
+                cfg.update_parser(|p| *p = None);
                 let Some(file) = file else {
                     return false;
                 };
@@ -326,10 +326,7 @@ impl Component for FileDataComponent {
                 drop(self.reader.take());
                 let parser = RcParser::new(parser);
                 let cfg = ctx.link().get_configuration().unwrap();
-                cfg.update.emit(Configuration {
-                    parser: Some(RcParser::clone(&parser)),
-                    ..cfg.config
-                });
+                cfg.update_parser(|p| *p = Some(RcParser::clone(&parser)));
                 let file = OpenedFileInfo {
                     file_name,
                     file_size,

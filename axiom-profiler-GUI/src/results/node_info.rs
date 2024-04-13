@@ -168,7 +168,7 @@ pub fn SelectedNodesInfo(
     let graph = graph.borrow();
     let ctxt = &DisplayCtxt {
         parser,
-        config: cfg.config.display,
+        config: cfg.config.persistent.display,
     };
 
     let infos = selected_nodes
@@ -340,7 +340,7 @@ pub fn SelectedEdgesInfo(
     let graph = graph.borrow();
     let ctxt = &DisplayCtxt {
         parser,
-        config: cfg.config.display,
+        config: cfg.config.persistent.display,
     };
 
     let infos = selected_edges

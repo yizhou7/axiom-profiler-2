@@ -37,7 +37,7 @@ impl Component for Homepage {
                     return;
                 };
                 let storage = VersionStorage { versions, date: curr_time };
-                gloo::storage::LocalStorage::set("versions", &storage).ok();
+                gloo::storage::LocalStorage::set::<&VersionStorage>("versions", &storage).ok();
                 link.send_message(HomepageMessage::Versions(storage.versions));
             });
             Vec::new()

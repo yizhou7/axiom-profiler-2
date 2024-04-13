@@ -1,3 +1,4 @@
+use gloo::storage::Storage;
 use smt_log_parser::display_with::DisplayConfiguration;
 use yew::{html, prelude::{Context, Html}, Callback, Children, Component, ContextProvider, Properties};
 
@@ -20,13 +21,28 @@ pub struct ConfigurationProvider {
     pub update: Callback<Configuration>,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+impl ConfigurationProvider {
+    pub fn update_display(mut self, f: impl FnOnce(&mut DisplayConfiguration)) {
+        f(&mut self.config.persistent.display);
+        self.update.emit(self.config);
+    }pub fn update_parser(mut self, f: impl FnOnce(&mut Option<RcParser>)) {
+        f(&mut self.config.parser);
+        self.update.emit(self.config);
+    }
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Configuration {
     pub parser: Option<RcParser>,
+    pub persistent: PersistentConfiguration,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistentConfiguration {
     pub display: DisplayConfiguration,
 }
 
-impl Default for Configuration {
+impl Default for PersistentConfiguration {
     fn default() -> Self {
         let display = DisplayConfiguration {
             display_term_ids: false,
@@ -38,7 +54,6 @@ impl Default for Configuration {
             limit_enode_chars: false,
         };
         Self {
-            parser: None,
             display,
         }
     }
@@ -57,15 +72,21 @@ impl Component for ConfigurationProvider {
 
     fn create(ctx: &Context<Self>) -> Self {
         let link = ctx.link().clone();
+        let mut config = Configuration::default();
+        if let Ok(cached) = gloo::storage::LocalStorage::get::<PersistentConfiguration>("config") {
+            // log::warn!("ConfigurationProvider loaded: {cached:?}");
+            config.persistent = cached;
+        }
         Self {
-            config: Configuration::default(),
+            config,
             update: Callback::from(move |config| link.send_message(config)),
         }
     }
 
     fn update(&mut self, _ctx: &Context<Self>, msg: Self::Message) -> bool {
-        // log::warn!("ConfigurationProvider update: {:?}/{:?}", msg.parser.is_some(), msg.parser.as_ref().map(|p| p.graph.is_some()));
+        // log::warn!("ConfigurationProvider update: {:?}/{:?}: {:?}", msg.parser.is_some(), msg.parser.as_ref().map(|p| p.graph.is_some()), msg.persistent);
         self.config = msg;
+        gloo::storage::LocalStorage::set::<&PersistentConfiguration>("config", &self.config.persistent).ok();
         true
     }
 

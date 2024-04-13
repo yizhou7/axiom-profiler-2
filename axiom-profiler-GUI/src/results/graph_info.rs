@@ -1,4 +1,4 @@
-use crate::{configuration::{Configuration, ConfigurationContext, ConfigurationProvider}, utils::split_div::SplitDiv, RcParser};
+use crate::{configuration::{Configuration, ConfigurationContext, ConfigurationProvider, PersistentConfiguration}, utils::split_div::SplitDiv, RcParser};
 use indexmap::map::{Entry, IndexMap};
 use material_yew::WeakComponentLink;
 use scraper::node;
@@ -15,7 +15,6 @@ use super::{graph::graph_container::GraphContainer, node_info::{SelectedEdgesInf
 pub struct GraphInfo {
     selected_nodes: IndexMap<RawNodeIndex, bool>,
     selected_edges: IndexMap<VisibleEdgeIndex, bool>,
-    ignore_term_ids: bool,
     generalized_terms: Vec<String>,
 }
 
@@ -81,7 +80,6 @@ impl Component for GraphInfo {
         Self {
             selected_nodes: ctx.props().selected_nodes.iter().copied().map(|n| (n, false)).collect(),
             selected_edges: ctx.props().selected_edges.iter().copied().map(|e| (e, false)).collect(),
-            ignore_term_ids: true,
             generalized_terms: Vec::new(),
         }
     }
@@ -135,12 +133,8 @@ impl Component for GraphInfo {
             // }
             Msg::ToggleIgnoreTermIds => {
                 let cfg = ctx.link().get_configuration().unwrap();
-                cfg.update.emit(Configuration {
-                    display: DisplayConfiguration {
-                        display_term_ids: !cfg.config.display.display_term_ids,
-                        ..cfg.config.display
-                    },
-                    ..cfg.config
+                cfg.update_display(|display| {
+                    display.display_term_ids = !display.display_term_ids;
                 });
                 false
             }
@@ -161,6 +155,7 @@ impl Component for GraphInfo {
             Callback::from(move |edge: VisibleEdgeIndex| link.send_message(Msg::ToggleOpenEdge(edge)))
         };
         let toggle = ctx.link().callback(|_| Msg::ToggleIgnoreTermIds);
+        let ignore_term_ids = !ctx.link().get_configuration().unwrap().config.persistent.display.display_term_ids;
         let on_node_select = ctx.link().callback(Msg::UserSelectedNode);
         let on_edge_select = ctx.link().callback(Msg::UserSelectedEdge);
         let deselect_all = ctx.link().callback(|_| Msg::DeselectAll);
@@ -185,7 +180,7 @@ impl Component for GraphInfo {
                 <div style="width:100%; height:100%; overflow-wrap:anywhere; overflow:clip auto;">
                     <div style="position: sticky; top: 0px; left: 0px">
                         <label for="term_expander">{"Ignore term IDs "}</label>
-                        <input type="checkbox" checked={self.ignore_term_ids} onclick={toggle} id="term_expander" />
+                        <input type="checkbox" checked={ignore_term_ids} onclick={toggle} id="term_expander" />
                     </div>
                     <SelectedNodesInfo selected_nodes={self.selected_nodes.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>()} on_click={on_node_click} />
                     <SelectedEdgesInfo selected_edges={self.selected_edges.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>()} rendered={ctx.props().rendered.clone()} on_click={on_edge_click} />

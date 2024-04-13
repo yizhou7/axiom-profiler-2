@@ -76,7 +76,7 @@ pub struct DisplayCtxt<'a> {
     pub config: DisplayConfiguration,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DisplayConfiguration {
     pub display_term_ids: bool,
     pub display_quantifier_name: bool,
