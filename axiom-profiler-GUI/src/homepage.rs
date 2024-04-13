@@ -40,8 +40,7 @@ impl Component for Homepage {
                 gloo::storage::LocalStorage::set("versions", &storage).ok();
                 link.send_message(HomepageMessage::Versions(storage.versions));
             });
-            test_versions()
-            // Vec::new()
+            Vec::new()
         };
         Self {
             versions,
@@ -56,7 +55,7 @@ impl Component for Homepage {
                 true
             }
             HomepageMessage::FieldsetHover(mut fieldset_hover) => {
-                fieldset_hover = fieldset_hover && !self.versions.is_empty();
+                fieldset_hover = fieldset_hover && (!self.versions.is_empty() || crate::version().is_some());
                 let changed = self.fieldset_hover != fieldset_hover;
                 self.fieldset_hover = fieldset_hover;
                 changed
@@ -84,24 +83,27 @@ impl Component for Homepage {
         let fieldset_hover = self.fieldset_hover.then(|| {
             let this_version = crate::version();
             let mut this_version_index = None;
-            let versions = self.versions.iter().rev()
+            let mut versions = self.versions.iter()
                 .flat_map(|v| v.version().map(|version| (version, v)))
                 .enumerate()
                 .map(|(i, (version, v))| {
                     if Some(&version) == this_version.as_ref() {
                         this_version_index = Some(i);
                     }
-                    (version, v)
+                    (version, v.version_text().unwrap().to_string())
                 }).collect::<Vec<_>>();
-            let this_version_index = this_version_index.unwrap_or_default();
-            let style = format!("height: {}px; bottom: -{}px", self.versions.len() * 40, this_version_index * 40);
+            if let (Some(this_version), None) = (this_version, this_version_index) {
+                versions.push((this_version, crate::GIT_DESCRIBE.to_string()));
+            }
+            let last_idx = versions.len() - 1;
+            let this_version_index = this_version_index.unwrap_or(last_idx);
+            let style = format!("height: {}px; top: -{}px", versions.len() * 40, this_version_index * 40);
 
-            let inputs = versions.into_iter().enumerate().map(|(i, (version, v))| {
-                let version_text = v.version_text().unwrap().to_string();
+            let inputs = versions.into_iter().enumerate().rev().map(|(i, (version, version_text))| {
                 let id = format!("chan_{version}");
                 let onclick = Callback::from(move |_| {
                     if is_canary || this_version_index != i {
-                        let href = if i == 0 {
+                        let href = if i == last_idx {
                             String::from("/axiom-profiler-2/")
                         } else {
                             format!("/axiom-profiler-2/{version_text}")
@@ -125,7 +127,7 @@ impl Component for Homepage {
             });
             let unset_hover = ctx.link().callback(|_| HomepageMessage::FieldsetHover(false));
             let highlight = (!is_canary).then(|| {
-                let style = format!("bottom: {}px", this_version_index * 40);
+                let style = format!("top: {}px", this_version_index * 40);
                 html! { <div class="highlight" {style}></div> }
             });
             html! {

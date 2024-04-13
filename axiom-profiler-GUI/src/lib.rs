@@ -35,8 +35,9 @@ mod global_callbacks;
 pub mod configuration;
 pub mod homepage;
 
+pub const GIT_DESCRIBE: &str = env!("VERGEN_GIT_DESCRIBE");
 pub fn version() -> Option<semver::Version> {
-    let version = env!("VERGEN_GIT_DESCRIBE").strip_prefix("v")?;
+    let version = GIT_DESCRIBE.strip_prefix("v")?;
     semver::Version::parse(version).ok().filter(|v| v.pre.is_empty())
 }
 
