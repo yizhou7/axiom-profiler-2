@@ -35,6 +35,11 @@ mod global_callbacks;
 pub mod configuration;
 pub mod homepage;
 
+pub fn version() -> Option<semver::Version> {
+    let version = env!("VERGEN_GIT_DESCRIBE").strip_prefix("v")?;
+    semver::Version::parse(version).ok().filter(|v| v.pre.is_empty())
+}
+
 const SIZE_NAMES: [&'static str; 5] = ["B", "KB", "MB", "GB", "TB"];
 
 pub static MOUSE_POSITION: OnceLock<RwLock<PagePosition>> = OnceLock::new();
@@ -382,8 +387,7 @@ impl Component for FileDataComponent {
             "https://github.com/viperproject/axiom-profiler-2/tree/{}",
             env!("VERGEN_GIT_SHA")
         );
-        let href = gloo::utils::window().location().href().unwrap_or_default();
-        let is_canary = href.contains("/canary/");
+        let is_canary = version().is_none();
 
         let sidebar = NodeRef::default();
         let scrollable_dialog_link: WeakComponentLink<MatDialog> = WeakComponentLink::default();
