@@ -128,7 +128,7 @@ impl Component for Homepage {
             let unset_hover = ctx.link().callback(|_| HomepageMessage::FieldsetHover(false));
             let highlight = (!is_canary).then(|| {
                 let style = format!("top: {}px", this_version_index * 40);
-                html! { <div class="highlight" {style}></div> }
+                html! { <div id="inner-highlight" class="highlight" {style}></div> }
             });
             html! {
                 <fieldset {style} onmouseleave={unset_hover}>
