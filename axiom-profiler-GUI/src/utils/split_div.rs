@@ -1,4 +1,4 @@
-use yew::{html, prelude::{Context, Html}, Children, Component, MouseEvent, NodeRef, Properties};
+use yew::{html, prelude::{Context, Html}, Children, Component, KeyboardEvent, MouseEvent, NodeRef, Properties};
 
 use crate::{CallbackRef, GlobalCallbacksContext, PagePosition};
 
@@ -14,12 +14,13 @@ pub struct SplitDivProps {
 }
 
 pub struct SplitDiv {
+    old_position: f64,
     position: f64,
 
     dragging: bool,
     container: NodeRef,
 
-    _callback_refs: [CallbackRef; 2],
+    _callback_refs: [CallbackRef; 3],
 }
 
 #[allow(dead_code)]
@@ -27,6 +28,7 @@ pub enum Msg {
     MouseDown(MouseEvent),
     MouseMove(MouseEvent),
     MouseUp(MouseEvent),
+    KeyDown(KeyboardEvent),
 }
 
 impl Component for SplitDiv {
@@ -38,10 +40,12 @@ impl Component for SplitDiv {
         let registerer = ctx.link().get_callbacks_registerer().unwrap();
         let mouse_move_ref = (registerer.register_mouse_move)(ctx.link().callback(Msg::MouseMove));
         let mouse_up_ref = (registerer.register_mouse_up)(ctx.link().callback(Msg::MouseUp));
-        let _callback_refs = [mouse_move_ref, mouse_up_ref];
+        let keydown = (registerer.register_keyboard_down)(ctx.link().callback(Msg::KeyDown));
+        let _callback_refs = [mouse_move_ref, mouse_up_ref, keydown];
 
         Self {
             position: ctx.props().initial_position,
+            old_position: ctx.props().initial_position,
             dragging: false,
             container: NodeRef::default(),
             _callback_refs,
@@ -69,6 +73,20 @@ impl Component for SplitDiv {
             Msg::MouseUp(_) => {
                 self.dragging = false;
                 false
+            }
+            Msg::KeyDown(ev) => {
+                let key = ev.key();
+                if key == "r" {
+                    if self.position == 1.0 {
+                        self.position = self.old_position;
+                    } else {
+                        self.old_position = self.position;
+                        self.position = 1.0;
+                    }
+                    true
+                } else {
+                    false
+                }
             }
         }
     }

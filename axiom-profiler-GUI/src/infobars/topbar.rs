@@ -1,11 +1,12 @@
 use material_yew::linear_progress::MatLinearProgress;
-use yew::{function_component, html, AttrValue, Callback, Html, MouseEvent, Properties};
+use yew::{function_component, html, AttrValue, Callback, Html, MouseEvent, NodeRef, Properties};
 
 use crate::{results::svg_result::RenderingState, LoadingState, SIZE_NAMES};
 
 #[derive(PartialEq, Properties)]
 pub struct TopbarProps {
     pub progress: LoadingState,
+    pub omnibox: NodeRef,
 }
 
 #[function_component]
@@ -87,7 +88,7 @@ pub fn Topbar(props: &TopbarProps) -> Html {
     <>
         <div class="omnibox">
             {icon}
-            <input placeholder={placeholder} readonly={omnibox_disabled} disabled={omnibox_disabled}/>
+            <input ref={props.omnibox.clone()} placeholder={placeholder} readonly={omnibox_disabled} disabled={omnibox_disabled}/>
         </div>
         <div class={format!("progress progress-anim {failed}")}>{loading}</div>
     </>

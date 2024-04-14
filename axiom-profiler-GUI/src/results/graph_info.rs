@@ -49,6 +49,7 @@ pub enum Msg {
     ToggleOpenEdge(VisibleEdgeIndex),
     // SelectNodes(Vec<RawNodeIndex>),
     DeselectAll,
+    SelectAll,
     ToggleIgnoreTermIds,
     ShowGeneralizedTerms(Vec<String>),
 }
@@ -124,6 +125,17 @@ impl Component for GraphInfo {
                 ctx.props().update_selected_edges.emit(Vec::new());
                 true
             }
+            Msg::SelectAll => {
+                if let Some(rendered) = &ctx.props().rendered {
+                    self.selected_nodes = rendered.graph.graph.node_weights().map(|n| (n.idx, false)).collect();
+                    self.selected_edges = rendered.graph.graph.edge_indices().map(VisibleEdgeIndex).map(|e| (e, false)).collect();
+                    ctx.props().update_selected_nodes.emit(self.selected_nodes.keys().copied().collect());
+                    ctx.props().update_selected_edges.emit(self.selected_edges.keys().copied().collect());
+                    true
+                } else {
+                    false
+                }
+            }
             // Msg::SelectNodes(nodes) => {
             //     let selected_nodes = nodes.clone();
             //     self.selected_nodes.clear();
@@ -159,6 +171,7 @@ impl Component for GraphInfo {
         let on_node_select = ctx.link().callback(Msg::UserSelectedNode);
         let on_edge_select = ctx.link().callback(Msg::UserSelectedEdge);
         let deselect_all = ctx.link().callback(|_| Msg::DeselectAll);
+        let select_all = ctx.link().callback(|_| Msg::SelectAll);
         let generalized_terms = self.generalized_terms.iter().map(|term| html! {
             <li>{term}</li>
         });
@@ -172,7 +185,8 @@ impl Component for GraphInfo {
                     rendered={ctx.props().rendered.clone()}
                     update_selected_nodes={&on_node_select}
                     update_selected_edges={&on_edge_select}
-                    deselect_all={&deselect_all}
+                    {select_all}
+                    {deselect_all}
                     selected_nodes={self.selected_nodes.keys().copied().collect::<Vec<RawNodeIndex>>()}
                     selected_edges={self.selected_edges.keys().copied().collect::<Vec<VisibleEdgeIndex>>()}
                 />

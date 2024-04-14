@@ -18,10 +18,9 @@ use wasm_timer::Instant;
 use web_sys::{HtmlElement, HtmlInputElement};
 use yew::prelude::*;
 use yew_router::prelude::*;
-use material_yew::{MatButton, MatIcon, MatIconButton, MatDialog, WeakComponentLink};
-use material_yew::dialog::{ActionType, MatDialogAction};
+use material_yew::{MatIcon, MatIconButton, MatDialog, WeakComponentLink};
 
-use crate::configuration::{Configuration, ConfigurationContext, ConfigurationProvider};
+use crate::configuration::{ConfigurationContext, ConfigurationProvider};
 use crate::filters::FiltersState;
 use crate::infobars::{SidebarSectionHeader, Topbar};
 
@@ -34,6 +33,7 @@ mod filters;
 mod global_callbacks;
 pub mod configuration;
 pub mod homepage;
+pub mod shortcuts;
 
 pub const GIT_DESCRIBE: &str = env!("VERGEN_GIT_DESCRIBE");
 pub fn version() -> Option<semver::Version> {
@@ -42,6 +42,7 @@ pub fn version() -> Option<semver::Version> {
 }
 
 const SIZE_NAMES: [&'static str; 5] = ["B", "KB", "MB", "GB", "TB"];
+const ALLOW_HIDE_SIDEBAR_NO_FILE: bool = true;
 
 pub static MOUSE_POSITION: OnceLock<RwLock<PagePosition>> = OnceLock::new();
 pub fn mouse_position() -> &'static RwLock<PagePosition> {
@@ -64,6 +65,8 @@ pub enum Msg {
     RenderedGraph(RenderedGraph),
     SelectedNodes(Vec<RawNodeIndex>),
     SelectedEdges(Vec<VisibleEdgeIndex>),
+    KeyDown(KeyboardEvent),
+    ShowHelpToggled(bool),
     SearchMatchingLoops,
 }
 
@@ -166,7 +169,11 @@ pub struct FileDataComponent {
     progress: LoadingState,
     cancel: Rc<RefCell<bool>>,
     navigation_section: NodeRef,
-    _callback_refs: [CallbackRef; 2],
+    help_dialog: WeakComponentLink<MatDialog>,
+    showing_help: bool,
+    omnibox: NodeRef,
+    sidebar_button: NodeRef,
+    _callback_refs: [CallbackRef; 3],
 }
 
 impl Component for FileDataComponent {
@@ -174,6 +181,7 @@ impl Component for FileDataComponent {
     type Properties = ();
 
     fn create(ctx: &Context<Self>) -> Self {
+        let help_dialog = WeakComponentLink::default();
         let registerer = ctx.link().get_callbacks_registerer().unwrap();
         let mouse_move_ref = (registerer.register_mouse_move)(Callback::from(|event: MouseEvent| {
             *mouse_position().write().unwrap() = PagePosition { x: event.client_x(), y: event.client_y() };
@@ -185,7 +193,8 @@ impl Component for FileDataComponent {
                 event.prevent_default();
             }
         }));
-        let _callback_refs = [mouse_move_ref, drag_over_ref];
+        let keydown = (registerer.register_keyboard_down)(ctx.link().callback(Msg::KeyDown));
+        let _callback_refs = [mouse_move_ref, drag_over_ref, keydown];
         Self {
             file_select: NodeRef::default(),
             file: None,
@@ -194,6 +203,10 @@ impl Component for FileDataComponent {
             progress: LoadingState::NoFileSelected,
             cancel: Rc::default(),
             navigation_section: NodeRef::default(),
+            help_dialog,
+            showing_help: false,
+            omnibox: NodeRef::default(),
+            sidebar_button: NodeRef::default(),
             _callback_refs,
         }
     }
@@ -358,6 +371,37 @@ impl Component for FileDataComponent {
                 file.selected_edges = edges;
                 true
             }
+            Msg::ShowHelpToggled(showing_help) => {
+                self.showing_help = showing_help;
+                false
+            }
+            Msg::KeyDown(event) => match event.key().as_str() {
+                "?" => {
+                    if self.showing_help {
+                        self.help_dialog.close();
+                    } else {
+                        self.help_dialog.show();
+                    }
+                    false
+                }
+                "s" => {
+                    if event.meta_key() {
+                        event.prevent_default();
+                        self.omnibox.cast::<HtmlElement>().and_then(|omnibox| omnibox.focus().ok());
+                    }
+                    false
+                }
+                "b" => {
+                    if event.meta_key() {
+                        event.prevent_default();
+                        if let Some(sidebar_button) = self.sidebar_button.cast::<HtmlElement>() {
+                            sidebar_button.click()
+                        }
+                    }
+                    false
+                }
+                _ => false,
+            }
             Msg::SearchMatchingLoops => {
                 if let Some(file) = &mut self.file {
                     // TODO: re-add finding matching loops
@@ -388,7 +432,6 @@ impl Component for FileDataComponent {
         let is_canary = version().is_none();
 
         let sidebar = NodeRef::default();
-        let scrollable_dialog_link: WeakComponentLink<MatDialog> = WeakComponentLink::default();
 
         let current_trace = match &self.file {
             Some(file) => {
@@ -411,16 +454,19 @@ impl Component for FileDataComponent {
         let sidebar_ref = sidebar.clone();
         let open_files = self.file.is_some();
         let hide_sidebar = Callback::from(move |_| {
-            let sidebar = sidebar_ref.cast::<HtmlElement>().unwrap();
-            if sidebar.class_list().contains("hide-sidebar") || open_files {
-                let _ = sidebar.class_list().toggle("hide-sidebar");
+            if let Some(sidebar) = sidebar_ref.cast::<HtmlElement>() {
+                if ALLOW_HIDE_SIDEBAR_NO_FILE || sidebar.class_list().contains("hide-sidebar") || open_files {
+                    sidebar.class_list().toggle("hide-sidebar").ok();
+                }
             }
         });
-        let scrollable_dialog_link_clone = scrollable_dialog_link.clone();
+        let help_dialog_clone = self.help_dialog.clone();
         let show_shortcuts = Callback::from(move |click: MouseEvent| {
             click.prevent_default();
-            scrollable_dialog_link_clone.show();
+            help_dialog_clone.show();
         });
+        let onopened = ctx.link().callback(|_| Msg::ShowHelpToggled(true));
+        let onclosed = ctx.link().callback(|_| Msg::ShowHelpToggled(false));
         let page = self.file.as_ref().map(|f| {
             let (timeout, cancel) = (f.parser_state.is_timeout(), f.parser_cancelled);
             let link = ctx.link().clone();
@@ -441,7 +487,7 @@ impl Component for FileDataComponent {
         html! {
 <>
     <nav class="sidebar" ref={sidebar}>
-        <header class={header_class}><img src="html/logo_side_small.png" class="brand"/><div class="sidebar-button" onclick={hide_sidebar}><MatIconButton icon="menu"></MatIconButton></div></header>
+        <header class={header_class}><img src="html/logo_side_small.png" class="brand"/><div ref={&self.sidebar_button} class="sidebar-button" onclick={hide_sidebar}><MatIconButton icon="menu"></MatIconButton></div></header>
         <input type="file" ref={&self.file_select} class="trace_file" accept=".log" onchange={on_change} multiple=false/>
         <div class="sidebar-scroll"><div class="sidebar-scroll-container">
             <SidebarSectionHeader header_text="Navigation" collapsed_text="Open a new trace" section={self.navigation_section.clone()}><ul>
@@ -462,20 +508,13 @@ impl Component for FileDataComponent {
         </div></div>
     </nav>
     <div class="topbar">
-        <Topbar progress={self.progress.clone()} />
+        <Topbar progress={self.progress.clone()} omnibox={self.omnibox.clone()} />
     </div>
     <div class="alerts"></div>
     {page}
 
     // Shortcuts dialog
-    <section tabindex="0">
-        <MatDialog heading={"Axiom Profiler Help"} dialog_link={scrollable_dialog_link}>
-            {"There are currently no keyboard shortcuts available."}
-            <MatDialogAction action_type={ActionType::Primary} action={"close"}>
-                <MatButton label="Close" />
-            </MatDialogAction>
-        </MatDialog>
-    </section>
+    <shortcuts::Shortcuts noderef={self.help_dialog.clone()} {onopened} {onclosed}/>
 </>
         }
     }

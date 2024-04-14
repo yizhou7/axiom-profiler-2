@@ -18,8 +18,9 @@ pub struct GraphProps {
     pub rendered: Option<RenderedGraph>,
     pub update_selected_nodes: Callback<RawNodeIndex>,
     pub update_selected_edges: Callback<VisibleEdgeIndex>,
-    pub zoom_factor: f32,
-    pub zoom_factor_delta: f32,
+    pub zoom_factor: f64,
+    pub zoom_factor_delta: f64,
+    pub zoom_with_mouse: bool,
     /// The `RawNodeIndex` here refers to the original graph!
     pub selected_nodes: Vec<RawNodeIndex>,
     /// The `VisibleEdgeIndex` here refers to the VisibleGraph!
@@ -41,6 +42,7 @@ pub fn Graph(props: &GraphProps) -> Html {
         let div_ref = div_ref.clone();
         let zoom_factor = props.zoom_factor as f64;
         let zoom_factor_delta = props.zoom_factor_delta;
+        let zoom_with_mouse = props.zoom_with_mouse;
         let centered = use_state(|| false);
         let mut scroll_position = props.scroll_position;
         let scroll_window = props.scroll_window.clone();
@@ -67,18 +69,22 @@ pub fn Graph(props: &GraphProps) -> Html {
                     svg_el.set_attribute("viewBox", format!("{} {} {} {}", -MARGIN, -MARGIN, svg_width, svg_height).as_str()).unwrap();
 
                     let new_scroll = {
-                        let mouse = *mouse_position().read().unwrap();
-                        let (x, y) = (mouse.x as f64 - sw_x, mouse.y as f64 - sw_y);
-                        // How much of the edge should go to zooming in there
-                        const EDGE_ZOOM_BOUNDARY: f64 = 0.15;
-                        let (lower_x, upper_x) = (sw_w * EDGE_ZOOM_BOUNDARY, sw_w * (1.0 - EDGE_ZOOM_BOUNDARY));
-                        let (lower_y, upper_y) = (sw_h * EDGE_ZOOM_BOUNDARY, sw_h * (1.0 - EDGE_ZOOM_BOUNDARY));
-                        let (x, y) = match (x < lower_x, x > upper_x, y < lower_y, y > upper_y) {
-                            (true, false, true, false) => (0.0, 0.0),
-                            (false, true, true, false) => (sw_w, 0.0),
-                            (true, false, false, true) => (0.0, sw_h),
-                            (false, true, false, true) => (sw_w, sw_h),
-                            _ => (x, y),
+                        let (x, y) = if zoom_with_mouse {
+                            let mouse = *mouse_position().read().unwrap();
+                            let (x, y) = (mouse.x as f64 - sw_x, mouse.y as f64 - sw_y);
+                            // How much of the edge should go to zooming in there
+                            const EDGE_ZOOM_BOUNDARY: f64 = 0.15;
+                            let (lower_x, upper_x) = (sw_w * EDGE_ZOOM_BOUNDARY, sw_w * (1.0 - EDGE_ZOOM_BOUNDARY));
+                            let (lower_y, upper_y) = (sw_h * EDGE_ZOOM_BOUNDARY, sw_h * (1.0 - EDGE_ZOOM_BOUNDARY));
+                            match (x < lower_x, x > upper_x, y < lower_y, y > upper_y) {
+                                (true, false, true, false) => (0.0, 0.0),
+                                (false, true, true, false) => (sw_w, 0.0),
+                                (true, false, false, true) => (0.0, sw_h),
+                                (false, true, false, true) => (sw_w, sw_h),
+                                _ => (x, y),
+                            }
+                        } else {
+                            (sw_w / 2.0, sw_h / 2.0)
                         };
 
                         if !*centered {
