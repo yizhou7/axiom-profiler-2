@@ -2,11 +2,14 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Mutex, OnceLock, RwLock};
 
+use commands::{Command, CommandRef, CommandsContext};
 use fxhash::{FxHashMap, FxHashSet};
+use gloo::timers::callback::Timeout;
 use gloo_file::File;
 use gloo_file::{callbacks::FileReader, FileList};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
-use results::svg_result::{Msg as SVGMsg, RenderedGraph, RenderingState, SVGResult};
+use results::graph_info;
+use results::svg_result::{Msg as SVGMsg, QuantIdxToColourMap, RenderedGraph, RenderingState, SVGResult};
 use smt_log_parser::items::{InstIdx, QuantIdx};
 use smt_log_parser::parsers::z3::graph::{InstGraph, VisibleEdgeIndex, RawNodeIndex};
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
@@ -20,11 +23,14 @@ use yew::prelude::*;
 use yew_router::prelude::*;
 use material_yew::{MatIcon, MatIconButton, MatDialog, WeakComponentLink};
 
+use crate::commands::CommandsProvider;
 use crate::configuration::{ConfigurationContext, ConfigurationProvider};
 use crate::filters::FiltersState;
-use crate::infobars::{SidebarSectionHeader, Topbar};
+use crate::infobars::{SearchAction, SearchActionGroup, SearchActionResult, SidebarSectionHeader, Topbar};
+use crate::utils::lookup::StringLookupZ3;
 
 pub use global_callbacks::{GlobalCallbacksProvider, CallbackRef, GlobalCallbacksContext};
+pub use utils::position::*;
 
 pub mod results;
 mod utils;
@@ -34,6 +40,7 @@ mod global_callbacks;
 pub mod configuration;
 pub mod homepage;
 pub mod shortcuts;
+pub mod commands;
 
 pub const GIT_DESCRIBE: &str = env!("VERGEN_GIT_DESCRIBE");
 pub fn version() -> Option<semver::Version> {
@@ -46,16 +53,8 @@ const ALLOW_HIDE_SIDEBAR_NO_FILE: bool = true;
 
 pub static MOUSE_POSITION: OnceLock<RwLock<PagePosition>> = OnceLock::new();
 pub fn mouse_position() -> &'static RwLock<PagePosition> {
-    MOUSE_POSITION.get_or_init(|| RwLock::new(PagePosition { x: 0, y: 0 }))
+    MOUSE_POSITION.get_or_init(|| RwLock::default())
 }
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct Position<T> {
-    pub x: T,
-    pub y: T,
-}
-pub type PagePosition = Position<i32>;
-pub type PrecisePosition = Position<f64>;
-
 pub static PREVENT_DEFAULT_DRAG_OVER: OnceLock<Mutex<bool>> = OnceLock::new();
 
 pub enum Msg {
@@ -170,10 +169,12 @@ pub struct FileDataComponent {
     cancel: Rc<RefCell<bool>>,
     navigation_section: NodeRef,
     help_dialog: WeakComponentLink<MatDialog>,
+    insts_info_link: WeakComponentLink<graph_info::GraphInfo>,
     showing_help: bool,
     omnibox: NodeRef,
     sidebar_button: NodeRef,
     _callback_refs: [CallbackRef; 3],
+    _command_refs: [CommandRef; 3],
 }
 
 impl Component for FileDataComponent {
@@ -181,20 +182,57 @@ impl Component for FileDataComponent {
     type Properties = ();
 
     fn create(ctx: &Context<Self>) -> Self {
-        let help_dialog = WeakComponentLink::default();
+        let help_dialog = WeakComponentLink::<MatDialog>::default();
+        let sidebar_button = NodeRef::default();
+        let omnibox = NodeRef::default();
+
+        // Global Callbacks
         let registerer = ctx.link().get_callbacks_registerer().unwrap();
         let mouse_move_ref = (registerer.register_mouse_move)(Callback::from(|event: MouseEvent| {
-            *mouse_position().write().unwrap() = PagePosition { x: event.client_x(), y: event.client_y() };
+            *mouse_position().write().unwrap() = PagePosition::from(&event);
         }));
         let pd = PREVENT_DEFAULT_DRAG_OVER.get_or_init(|| Mutex::default());
         let drag_over_ref = (registerer.register_drag_over)(Callback::from(|event: DragEvent| {
-            *mouse_position().write().unwrap() = PagePosition { x: event.client_x(), y: event.client_y() };
+            *mouse_position().write().unwrap() = PagePosition::from(&event);
             if *pd.lock().unwrap() {
                 event.prevent_default();
             }
         }));
         let keydown = (registerer.register_keyboard_down)(ctx.link().callback(Msg::KeyDown));
         let _callback_refs = [mouse_move_ref, drag_over_ref, keydown];
+
+        // Commands
+        let commands = ctx.link().get_commands_registerer().unwrap();
+        let omnibox_ref = omnibox.clone();
+        let search_cmd = Command {
+            name: "Search".to_string(),
+            execute: Callback::from(move |_| {
+                let omnibox_ref = omnibox_ref.clone();
+                Timeout::new(10, move || { omnibox_ref.cast::<HtmlElement>().map(|omnibox| omnibox.focus().ok()); }).forget();
+            }),
+            keyboard_shortcut: vec!["Cmd", "s"],
+            disabled: false,
+        };
+        let search_cmd = (commands)(search_cmd);
+        let help_dialog_ref = help_dialog.clone();
+        let help_cmd = Command {
+            name: "Show help".to_string(),
+            execute: Callback::from(move |_| help_dialog_ref.show()),
+            keyboard_shortcut: vec!["?"],
+            disabled: false,
+        };
+        let help_cmd = (commands)(help_cmd);
+        let sidebar_button_ref = sidebar_button.clone();
+        let hide_sidebar_cmd = Command {
+            name: "Toggle left sidebar".to_string(),
+            execute: Callback::from(move |_| {
+                sidebar_button_ref.cast::<HtmlElement>().map(|b| b.click());
+            }),
+            keyboard_shortcut: vec!["Cmd", "b"],
+            disabled: false,
+        };
+        let hide_sidebar_cmd = (commands)(hide_sidebar_cmd);
+        let _command_refs = [help_cmd, hide_sidebar_cmd, search_cmd];
         Self {
             file_select: NodeRef::default(),
             file: None,
@@ -204,10 +242,12 @@ impl Component for FileDataComponent {
             cancel: Rc::default(),
             navigation_section: NodeRef::default(),
             help_dialog,
+            insts_info_link: WeakComponentLink::default(),
             showing_help: false,
-            omnibox: NodeRef::default(),
-            sidebar_button: NodeRef::default(),
+            omnibox,
+            sidebar_button,
             _callback_refs,
+            _command_refs,
         }
     }
 
@@ -443,6 +483,32 @@ impl Component for FileDataComponent {
             None => html!{},
         };
 
+        let parser = ctx.link().get_configuration().unwrap().config.parser;
+        let parser_ref = parser.clone();
+        let visible = self.file.as_ref().and_then(|f| f.rendered.as_ref().map(|r| r.graph.clone()));
+        let visible_ref = visible.clone();
+        let search = Callback::from(move |query: String| {
+            let Some(parser) = parser_ref.as_ref() else {
+                return None
+            };
+            let matches = parser.lookup.get_fuzzy(&query);
+            Some(SearchActionResult::new(query, matches, parser, visible_ref.as_deref()))
+        });
+        let pick = Callback::from(move |(name, kind): (String, _)| {
+            let parser = parser.as_ref()?;
+            let entry = parser.lookup.get_exact(&name)?.get(&kind)?;
+            Some(entry.get_visible(&*parser.graph.as_ref()?.borrow(), visible.as_deref()?))
+        });
+        let insts_info_link = self.insts_info_link.clone();
+        let select = Callback::from(move |idx: RawNodeIndex| {
+            let Some(insts_info_link) = &*insts_info_link.borrow() else {
+                return;
+            };
+            insts_info_link.send_message(graph_info::Msg::DeselectAll);
+            insts_info_link.send_message(graph_info::Msg::UserSelectedNode(idx));
+            insts_info_link.send_message(graph_info::Msg::ScrollZoomSelection);
+        });
+
         // Callbacks
         let file_select_ref = self.file_select.clone();
         let on_change = ctx.link().callback(move |_| {
@@ -479,7 +545,11 @@ impl Component for FileDataComponent {
             });
             let selected_nodes = ctx.link().callback(Msg::SelectedNodes);
             let selected_edges = ctx.link().callback(Msg::SelectedEdges);
-            Self::view_file(f.clone(), progress, selected_nodes, selected_edges)
+            html! {
+                <div class="page">
+                    <SVGResult file={f.clone()} {progress} {selected_nodes} {selected_edges} insts_info_link={self.insts_info_link.clone()}/>
+                </div>
+            }
         }).unwrap_or_else(|| {
             html!{<homepage::Homepage {is_canary}/>}
         });
@@ -508,7 +578,7 @@ impl Component for FileDataComponent {
         </div></div>
     </nav>
     <div class="topbar">
-        <Topbar progress={self.progress.clone()} omnibox={self.omnibox.clone()} />
+        <Topbar progress={self.progress.clone()} omnibox={self.omnibox.clone()} {search} {pick} {select} />
     </div>
     <div class="alerts"></div>
     {page}
@@ -538,27 +608,19 @@ impl Component for FileDataComponent {
     }
 }
 
-impl FileDataComponent {
-    fn view_file(data: OpenedFileInfo, progress: Callback<Result<RenderedGraph, RenderingState>>, selected_nodes: Callback<Vec<RawNodeIndex>>, selected_edges: Callback<Vec<VisibleEdgeIndex>>) -> Html {
-        html! {
-            <div class="page">
-                <SVGResult file={data} {progress} {selected_nodes} {selected_edges}/>
-            </div>
-        }
-    }
-}
-
 #[function_component(App)]
 pub fn app() -> Html {
     html! {
-        <main><GlobalCallbacksProvider>
+        <main><GlobalCallbacksProvider><CommandsProvider>
             <ConfigurationProvider><FileDataComponent/></ConfigurationProvider>
-        </GlobalCallbacksProvider></main>
+        </CommandsProvider></GlobalCallbacksProvider></main>
     }
 }
 
 pub struct RcParser {
     parser: Rc<Z3Parser>,
+    lookup: Rc<StringLookupZ3>,
+    colour_map: QuantIdxToColourMap,
     graph: Option<Rc<RefCell<InstGraph>>>,
     found_mls: Option<usize>,
 }
@@ -567,6 +629,8 @@ impl Clone for RcParser {
     fn clone(&self) -> Self {
         Self {
             parser: self.parser.clone(),
+            lookup: self.lookup.clone(),
+            colour_map: self.colour_map,
             graph: self.graph.clone(),
             found_mls: self.found_mls,
         }
@@ -584,8 +648,13 @@ impl Eq for RcParser {}
 
 impl RcParser {
     fn new(parser: Z3Parser) -> Self {
+        let (quant_count, non_quant_insts) = parser.quant_count_incl_theory_solving();
+        let colour_map = QuantIdxToColourMap::new(quant_count, non_quant_insts);
+        let lookup = StringLookupZ3::init(&parser);
         Self {
             parser: Rc::new(parser),
+            lookup: Rc::new(lookup),
+            colour_map,
             graph: None,
             found_mls: None,
         }

@@ -35,9 +35,10 @@ pub fn Shortcuts(props: &ShortcutsProps) -> Html {
                 <table>
                     <tr><td><div class="keycap">{"f"}</div> {" (with selection)"}</td><td>{"Scroll + zoom to current selection"}</td></tr>
                     <tr><td><div class="keycap">{"Cmd"}</div>{" + "}<div class="keycap">{"a"}</div></td><td>{"Select all"}</td></tr>
+                    <tr><td><div class="keycap">{"Esc"}</div></td><td>{"Deselect"}</td></tr>
                     <tr><td><div class="keycap">{"Cmd"}</div>{" + "}<div class="keycap">{"s"}</div></td><td>{"Search"}</td></tr>
                     <tr><td><div class="keycap">{"r"}</div></td><td>{"Toggle selected details drawer"}</td></tr>
-                    <tr><td><div class="keycap">{"Cmd"}</div>{" + "}<div class="keycap">{"b"}</div></td><td>{"Toggle display of sidebar"}</td></tr>
+                    <tr><td><div class="keycap">{"Cmd"}</div>{" + "}<div class="keycap">{"b"}</div></td><td>{"Toggle display of left sidebar"}</td></tr>
                     <tr><td><div class="keycap">{"?"}</div></td><td>{"Show help"}</td></tr>
                 </table>
             </div></main>

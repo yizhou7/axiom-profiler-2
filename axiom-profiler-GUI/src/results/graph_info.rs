@@ -10,12 +10,13 @@ use smt_log_parser::{
 use web_sys::HtmlElement;
 use yew::prelude::*;
 
-use super::{graph::graph_container::GraphContainer, node_info::{SelectedEdgesInfo, SelectedNodesInfo}, svg_result::RenderedGraph};
+use super::{graph::graph_container, node_info::{SelectedEdgesInfo, SelectedNodesInfo}, svg_result::RenderedGraph};
 
 pub struct GraphInfo {
     selected_nodes: IndexMap<RawNodeIndex, bool>,
     selected_edges: IndexMap<VisibleEdgeIndex, bool>,
     generalized_terms: Vec<String>,
+    graph_container: WeakComponentLink<graph_container::GraphContainer>,
 }
 
 fn toggle_selected<T: Copy + Eq + std::hash::Hash>(map: &mut IndexMap<T, bool>, entry: T) -> Vec<T> {
@@ -43,6 +44,7 @@ fn toggle_selected<T: Copy + Eq + std::hash::Hash>(map: &mut IndexMap<T, bool>, 
 }
 
 pub enum Msg {
+    ScrollZoomSelection,
     UserSelectedNode(RawNodeIndex),
     UserSelectedEdge(VisibleEdgeIndex),
     ToggleOpenNode(RawNodeIndex),
@@ -82,6 +84,7 @@ impl Component for GraphInfo {
             selected_nodes: ctx.props().selected_nodes.iter().copied().map(|n| (n, false)).collect(),
             selected_edges: ctx.props().selected_edges.iter().copied().map(|e| (e, false)).collect(),
             generalized_terms: Vec::new(),
+            graph_container: WeakComponentLink::default(),
         }
     }
 
@@ -154,6 +157,14 @@ impl Component for GraphInfo {
                 self.generalized_terms = terms;
                 true
             }
+            Msg::ScrollZoomSelection => {
+                let Some(graph_container) = &*self.graph_container.borrow() else {
+                    return false;
+                };
+                let msg = graph_container::Msg::ScrollZoomSelection(self.selected_nodes.keys().copied().collect(), self.selected_edges.keys().copied().collect());
+                graph_container.send_message(msg);
+                false
+            }
         }
     }
 
@@ -181,7 +192,7 @@ impl Component for GraphInfo {
         html! {
             <>
             <SplitDiv initial_position={0.7} {left_bound} right_bound={1.0} snap_positions={vec![0.3, 0.7, 1.0]}>
-                <GraphContainer
+                <graph_container::GraphContainer
                     rendered={ctx.props().rendered.clone()}
                     update_selected_nodes={&on_node_select}
                     update_selected_edges={&on_edge_select}
@@ -189,6 +200,7 @@ impl Component for GraphInfo {
                     {deselect_all}
                     selected_nodes={self.selected_nodes.keys().copied().collect::<Vec<RawNodeIndex>>()}
                     selected_edges={self.selected_edges.keys().copied().collect::<Vec<VisibleEdgeIndex>>()}
+                    weak_link={self.graph_container.clone()}
                 />
 
                 <div style="width:100%; height:100%; overflow-wrap:anywhere; overflow:clip auto;">

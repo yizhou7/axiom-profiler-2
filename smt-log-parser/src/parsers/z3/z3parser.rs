@@ -574,6 +574,13 @@ impl Z3Parser {
     pub fn quant_count_incl_theory_solving(&self) -> (usize, bool) {
         (self.quantifiers.len(), self.insts.has_theory_solving_inst())
     }
+
+    pub fn quantifiers(&self) -> impl Iterator<Item = (QuantIdx, &Quantifier)> {
+        self.quantifiers.iter_enumerated()
+    }
+    pub fn instantiations(&self) -> impl Iterator<Item = (InstIdx, &Instantiation)> {
+        self.insts.insts.iter_enumerated()
+    }
 }
 
 impl std::ops::Index<TermIdx> for Z3Parser {
