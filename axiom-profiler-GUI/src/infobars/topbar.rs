@@ -15,34 +15,38 @@ pub struct TopbarProps {
 
 #[function_component]
 pub fn Topbar(props: &TopbarProps) -> Html {
-    let mut failed = "";
-    log::info!("Got progress: {:?}", props.progress);
-    let loading = match &props.progress {
+    let mut class = "progress progress-anim";
+    let mut closed = false;
+    let mut indeterminate = false;
+    let mut progress = 0.0;
+    let mut buffer = 0.0;
+    match &props.progress {
         LoadingState::NoFileSelected =>
-            html!{<MatLinearProgress closed=true />},
+            closed = true,
         LoadingState::ReadingToString =>
-            html!{<MatLinearProgress indeterminate=true />},
+            indeterminate = true,
         LoadingState::StartParsing =>
-            html!{<MatLinearProgress indeterminate=true />},
+            indeterminate = true,
         LoadingState::Parsing(parsing, _) => {
-            let progress = parsing.reader.bytes_read as f64 / parsing.file_size as f64;
-            html!{<MatLinearProgress progress={progress as f32} buffer={1.0} />}
+            progress = (parsing.reader.bytes_read as f64 / parsing.file_size as f64) as f32;
+            buffer = 1.0;
         }
         LoadingState::DoneParsing(timeout, cancelled) => {
             if *timeout && !*cancelled {
-                failed = "loading-bar-failed";
+                class = "progress progress-anim loading-bar-failed";
             }
-            html!{<MatLinearProgress progress={1.0} buffer={1.0} />}
+            progress = 1.0;
+            buffer = 1.0;
         }
         LoadingState::Rendering(..) =>
-            html!{<MatLinearProgress indeterminate=true />},
+            indeterminate = true,
         LoadingState::FileDisplayed =>
-            html!{<MatLinearProgress closed=true />},
+            closed = true,
     };
     html! {
     <>
         <Omnibox progress={props.progress.clone()} omnibox={props.omnibox.clone()} search={props.search.clone()} pick={props.pick.clone()} select={props.select.clone()} />
-        <div class={format!("progress progress-anim {failed}")}>{loading}</div>
+        <div {class}><MatLinearProgress {closed} {indeterminate} {progress} {buffer}/></div>
     </>
     }
 }
