@@ -3,11 +3,10 @@ use crate::{
 };
 
 use super::{
-    filters::{Disabler, Filter},
-    worker::Worker,
+    filters::{Disabler, Filter}, render_warning::{Warning, WarningChoice}, worker::Worker
 };
 use gloo::console::log;
-use material_yew::WeakComponentLink;
+use material_yew::{dialog::MatDialog, WeakComponentLink};
 use num_format::{Locale, ToFormattedString};
 use palette::{encoding::Srgb, white_point::D65, FromColor, Hsl, Hsluv, Hsv, LuvHue};
 use petgraph::{dot::{Config, Dot}, visit::EdgeRef};
@@ -52,7 +51,7 @@ pub enum Msg {
     RenderGraph,
     ApplyFilter(Filter),
     ResetGraph,
-    GetUserPermission(GraphDimensions, bool),
+    UserPermission(WarningChoice),
     WorkerOutput(super::worker::WorkerOutput),
     // UpdateSelectedNodes(Vec<RawNodeIndex>),
     // SearchMatchingLoops,
@@ -60,7 +59,7 @@ pub enum Msg {
     // ShowMatchingLoopSubgraph,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GraphDimensions {
     pub node_count: usize,
     pub edge_count: usize,
@@ -82,6 +81,7 @@ pub struct SVGResult {
     /// The calculated graph is moved here once rendered.
     rendered: Option<RenderedGraph>,
 
+    graph_warning: WeakComponentLink<MatDialog>,
     insts_info_link: WeakComponentLink<GraphInfo>,
     graph_dim: GraphDimensions,
     permissions: GraphDimensions,
@@ -151,6 +151,7 @@ impl Component for SVGResult {
             colour_map,
             calculated: None,
             rendered: None,
+            graph_warning: WeakComponentLink::default(),
             insts_info_link: WeakComponentLink::default(),
             graph_dim: GraphDimensions {
                 node_count: 0,
@@ -376,52 +377,27 @@ impl Component for SVGResult {
                     false
                 } else {
                     self.calculated = Some(calculated);
-                    ctx.link().send_message(Msg::GetUserPermission(self.graph_dim, true));
-                    false
+                    self.graph_warning.show();
+                    true
                 }
             }
-            Msg::GetUserPermission(permission, render) => {
-                let window = window().unwrap();
-                let node_count = self.graph_dim.node_count.to_formatted_string(&Locale::en);
-                let edge_count = self.graph_dim.edge_count.to_formatted_string(&Locale::en);
-                let message = format!("Warning: The graph you are about to render contains {} nodes and {} edges, rendering might be slow. Do you want to proceed?", node_count, edge_count);
-                let result = window.confirm_with_message(&message);
-                match result {
-                    Ok(true) => {
-                        ctx.link().send_message(Msg::SetPermission(permission));
-                        if render {
-                            // if the user wishes to render the current graph, we do so
-                            ctx.link()
-                                .send_message(Msg::RenderGraph);
-                        }
-                        false
-                    }
-                    Ok(false) => {
-                        // this resets the filter chain to the filter chain that we had
-                        // right before adding the filter that caused too many nodes
-                        // to be added to the graph
-                        let message = "Would you like to apply the filter without rendering?";
-                        let result = window.confirm_with_message(message);
-                        match result {
-                            Ok(true) => {
-                                self.async_graph_and_filter_chain = true;
-                                true
-                            }
-                            Ok(false) => {
-                                ctx.props().file.filter
-                                    .borrow()
-                                    .clone()
-                                    .unwrap()
-                                    .send_message(filters::Msg::UndoOperation);
-                                false
-                            }
-                            Err(_) => false,
-                        }
-                    }
-                    Err(_) => {
-                        // Handle the case where an error occurred
-                        false
-                    }
+            Msg::UserPermission(choice) => match choice {
+                WarningChoice::Cancel => {
+                    ctx.props().file.filter
+                        .borrow()
+                        .as_ref()
+                        .unwrap()
+                        .send_message(filters::Msg::UndoOperation);
+                    false
+                }
+                WarningChoice::Apply => {
+                    self.async_graph_and_filter_chain = true;
+                    true
+                }
+                WarningChoice::Render => {
+                    ctx.link().send_message(Msg::SetPermission(self.graph_dim));
+                    ctx.link().send_message(Msg::RenderGraph);
+                    false
                 }
             }
             Msg::UpdateSvgText(svg_text, rendered) => {
@@ -441,7 +417,7 @@ impl Component for SVGResult {
             return html! {};
         };
         html! {
-            <GraphInfo
+            <><GraphInfo
                 weak_link={self.insts_info_link.clone()}
                 // node_info={data.get_node_info.clone()}
                 // edge_info={data.get_edge_info.clone()}
@@ -453,6 +429,7 @@ impl Component for SVGResult {
                 selected_edges={ctx.props().file.selected_edges.clone()}
                 update_selected_edges={ctx.props().selected_edges.clone()}
             />
+            <Warning noderef={self.graph_warning.clone()} onclosed={ctx.link().callback(Msg::UserPermission)} dimensions={self.graph_dim}/></>
         }
     }
 }
