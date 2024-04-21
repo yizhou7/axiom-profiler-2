@@ -190,7 +190,7 @@ impl Component for FiltersState {
         let file = &ctx.props().file;
         let (size, unit) = file_size_display(file.file_size);
         let details = match &file.parser_state {
-            ParseState::Paused(state) => {
+            ParseState::Paused(_, state) => {
                 let (parse_size, parse_unit) = file_size_display(state.bytes_read as u64);
                 format!("{} ({parse_size} {parse_unit}/{size} {unit})", file.file_name)
             }
