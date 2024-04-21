@@ -1,96 +1,69 @@
+use chrono::{DateTime, Utc};
 use material_yew::linear_progress::MatLinearProgress;
-use yew::{function_component, html, AttrValue, Callback, Html, MouseEvent, NodeRef, Properties};
+use smt_log_parser::parsers::z3::graph::RawNodeIndex;
+use yew::{function_component, html, Callback, Html, NodeRef, Properties};
 
-use crate::{results::svg_result::RenderingState, LoadingState, SIZE_NAMES};
+use crate::{infobars::{Omnibox, SearchActionResult}, utils::lookup::Kind, LoadingState};
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct OmnibarMessage {
+    pub message: String,
+    pub is_error: bool,
+}
 
 #[derive(PartialEq, Properties)]
 pub struct TopbarProps {
     pub progress: LoadingState,
+    pub message: Option<OmnibarMessage>,
     pub omnibox: NodeRef,
+    pub search: Callback<String, Option<SearchActionResult>>,
+    pub pick: Callback<(String, Kind), Option<Vec<RawNodeIndex>>>,
+    pub select: Callback<RawNodeIndex>,
 }
 
 #[function_component]
 pub fn Topbar(props: &TopbarProps) -> Html {
-    let mut failed = "";
-    let mut omnibox_info = None;
-    let mut icon = None;
-    let mut callback = None;
-    log::info!("Got progress: {:?}", props.progress);
-    let loading = match &props.progress {
-        LoadingState::NoFileSelected =>
-            html!{<MatLinearProgress closed=true />},
-        LoadingState::ReadingToString => {
-            omnibox_info = Some(AttrValue::from("Loading trace"));
-            html!{<MatLinearProgress indeterminate=true />}
+    let mut class = "progress progress-anim";
+    let mut closed = false;
+    let mut indeterminate = false;
+    let mut progress = 0.0;
+    let mut buffer = 0.0;
+    match &props.progress {
+        LoadingState::NoFileSelected => {
+            closed = true;
         }
-        LoadingState::StartParsing => {
-            omnibox_info = Some(AttrValue::from("Parsing trace"));
-            html!{<MatLinearProgress indeterminate=true />}
-        }
-        LoadingState::Parsing(parsing, cancel) => {
-            icon = Some("stop_circle");
-            callback = Some(cancel);
-            let progress = parsing.reader.bytes_read as f64 / parsing.file_size as f64;
-            let info = if let Some(mut speed) = &parsing.speed {
-                let mut idx = 0;
-                while speed >= 10_000.0 && idx + 1 < SIZE_NAMES.len() {
-                    speed /= 1024.0;
-                    idx += 1;
-                }
-                format!("Parsing trace {:.0}% - {:.0} {}/s", progress * 100.0, speed, SIZE_NAMES[idx])
-            } else {
-                format!("Parsing trace {:.0}%", progress * 100.0)
-            };
-            omnibox_info = Some(AttrValue::from(info));
-            html!{<MatLinearProgress progress={progress as f32} buffer={1.0} />}
+        LoadingState::ReadingToString =>
+            indeterminate = true,
+        LoadingState::StartParsing =>
+            indeterminate = true,
+        LoadingState::Parsing(parsing, _) => {
+            progress = (parsing.reader.bytes_read as f64 / parsing.file_size as f64) as f32;
+            buffer = 1.0;
         }
         LoadingState::DoneParsing(timeout, cancelled) => {
             if *timeout && !*cancelled {
-                failed = "loading-bar-failed";
+                class = "progress progress-anim loading-bar-failed";
             }
-            html!{<MatLinearProgress progress={1.0} buffer={1.0} />}
+            progress = 1.0;
+            buffer = 1.0;
         }
-        LoadingState::Rendering(RenderingState::ConstructingGraph, timeout, _) |
-        LoadingState::Rendering(RenderingState::ConstructedGraph, timeout, _) => {
-            if *timeout {
-                omnibox_info = Some(AttrValue::from("Analysing partial trace"));
-            } else {
-                omnibox_info = Some(AttrValue::from("Analysing trace"));
-            }
-            html!{<MatLinearProgress indeterminate=true />}
-        }
-        LoadingState::Rendering(RenderingState::GraphToDot, _, _) => {
-            omnibox_info = Some(AttrValue::from("Rendering trace"));
-            html!{<MatLinearProgress indeterminate=true />}
-        }
-        LoadingState::Rendering(RenderingState::RenderingGraph, _, _) => {
-            omnibox_info = Some(AttrValue::from("Rendering trace"));
-            html!{<MatLinearProgress indeterminate=true />}
-        }
+        LoadingState::Rendering(..) =>
+            indeterminate = true,
         LoadingState::FileDisplayed =>
-            html!{<MatLinearProgress closed=true />},
+            closed = true,
     };
-    let omnibox_disabled = omnibox_info.is_some();
-    let icon = icon.unwrap_or(if omnibox_disabled { "info" } else { "search" });
-    let icon = if let Some(callback) = callback {
-        let callback = callback.clone();
-        let onclick = Callback::from(move |click: MouseEvent| {
-            click.prevent_default();
-            callback.emit(());
-        });
-        html! { <a href="#" class="icon" onclick={onclick}>{icon}</a> }
-    } else {
-        html! { <div class="icon">{icon}</div> }
-    };
-    let placeholder = omnibox_info.unwrap_or(AttrValue::from("Search or type '>' for commands"));
+    if props.message.as_ref().is_some_and(|m| m.is_error) {
+        class = "progress progress-anim loading-bar-failed";
+        progress = 1.0;
+        buffer = 1.0;
+        closed = false;
+        indeterminate = false;
+    }
 
     html! {
     <>
-        <div class="omnibox">
-            {icon}
-            <input ref={props.omnibox.clone()} placeholder={placeholder} readonly={omnibox_disabled} disabled={omnibox_disabled}/>
-        </div>
-        <div class={format!("progress progress-anim {failed}")}>{loading}</div>
+        <Omnibox progress={props.progress.clone()} message={props.message.clone()} omnibox={props.omnibox.clone()} search={props.search.clone()} pick={props.pick.clone()} select={props.select.clone()} />
+        <div {class}><MatLinearProgress {closed} {indeterminate} {progress} {buffer}/></div>
     </>
     }
 }

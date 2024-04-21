@@ -212,6 +212,43 @@ mod wrapper {
         pub fn is_done(&self) -> bool {
             self.reader.is_none()
         }
+
+        async fn process_line(
+            reader: &mut Box<dyn ReadBound>,
+            reader_state: &mut ReaderState,
+            parser: &mut Parser,
+            buf: &mut String,
+        ) -> Result<Option<bool>, FatalError> {
+            buf.clear();
+            // Read line
+            let mut bytes_read = 0;
+
+            loop {
+                bytes_read += add_await([reader.read_line(buf)])?;
+                reader_state.lines_read += 1;
+                let peek = add_await([reader.fill_buf()])?;
+                // Stop reading if this is the end or we don't have a multiline.
+                if peek.is_empty() || parser.is_line_start(peek[0]) {
+                    break;
+                }
+            }
+            // Remove newline from end
+            if buf.ends_with('\n') {
+                buf.pop();
+                if buf.ends_with('\r') {
+                    buf.pop();
+                }
+            }
+            if bytes_read == 0 {
+                return Ok(Some(true));
+            }
+
+            // Parse line
+            reader_state.bytes_read += bytes_read;
+            let stop_parsing = !parser.process_line(&buf, reader_state.lines_read)?;
+            Ok(stop_parsing.then(|| false))
+        }
+
         /// Parse the the input while calling the `predicate` callback after
         /// each line. Keep parsing until the callback returns `Some(t)` or we
         /// reach the end of the input. If we stopped due to the callback,
@@ -234,44 +271,14 @@ mod wrapper {
                 if let Some(t) = predicate(&self.parser, self.reader_state) {
                     return ParseState::Paused(t, self.reader_state);
                 }
-                buf.clear();
-                // Read line
-                let mut bytes_read = 0;
-
-                loop {
-                    bytes_read += add_await([reader.read_line(&mut buf)]).unwrap();
-                    self.reader_state.lines_read += 1;
-                    let peek = add_await([reader.fill_buf()]).unwrap();
-                    // Stop reading if this is the end or we don't have a multiline.
-                    if peek.is_empty() || self.parser.is_line_start(peek[0]) {
-                        break;
-                    }
-                }
-                // Remove newline from end
-                if buf.ends_with('\n') {
-                    buf.pop();
-                    if buf.ends_with('\r') {
-                        buf.pop();
-                    }
-                }
-                // Parse line
-                let state = if bytes_read == 0 {
-                    Some(ParseState::Completed { end_of_stream: true })
-                } else {
-                    self.reader_state.bytes_read += bytes_read;
-                    match self.parser.process_line(&buf, self.reader_state.lines_read) {
-                        Ok(true) => None,
-                        Ok(false) =>
-                            Some(ParseState::Completed { end_of_stream: false }),
-                        Err(err) =>
-                            Some(ParseState::Error(err)),
-                    }
+                let state = match add_await([Self::process_line(reader, &mut self.reader_state, &mut self.parser, &mut buf)]) {
+                    Ok(None) => continue,
+                    Ok(Some(end_of_stream)) => ParseState::Completed { end_of_stream },
+                    Err(err) => ParseState::Error(err),
                 };
-                if let Some(state) = state {
-                    drop(self.reader.take()); // Release file handle/free up memory
-                    self.parser.end_of_file();
-                    return state;
-                }
+                drop(self.reader.take()); // Release file handle/free up memory
+                self.parser.end_of_file();
+                return state;
             }
         }
         /// Identical to [`process_until`] except the predicate is only checked

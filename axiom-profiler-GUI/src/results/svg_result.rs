@@ -8,7 +8,7 @@ use super::{
 use gloo::console::log;
 use material_yew::{dialog::MatDialog, WeakComponentLink};
 use num_format::{Locale, ToFormattedString};
-use palette::{encoding::Srgb, white_point::D65, FromColor, Hsl, Hsluv, Hsv, LuvHue};
+use palette::{encoding::Srgb, white_point::D65, FromColor, Hsl, Hsluv, Hsv, LuvHue, RgbHue};
 use petgraph::{dot::{Config, Dot}, visit::EdgeRef};
 use smt_log_parser::{
     display_with::DisplayCtxt, items::{BlameKind, InstIdx, MatchKind, QuantIdx}, parsers::{
@@ -45,6 +45,7 @@ impl Eq for RenderedGraph {}
 
 pub enum Msg {
     ConstructedGraph(Rc<RefCell<InstGraph>>),
+    FailedConstructGraph(String),
     UpdateSvgText(AttrValue, VisibleInstGraph),
     SetPermission(GraphDimensions),
     SetDisabled(Vec<Disabler>),
@@ -73,8 +74,13 @@ pub enum RenderingState {
     RenderingGraph,
 }
 
+pub enum GraphState {
+    Rendering(RenderingState),
+    Constructed(RenderedGraph),
+    Failed(String),
+}
+
 pub struct SVGResult {
-    colour_map: QuantIdxToColourMap,
     /// Calculated visible graph stored here to avoid recalculating it when
     /// waiting for user permission.
     calculated: Option<VisibleInstGraph>,
@@ -82,7 +88,6 @@ pub struct SVGResult {
     rendered: Option<RenderedGraph>,
 
     graph_warning: WeakComponentLink<MatDialog>,
-    insts_info_link: WeakComponentLink<GraphInfo>,
     graph_dim: GraphDimensions,
     permissions: GraphDimensions,
     worker: Option<Box<dyn yew_agent::Bridge<Worker>>>,
@@ -93,17 +98,13 @@ pub struct SVGResult {
     constructed_graph: Option<Rc<RefCell<InstGraph>>>,
 }
 
-// pub struct SVGData {
-//     get_node_info: Callback<(RawNodeIndex, bool, RcParser), NodeInfo>,
-//     get_edge_info: Callback<(VisibleEdgeIndex, bool, RcParser), EdgeInfo>,
-// }
-
 #[derive(Properties, PartialEq)]
 pub struct SVGProps {
     pub file: OpenedFileInfo,
-    pub progress: Callback<Result<RenderedGraph, RenderingState>>,
+    pub progress: Callback<GraphState>,
     pub selected_nodes: Callback<Vec<RawNodeIndex>>,
     pub selected_edges: Callback<Vec<VisibleEdgeIndex>>,
+    pub insts_info_link: WeakComponentLink<GraphInfo>,
 }
 
 impl Component for SVGResult {
@@ -118,41 +119,36 @@ impl Component for SVGResult {
                 ctx.link().send_message_batch(old);
             }
         }
-        let cfg = ctx.link().get_configuration().unwrap();
-        let parser = cfg.config.parser.unwrap();
-        ctx.props().progress.emit(Err(RenderingState::ConstructingGraph));
-        let (quant_count, non_quant_insts) = parser.parser.quant_count_incl_theory_solving();
-        let colour_map = QuantIdxToColourMap::from(quant_count, non_quant_insts);
+        ctx.props().progress.emit(GraphState::Rendering(RenderingState::ConstructingGraph));
         let link = ctx.link().clone();
         wasm_bindgen_futures::spawn_local(async move {
             gloo::timers::future::TimeoutFuture::new(10).await;
             let mut cfg = link.get_configuration().unwrap();
             let mut parser = cfg.config.parser.unwrap();
-            let inst_graph = InstGraph::new(&parser.parser).unwrap();
+            let inst_graph = match InstGraph::new(&parser.parser) {
+                Ok(inst_graph) => inst_graph,
+                Err(err) => {
+                    log::error!("Failed constructing instantiation graph: {err:?}");
+                    let error = if err.is_allocation() {
+                        "Out of memory, try stopping earlier".to_string()
+                    } else {
+                        // Should not be reachable
+                        format!("Unexpected error: {err:?}")
+                    };
+                    link.send_message(Msg::FailedConstructGraph(error));
+                    return;
+                }
+            };
             let inst_graph = Rc::new(RefCell::new(inst_graph));
             parser.graph.replace(inst_graph.clone());
             cfg.config.parser = Some(parser);
             cfg.update.emit(cfg.config);
-            // let get_node_info = Callback::from({
-            //     let node_info_map = inst_graph.get_node_info_map();
-            //     move |(node, ignore_ids, parser): (RawNodeIndex, bool, RcParser)| {
-            //         node_info_map.get_instantiation_info(node.index(), &parser.borrow(), ignore_ids)
-            //     }
-            // });
-            // let get_edge_info = Callback::from({
-            //     let edge_info_map = inst_graph.get_edge_info_map();
-            //     move |(edge, ignore_ids, parser): (VisibleEdgeIndex, bool, RcParser)| {
-            //         edge_info_map.get_edge_info(edge, &parser.borrow(), ignore_ids)
-            //     }
-            // });
-            link.send_message(Msg::ConstructedGraph(inst_graph));//SVGData { get_node_info, get_edge_info }));
+            link.send_message(Msg::ConstructedGraph(inst_graph));
         });
         Self {
-            colour_map,
             calculated: None,
             rendered: None,
             graph_warning: WeakComponentLink::default(),
-            insts_info_link: WeakComponentLink::default(),
             graph_dim: GraphDimensions {
                 node_count: 0,
                 edge_count: 0,
@@ -171,23 +167,32 @@ impl Component for SVGResult {
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
-        if let Msg::ConstructedGraph(parser) = msg {
-            self.constructed_graph = Some(parser);
-            let queue = std::mem::replace(&mut self.queue, Vec::new());
-            ctx.props().progress.emit(Err(RenderingState::ConstructedGraph));
-            ctx.link().send_message_batch(queue);
-            return true;
+        match msg {
+            Msg::ConstructedGraph(parser) => {
+                self.constructed_graph = Some(parser);
+                let queue = std::mem::replace(&mut self.queue, Vec::new());
+                ctx.props().progress.emit(GraphState::Rendering(RenderingState::ConstructedGraph));
+                ctx.link().send_message_batch(queue);
+                return true;
+            }
+            Msg::FailedConstructGraph(error) => {
+                ctx.props().progress.emit(GraphState::Failed(error));
+                return false;
+            }
+            _ => (),
         }
         let Some(inst_graph) = &self.constructed_graph else {
             self.queue.push(msg);
             return false;
         };
         let cfg = ctx.link().get_configuration().unwrap();
-        let parser = &cfg.config.parser.as_ref().unwrap().parser;
+        let rc_parser = cfg.config.parser.as_ref().unwrap();
+        let parser = &rc_parser.parser;
         let mut inst_graph = (**inst_graph).borrow_mut();
         let inst_graph = &mut *inst_graph;
         match msg {
             Msg::ConstructedGraph(_) => unreachable!(),
+            Msg::FailedConstructGraph(_) => unreachable!(),
             Msg::WorkerOutput(_out) => false,
             Msg::ApplyFilter(filter) => {
                 log::debug!("Applying filter {:?}", filter);
@@ -196,15 +201,16 @@ impl Component for SVGResult {
                         ctx.props().selected_nodes.emit(path);
                         // self.insts_info_link
                         //     .borrow()
-                        //     .clone()
+                        //     .as_ref()
                         //     .unwrap()
                         //     .send_message(GraphInfoMsg::SelectNodes(path));
                         false
                     }
                     FilterOutput::MatchingLoopGeneralizedTerms(gen_terms) => {
-                        self.insts_info_link
+                        ctx.props()
+                            .insts_info_link
                             .borrow()
-                            .clone()
+                            .as_ref()
                             .unwrap()
                             .send_message(GraphInfoMsg::ShowGeneralizedTerms(gen_terms));
                         false
@@ -260,7 +266,7 @@ impl Component for SVGResult {
                     self.permissions.node_count = node_count.max(NODE_LIMIT);
 
                     self.async_graph_and_filter_chain = false;
-                    ctx.props().progress.emit(Err(RenderingState::GraphToDot));
+                    ctx.props().progress.emit(GraphState::Rendering(RenderingState::GraphToDot));
                     let filtered_graph = &calculated.graph;
                     let ctxt = &DisplayCtxt {
                         parser,
@@ -279,6 +285,10 @@ impl Component for SVGResult {
                         "splines=false;",
                         "nslimit=6;",
                         "mclimit=0.6;",
+                        // TODO: explore this as an option, alternatively allow
+                        // displaying only some subgraphs.
+                        // "pack=32;",
+                        // "packMode=\"graph\";",
                     ];
                     let dot_output = format!(
                         "digraph {{\n{}\n{:?}\n}}",
@@ -334,7 +344,7 @@ impl Component for SVGResult {
                                             (_, _) => "diamond",
                                         };
                                         shape = Some(s);
-                                        let hue = self.colour_map.get_graphviz_hue(mkind);
+                                        let hue = rc_parser.colour_map.get_rbg_hue(mkind.quant_idx()) / 360.0;
                                         fillcolor = Some(format!("{hue} {NODE_COLOUR_SATURATION} {NODE_COLOUR_VALUE}"));
                                     }
                                     NodeKind::ENode(..) => {
@@ -351,7 +361,7 @@ impl Component for SVGResult {
                             },
                         )
                     );
-                    ctx.props().progress.emit(Err(RenderingState::RenderingGraph));
+                    ctx.props().progress.emit(GraphState::Rendering(RenderingState::RenderingGraph));
                     let link = ctx.link().clone();
                     wasm_bindgen_futures::spawn_local(async move {
                         gloo_timers::future::TimeoutFuture::new(10).await;
@@ -406,7 +416,7 @@ impl Component for SVGResult {
                     svg_text,
                 };
                 self.rendered = Some(rendered.clone());
-                ctx.props().progress.emit(Ok(rendered));
+                ctx.props().progress.emit(GraphState::Constructed(rendered));
                 true
             }
         }
@@ -418,7 +428,7 @@ impl Component for SVGResult {
         };
         html! {
             <><GraphInfo
-                weak_link={self.insts_info_link.clone()}
+                weak_link={ctx.props().insts_info_link.clone()}
                 // node_info={data.get_node_info.clone()}
                 // edge_info={data.get_edge_info.clone()}
                 // parser={ctx.props().file.parser.clone()}
@@ -456,7 +466,8 @@ impl SVGResult {
     }
 }
 
-struct QuantIdxToColourMap {
+#[derive(Debug, Clone, Copy)]
+pub struct QuantIdxToColourMap {
     total_count: usize,
     non_quant_insts: bool,
     coprime: NonZeroUsize,
@@ -464,7 +475,7 @@ struct QuantIdxToColourMap {
 }
 
 impl QuantIdxToColourMap {
-    pub fn from(quant_count: usize, non_quant_insts: bool) -> Self {
+    pub fn new(quant_count: usize, non_quant_insts: bool) -> Self {
         let total_count = quant_count + non_quant_insts as usize;
         Self {
             total_count,
@@ -476,8 +487,7 @@ impl QuantIdxToColourMap {
         }
     }
 
-    pub fn get(&self, mkind: &MatchKind) -> LuvHue<f64> {
-        let qidx = mkind.quant_idx();
+    pub fn get(&self, qidx: Option<QuantIdx>) -> LuvHue<f64> {
         debug_assert!(self.non_quant_insts || qidx.is_some());
         let idx = qidx
             .map(usize::from)
@@ -487,11 +497,11 @@ impl QuantIdxToColourMap {
         let idx_perm = (idx * self.coprime.get() + self.shift) % self.total_count;
         LuvHue::new(360. * idx_perm as f64 / self.total_count as f64)
     }
-    pub fn get_graphviz_hue(&self, mkind: &MatchKind) -> f64 {
-        let hue = self.get(mkind);
+    pub fn get_rbg_hue(&self, qidx: Option<QuantIdx>) -> f64 {
+        let hue = self.get(qidx);
         let colour = Hsluv::<D65, f64>::new(hue, 100.0, 50.0);
         let colour = Hsv::<Srgb, f64>::from_color(colour);
-        colour.hue.into_positive_degrees() / 360.0
+        colour.hue.into_positive_degrees()
     }
 
     fn find_coprime(n: usize) -> NonZeroUsize {

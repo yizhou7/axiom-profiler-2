@@ -1,3 +1,4 @@
+use core::fmt;
 use std::{collections::TryReserveError, num::ParseIntError};
 
 use mem_dbg::{MemDbg, MemSize};
@@ -79,6 +80,9 @@ pub enum Error {
     StackFrameNotPushed,
     InvalidFrameInteger(ParseIntError),
 
+    // File IO
+    FileRead(std::io::Error),
+
     Allocation(TryReserveError),
 }
 
@@ -95,6 +99,10 @@ impl From<TryReserveError> for Error {
 }
 
 impl Error {
+    pub fn is_allocation(&self) -> bool {
+        matches!(self, Self::Allocation(_))
+    }
+
     pub fn as_fatal(self) -> Option<FatalError> {
         match self {
             Self::Allocation(alloc) => Some(FatalError::Allocation(alloc)),
@@ -106,4 +114,20 @@ impl Error {
 #[derive(Debug, Clone)]
 pub enum FatalError {
     Allocation(TryReserveError),
+    Io(std::rc::Rc<std::io::Error>),
+}
+
+impl From<std::io::Error> for FatalError {
+    fn from(err: std::io::Error) -> Self {
+        Self::Io(std::rc::Rc::new(err))
+    }
+}
+
+impl fmt::Display for FatalError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Allocation(alloc) => write!(f, "Allocation error: {alloc}"),
+            Self::Io(err) => write!(f, "IO error: {err}"),
+        }
+    }
 }

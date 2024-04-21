@@ -52,7 +52,7 @@ h1, h2, h3 {
 	position: relative;
 	z-index: 3;
 	overflow: visible;
-	background-color: hsl(215, 1%, 95%);
+	background-color: var(--topbar-background);
 	box-shadow: 0px 1px 2px 1px rgba(0, 0, 0, 0.1490196078);
 	min-height: calc(var(--topbar-height) - 1px);
 	display: flex;
@@ -61,6 +61,7 @@ h1, h2, h3 {
 }
 
 .topbar .omnibox {
+	position: relative;
 	width: 90%;
 	max-width: 600px;
 	transition: opacity 0.25s ease, color 0.25s ease, background-color 0.25s ease, border-color 0.25s ease, width 0.25s ease, height 0.25s ease, max-width 0.25s ease, max-height 0.25s ease, margin 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease, border-radius 0.25s ease;
@@ -91,9 +92,15 @@ h1, h2, h3 {
 	-webkit-font-feature-settings: "liga";
 	-webkit-font-smoothing: antialiased;
 	font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+}
+
+.topbar .omnibox > .icon {
 	margin: 5px;
 	color: #aaa;
 	grid-area: icon;
+}
+.topbar .omnibox > .icon a {
+	color: #aaa;
 	text-decoration: none;
 }
 
@@ -113,6 +120,63 @@ h1, h2, h3 {
 	color: #b4b7ba;
 	font-family: "Roboto Condensed", sans-serif;
 	font-weight: 400;
+}
+
+.topbar .omnibox .stepthrough {
+	grid-area: stepthrough;
+	display: flex;
+	font: inherit;
+	font-size: 14px;
+	font-family: "Roboto Condensed", sans-serif;
+	font-weight: 300;
+	color: #aaa;
+}
+.topbar .omnibox .stepthrough .current {
+	padding-right: 10px;
+}
+.topbar .omnibox .stepthrough .material-icons.left {
+	border-right: rgb(218, 217, 217) solid 1px;
+}
+
+.material-icons {
+	vertical-align: middle;
+}
+button {
+	background: none;
+	color: inherit;
+	border: none;
+	padding: 0;
+	font: inherit;
+	cursor: pointer;
+	outline: inherit;
+}
+
+.omnibox-empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 10px;
+	user-select: none;
+	color: #19212b;
+	margin: auto;
+	justify-content: center;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.omnibox-empty-state > i {
+	font-size: 5em;
+	margin-bottom: 8px;
+}
+.omnibox-empty-state .omnibox-empty-state-title {
+	text-align: center;
+	font-weight: bolder;
+	margin-bottom: 2px;
+}
+.omnibox-empty-state .omnibox-empty-state-content {
+	text-align: center;
+	font-size: smaller;
 }
 
 .topbar .progress {
@@ -135,6 +199,11 @@ h1, h2, h3 {
 	overflow: hidden;
 }
 
+.hotkey {
+	display: flex;
+	flex-direction: row;
+	gap: 2px;
+}
 .keycap {
 	background-color: #fafbfc;
 	border: 1px solid #d1d5da;
@@ -349,6 +418,7 @@ table {
 	--expanded-background: hsl(215, 22%, 81%);
 	--section-background: hsl(213, 26%, 87%);
 	--hover-background: hsl(216, 15%, 75%);
+	--topbar-background: hsl(215, 1%, 95%);
 }
 
 * {

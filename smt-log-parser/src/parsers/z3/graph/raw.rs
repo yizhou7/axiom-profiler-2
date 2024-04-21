@@ -341,7 +341,7 @@ pub enum EdgeKind {
     TEqualityTransitive { forward: bool },
 }
 
-pub(super) trait IndexesInstGraph {
+pub trait IndexesInstGraph {
     fn index(&self, graph: &RawInstGraph) -> RawNodeIndex;
 }
 impl IndexesInstGraph for ENodeIdx {
