@@ -46,6 +46,7 @@ impl Eq for RenderedGraph {}
 
 pub enum Msg {
     ConstructedGraph(Rc<RefCell<InstGraph>>),
+    FailedConstructGraph(String),
     UpdateSvgText(AttrValue, VisibleInstGraph),
     SetPermission(GraphDimensions),
     SetDisabled(Vec<Disabler>),
@@ -74,6 +75,12 @@ pub enum RenderingState {
     RenderingGraph,
 }
 
+pub enum GraphState {
+    Rendering(RenderingState),
+    Constructed(RenderedGraph),
+    Failed(String),
+}
+
 pub struct SVGResult {
     /// Calculated visible graph stored here to avoid recalculating it when
     /// waiting for user permission.
@@ -91,15 +98,10 @@ pub struct SVGResult {
     constructed_graph: Option<Rc<RefCell<InstGraph>>>,
 }
 
-// pub struct SVGData {
-//     get_node_info: Callback<(RawNodeIndex, bool, RcParser), NodeInfo>,
-//     get_edge_info: Callback<(VisibleEdgeIndex, bool, RcParser), EdgeInfo>,
-// }
-
 #[derive(Properties, PartialEq)]
 pub struct SVGProps {
     pub file: OpenedFileInfo,
-    pub progress: Callback<Result<RenderedGraph, RenderingState>>,
+    pub progress: Callback<GraphState>,
     pub selected_nodes: Callback<Vec<RawNodeIndex>>,
     pub selected_edges: Callback<Vec<VisibleEdgeIndex>>,
     pub insts_info_link: WeakComponentLink<GraphInfo>,
@@ -117,30 +119,31 @@ impl Component for SVGResult {
                 ctx.link().send_message_batch(old);
             }
         }
-        ctx.props().progress.emit(Err(RenderingState::ConstructingGraph));
+        ctx.props().progress.emit(GraphState::Rendering(RenderingState::ConstructingGraph));
         let link = ctx.link().clone();
         wasm_bindgen_futures::spawn_local(async move {
             gloo_timers::future::TimeoutFuture::new(10).await;
             let mut cfg = link.get_configuration().unwrap();
             let mut parser = cfg.config.parser.unwrap();
-            let inst_graph = InstGraph::new(&parser.parser).unwrap();
+            let inst_graph = match InstGraph::new(&parser.parser) {
+                Ok(inst_graph) => inst_graph,
+                Err(err) => {
+                    log::error!("Failed constructing instantiation graph: {err:?}");
+                    let error = if err.is_allocation() {
+                        "Out of memory, try stopping earlier".to_string()
+                    } else {
+                        // Should not be reachable
+                        format!("Unexpected error: {err:?}")
+                    };
+                    link.send_message(Msg::FailedConstructGraph(error));
+                    return;
+                }
+            };
             let inst_graph = Rc::new(RefCell::new(inst_graph));
             parser.graph.replace(inst_graph.clone());
             cfg.config.parser = Some(parser);
             cfg.update.emit(cfg.config);
-            // let get_node_info = Callback::from({
-            //     let node_info_map = inst_graph.get_node_info_map();
-            //     move |(node, ignore_ids, parser): (RawNodeIndex, bool, RcParser)| {
-            //         node_info_map.get_instantiation_info(node.index(), &parser.borrow(), ignore_ids)
-            //     }
-            // });
-            // let get_edge_info = Callback::from({
-            //     let edge_info_map = inst_graph.get_edge_info_map();
-            //     move |(edge, ignore_ids, parser): (VisibleEdgeIndex, bool, RcParser)| {
-            //         edge_info_map.get_edge_info(edge, &parser.borrow(), ignore_ids)
-            //     }
-            // });
-            link.send_message(Msg::ConstructedGraph(inst_graph));//SVGData { get_node_info, get_edge_info }));
+            link.send_message(Msg::ConstructedGraph(inst_graph));
         });
         Self {
             calculated: None,
@@ -163,12 +166,19 @@ impl Component for SVGResult {
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
-        if let Msg::ConstructedGraph(parser) = msg {
-            self.constructed_graph = Some(parser);
-            let queue = std::mem::replace(&mut self.queue, Vec::new());
-            ctx.props().progress.emit(Err(RenderingState::ConstructedGraph));
-            ctx.link().send_message_batch(queue);
-            return true;
+        match msg {
+            Msg::ConstructedGraph(parser) => {
+                self.constructed_graph = Some(parser);
+                let queue = std::mem::replace(&mut self.queue, Vec::new());
+                ctx.props().progress.emit(GraphState::Rendering(RenderingState::ConstructedGraph));
+                ctx.link().send_message_batch(queue);
+                return true;
+            }
+            Msg::FailedConstructGraph(error) => {
+                ctx.props().progress.emit(GraphState::Failed(error));
+                return false;
+            }
+            _ => (),
         }
         let Some(inst_graph) = &self.constructed_graph else {
             self.queue.push(msg);
@@ -181,6 +191,7 @@ impl Component for SVGResult {
         let inst_graph = &mut *inst_graph;
         match msg {
             Msg::ConstructedGraph(_) => unreachable!(),
+            Msg::FailedConstructGraph(_) => unreachable!(),
             Msg::WorkerOutput(_out) => false,
             Msg::ApplyFilter(filter) => {
                 log::debug!("Applying filter {:?}", filter);
@@ -254,7 +265,7 @@ impl Component for SVGResult {
                     self.permissions.node_count = node_count.max(NODE_LIMIT);
 
                     self.async_graph_and_filter_chain = false;
-                    ctx.props().progress.emit(Err(RenderingState::GraphToDot));
+                    ctx.props().progress.emit(GraphState::Rendering(RenderingState::GraphToDot));
                     let filtered_graph = &calculated.graph;
                     let ctxt = &DisplayCtxt {
                         parser,
@@ -349,7 +360,7 @@ impl Component for SVGResult {
                             },
                         )
                     );
-                    ctx.props().progress.emit(Err(RenderingState::RenderingGraph));
+                    ctx.props().progress.emit(GraphState::Rendering(RenderingState::RenderingGraph));
                     let link = ctx.link().clone();
                     wasm_bindgen_futures::spawn_local(async move {
                         gloo_timers::future::TimeoutFuture::new(10).await;
@@ -429,7 +440,7 @@ impl Component for SVGResult {
                     svg_text,
                 };
                 self.rendered = Some(rendered.clone());
-                ctx.props().progress.emit(Ok(rendered));
+                ctx.props().progress.emit(GraphState::Constructed(rendered));
                 true
             }
         }

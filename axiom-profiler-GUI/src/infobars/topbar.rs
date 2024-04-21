@@ -1,12 +1,20 @@
+use chrono::{DateTime, Utc};
 use material_yew::linear_progress::MatLinearProgress;
 use smt_log_parser::parsers::z3::graph::RawNodeIndex;
 use yew::{function_component, html, Callback, Html, NodeRef, Properties};
 
 use crate::{infobars::{Omnibox, SearchActionResult}, utils::lookup::Kind, LoadingState};
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct OmnibarMessage {
+    pub message: String,
+    pub is_error: bool,
+}
+
 #[derive(PartialEq, Properties)]
 pub struct TopbarProps {
     pub progress: LoadingState,
+    pub message: Option<OmnibarMessage>,
     pub omnibox: NodeRef,
     pub search: Callback<String, Option<SearchActionResult>>,
     pub pick: Callback<(String, Kind), Option<Vec<RawNodeIndex>>>,
@@ -21,8 +29,9 @@ pub fn Topbar(props: &TopbarProps) -> Html {
     let mut progress = 0.0;
     let mut buffer = 0.0;
     match &props.progress {
-        LoadingState::NoFileSelected =>
-            closed = true,
+        LoadingState::NoFileSelected => {
+            closed = true;
+        }
         LoadingState::ReadingToString =>
             indeterminate = true,
         LoadingState::StartParsing =>
@@ -43,9 +52,17 @@ pub fn Topbar(props: &TopbarProps) -> Html {
         LoadingState::FileDisplayed =>
             closed = true,
     };
+    if props.message.as_ref().is_some_and(|m| m.is_error) {
+        class = "progress progress-anim loading-bar-failed";
+        progress = 1.0;
+        buffer = 1.0;
+        closed = false;
+        indeterminate = false;
+    }
+
     html! {
     <>
-        <Omnibox progress={props.progress.clone()} omnibox={props.omnibox.clone()} search={props.search.clone()} pick={props.pick.clone()} select={props.select.clone()} />
+        <Omnibox progress={props.progress.clone()} message={props.message.clone()} omnibox={props.omnibox.clone()} search={props.search.clone()} pick={props.pick.clone()} select={props.select.clone()} />
         <div {class}><MatLinearProgress {closed} {indeterminate} {progress} {buffer}/></div>
     </>
     }

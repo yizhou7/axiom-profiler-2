@@ -56,6 +56,14 @@ impl Subgraph {
             while let (Some((idx, node)), Some((curr, others))) = (reverse_topo.next(), reach_fwd.split_last_mut()) {
                 reach_fwd = others;
                 curr.insert(idx as u32);
+
+                if cfg!(feature = "never_panic") {
+                    let neighbors = graph.neighbors_directed(node.0, Incoming).count();
+                    let mut allocation = Vec::<u8>::new();
+                    allocation.try_reserve_exact(2 * neighbors * curr.serialized_size())?;
+                    drop(allocation);
+                }
+
                 for parent in graph.neighbors_directed(node.0, Incoming) {
                     let parent = c(&graph[parent]);
                     reach_fwd[parent as usize] |= &*curr;
@@ -76,6 +84,14 @@ impl Subgraph {
             while let (Some((idx, node)), Some((curr, others))) = (topo.next(), reach_bwd.split_first_mut()) {
                 reach_bwd = others;
                 curr.insert(idx as u32);
+
+                if cfg!(feature = "never_panic") {
+                    let neighbors = graph.neighbors_directed(node.0, Outgoing).count();
+                    let mut allocation = Vec::<u8>::new();
+                    allocation.try_reserve_exact(2 * neighbors * curr.serialized_size())?;
+                    drop(allocation);
+                }
+
                 for child in graph.neighbors_directed(node.0, Outgoing) {
                     let child = c(&graph[child]);
                     reach_bwd[child as usize - idx - 1] |= &*curr;

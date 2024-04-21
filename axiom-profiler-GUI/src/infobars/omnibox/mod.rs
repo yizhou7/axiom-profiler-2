@@ -5,9 +5,9 @@ use smt_log_parser::parsers::z3::graph::{visible::VisibleInstGraph, RawNodeIndex
 use web_sys::{HtmlElement, HtmlInputElement};
 use yew::{html, prelude::Context, AttrValue, Callback, Component, ContextHandle, Html, InputEvent, KeyboardEvent, MouseEvent, NodeRef, Properties};
 
-use crate::{commands::{Command, CommandId, CommandRef, Commands, CommandsContext}, infobars::input::HighlightedString, results::svg_result::RenderingState, utils::lookup::{CommandsWithName, Entry, Kind, Matches, StringLookupCommands}, CallbackRef, GlobalCallbacksContext, LoadingState, RcParser, SIZE_NAMES};
+use crate::{commands::{Command, CommandId, CommandRef, Commands, CommandsContext}, infobars::topbar::OmnibarMessage, results::svg_result::RenderingState, utils::lookup::{CommandsWithName, Entry, Kind, Matches, StringLookupCommands}, CallbackRef, GlobalCallbacksContext, LoadingState, RcParser, SIZE_NAMES};
 
-use self::input::{OmniboxInput, PickedSuggestion, SuggestionResult};
+use self::input::{OmniboxInput, PickedSuggestion, SuggestionResult, HighlightedString};
 
 pub mod input;
 
@@ -16,6 +16,7 @@ const LAST_USED_DISPLAY: usize = 6;
 #[derive(Properties, Clone, PartialEq)]
 pub struct OmniboxProps {
     pub progress: LoadingState,
+    pub message: Option<OmnibarMessage>,
     pub omnibox: NodeRef,
     pub search: Callback<String, Option<SearchActionResult>>,
     pub pick: Callback<(String, Kind), Option<Vec<RawNodeIndex>>>,
@@ -281,8 +282,8 @@ impl Component for Omnibox {
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {
-        let mut omnibox_info = None;
-        let mut icon = None;
+        let mut omnibox_info = ctx.props().message.as_ref().map(|m| AttrValue::from(m.message.clone()));
+        let mut icon = ctx.props().message.as_ref().is_some_and(|m| m.is_error).then(|| "error");
         let mut callback = None;
 
         match &ctx.props().progress {
@@ -424,10 +425,11 @@ impl Component for Omnibox {
         });
 
         let omnibox = ctx.props().omnibox.clone();
+        let input = (!omnibox_disabled).then(|| self.input.clone()).unwrap_or_default();
         html! {
             <div class="omnibox" {onkeydown} {onkeyup}>
                 <div class="icon">{icon}</div>
-                <OmniboxInput {omnibox} {placeholder} {omnibox_disabled} focused={self.focused} input={self.input.clone()} {onfocusin} {onfocusout} {oninput} />
+                <OmniboxInput {omnibox} {placeholder} {omnibox_disabled} focused={self.focused} {input} {onfocusin} {onfocusout} {oninput} />
                 <div class="stepthrough">{test}</div>
                 <div>{dropdown}</div>
             </div>

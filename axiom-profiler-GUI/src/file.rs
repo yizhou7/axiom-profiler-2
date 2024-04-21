@@ -1,13 +1,13 @@
 use std::{cell::RefCell, rc::Rc};
 
 use gloo::file::File;
-use smt_log_parser::{parsers::AsyncBufferRead, LogParser, Z3Parser};
+use smt_log_parser::{parsers::{AsyncBufferRead, ParseState}, LogParser, Z3Parser};
 use wasm_streams::ReadableStream;
 use wasm_bindgen::JsCast;
 use web_sys::DataTransfer;
 use yew::{html::Scope, Callback, DragEvent};
 
-use crate::{global_callbacks::GlobalCallbacks, CallbackRef, FileDataComponent, LoadingState, Msg, ParseProgress, PREVENT_DEFAULT_DRAG_OVER};
+use crate::{global_callbacks::GlobalCallbacks, infobars::OmnibarMessage, CallbackRef, FileDataComponent, LoadingState, Msg, ParseProgress, PREVENT_DEFAULT_DRAG_OVER};
 
 impl FileDataComponent {
     pub fn file_drag(registerer: &GlobalCallbacks, link: &Scope<FileDataComponent>) -> [CallbackRef; 3] {
@@ -96,11 +96,21 @@ impl FileDataComponent {
                         }
                         !*cancel.borrow() && state.bytes_read <= 1024 * 1024 * 1024
                     }).await;
-                    if finished.is_timeout() && !*cancel.borrow() {
-                        // TODO: make this clear in the UI
-                        log::info!("Stopped parsing at 1GB");
-                    }
                     let cancel = *cancel.borrow();
+                    match finished {
+                        ParseState::Paused(_) if !cancel => {
+                            let message = OmnibarMessage {
+                                message: "Stopped parsing at 1GB".to_string(),
+                                is_error: false,
+                            };
+                            link.send_message(Msg::ShowMessage(message, 8000));
+                        }
+                        ParseState::Error(err) => {
+                            link.send_message(Msg::FailedOpening(err.to_string()));
+                            return;
+                        }
+                        _ => (),
+                    }
                     link.send_message(Msg::LoadingState(LoadingState::DoneParsing(finished.is_timeout(), cancel)));
                     link.send_message(Msg::LoadedFile(file_name, file_size, parser.take_parser(), finished, cancel))
                 });
@@ -110,8 +120,15 @@ impl FileDataComponent {
                 link.send_message(Msg::LoadingState(LoadingState::ReadingToString));
                 let reader = gloo_file::callbacks::read_as_bytes(&file, move |res| {
                     log::info!("Loading to string \"{file_name}\"");
-                    let text_data =
-                        String::from_utf8(res.expect("failed to read file")).unwrap();
+                    let res = res.and_then(|res| String::from_utf8(res)
+                        .map_err(|err| gloo::file::FileReadError::NotReadable(err.to_string())));
+                    let text_data = match res {
+                        Ok(res) => res,
+                        Err(err) => {
+                            link.send_message(Msg::FailedOpening(err.to_string()));
+                            return;
+                        }
+                    };
                     log::info!("Parsing \"{file_name}\"");
                     link.send_message(Msg::LoadingState(LoadingState::StartParsing));
                     let mut parser = Z3Parser::from_str(&text_data);
@@ -122,11 +139,21 @@ impl FileDataComponent {
                         }
                         !*cancel.borrow() && state.bytes_read <= 512 * 1024 * 1024
                     });
-                    if finished.is_timeout() && !*cancel.borrow() {
-                        // TODO: make this clear in the UI
-                        log::info!("Stopped parsing at 0.5GB (use Chrome or Firefox to increase this limit to 1GB)");
-                    }
                     let cancel = *cancel.borrow();
+                    match finished {
+                        ParseState::Paused(_) if !cancel => {
+                            let message = OmnibarMessage {
+                                message: "Stopped parsing at 500MB, use Chrome or Firefox to increase this limit".to_string(),
+                                is_error: false,
+                            };
+                            link.send_message(Msg::ShowMessage(message, 8000));
+                        }
+                        ParseState::Error(err) => {
+                            link.send_message(Msg::FailedOpening(err.to_string()));
+                            return;
+                        }
+                        _ => (),
+                    }
                     link.send_message(Msg::LoadingState(LoadingState::DoneParsing(finished.is_timeout(), cancel)));
                     link.send_message(Msg::LoadedFile(file_name, file_size, parser.take_parser(), finished, cancel))
                 });

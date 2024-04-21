@@ -17,6 +17,7 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use wasm_timer::Instant;
 use web_sys::{HtmlElement, HtmlInputElement};
+use yew::html::Scope;
 use yew::prelude::*;
 use yew_router::prelude::*;
 use material_yew::{MatIcon, MatIconButton, MatDialog, WeakComponentLink};
@@ -24,7 +25,8 @@ use material_yew::{MatIcon, MatIconButton, MatDialog, WeakComponentLink};
 use crate::commands::CommandsProvider;
 use crate::configuration::{ConfigurationContext, ConfigurationProvider};
 use crate::filters::FiltersState;
-use crate::infobars::{SearchAction, SearchActionGroup, SearchActionResult, SidebarSectionHeader, Topbar};
+use crate::infobars::{OmnibarMessage, SearchActionResult, SidebarSectionHeader, Topbar};
+use crate::results::svg_result::GraphState;
 use crate::utils::lookup::StringLookupZ3;
 
 pub use global_callbacks::{GlobalCallbacksProvider, CallbackRef, GlobalCallbacksContext};
@@ -61,6 +63,9 @@ pub enum Msg {
     LoadedFile(String, u64, Z3Parser, ParseState, bool),
     LoadingState(LoadingState),
     RenderedGraph(RenderedGraph),
+    FailedOpening(String),
+    ShowMessage(OmnibarMessage, u32),
+    ClearMessage,
     SelectedNodes(Vec<RawNodeIndex>),
     SelectedEdges(Vec<VisibleEdgeIndex>),
     KeyDown(KeyboardEvent),
@@ -165,6 +170,7 @@ pub struct FileDataComponent {
     reader: Option<FileReader>,
     pending_ops: usize,
     progress: LoadingState,
+    message: Option<(Timeout, OmnibarMessage)>,
     cancel: Rc<RefCell<bool>>,
     navigation_section: NodeRef,
     help_dialog: WeakComponentLink<MatDialog>,
@@ -174,6 +180,28 @@ pub struct FileDataComponent {
     sidebar_button: NodeRef,
     _callback_refs: [CallbackRef; 6],
     _command_refs: [CommandRef; 3],
+}
+
+impl FileDataComponent {
+    pub fn set_message(&mut self, link: &Scope<Self>, message: OmnibarMessage, millis: u32) {
+        log::info!("Showing message: {message:?}");
+
+        let clear_error = link.callback(|_| Msg::ClearMessage);
+        let message = (Timeout::new(millis, move || clear_error.emit(())), message);
+        let old_message = self.message.replace(message);
+        if let Some((timeout, _)) = old_message {
+            timeout.cancel();
+        }
+    }
+    pub fn clear_message(&mut self, error_only: bool) {
+        if let Some((timeout, message)) = self.message.take() {
+            if error_only && !message.is_error {
+                self.message = Some((timeout, message));
+            } else {
+                timeout.cancel();
+            }
+        }
+    }
 }
 
 impl Component for FileDataComponent {
@@ -240,6 +268,7 @@ impl Component for FileDataComponent {
             reader: None,
             pending_ops: 0,
             progress: LoadingState::NoFileSelected,
+            message: None,
             cancel: Rc::default(),
             navigation_section: NodeRef::default(),
             help_dialog,
@@ -270,9 +299,11 @@ impl Component for FileDataComponent {
                     parsing.delta(old);
                 }
                 self.progress = state;
+                self.clear_message(true);
                 true
             }
             Msg::RenderedGraph(rendered) => {
+                ctx.link().send_message(Msg::LoadingState(LoadingState::FileDisplayed));
                 if let Some(file) = &mut self.file {
                     let old_len = file.selected_nodes.len();
                     file.selected_nodes.retain(|n| rendered.graph.contains(*n));
@@ -307,6 +338,29 @@ impl Component for FileDataComponent {
                     }
                     file.rendered = Some(rendered);
                 }
+                true
+            }
+            Msg::FailedOpening(error) => {
+                let message = OmnibarMessage { message: error, is_error: true };
+                self.set_message(ctx.link(), message, 10000);
+
+                self.progress = LoadingState::NoFileSelected;
+                let file = self.file.take();
+                drop(file);
+                let cfg = ctx.link().get_configuration().unwrap();
+                cfg.update_parser(|p| *p = None);
+
+                if let Some(navigation_section) = self.navigation_section.cast::<web_sys::Element>() {
+                    let _ = navigation_section.class_list().add_1("expanded");
+                }
+                true
+            }
+            Msg::ShowMessage(message, millis) => {
+                self.set_message(ctx.link(), message, millis);
+                true
+            }
+            Msg::ClearMessage => {
+                self.message.take();
                 true
             }
             Msg::LoadedFile(file_name, file_size, parser, parser_state, parser_cancelled) => {
@@ -470,13 +524,10 @@ impl Component for FileDataComponent {
         let onclosed = ctx.link().callback(|_| Msg::ShowHelpToggled(false));
         let page = self.file.as_ref().map(|f| {
             let (timeout, cancel) = (f.parser_state.is_timeout(), f.parser_cancelled);
-            let link = ctx.link().clone();
             let progress = ctx.link().callback(move |rs| match rs {
-                Err(rs) => Msg::LoadingState(LoadingState::Rendering(rs, timeout, cancel)),
-                Ok(rendered) => {
-                    link.send_message(Msg::RenderedGraph(rendered));
-                    Msg::LoadingState(LoadingState::FileDisplayed)
-                }
+                GraphState::Rendering(rs) => Msg::LoadingState(LoadingState::Rendering(rs, timeout, cancel)),
+                GraphState::Constructed(rendered) => Msg::RenderedGraph(rendered),
+                GraphState::Failed(error) => Msg::FailedOpening(error),
             });
             let selected_nodes = ctx.link().callback(Msg::SelectedNodes);
             let selected_edges = ctx.link().callback(Msg::SelectedEdges);
@@ -488,6 +539,7 @@ impl Component for FileDataComponent {
         }).unwrap_or_else(|| {
             html!{<homepage::Homepage {is_canary}/>}
         });
+        let message = self.message.as_ref().map(|(_, message)| message).cloned();
         let header_class = if is_canary { "canary" } else { "stable" };
         html! {
 <>
@@ -513,7 +565,7 @@ impl Component for FileDataComponent {
         </div></div>
     </nav>
     <div class="topbar">
-        <Topbar progress={self.progress.clone()} omnibox={self.omnibox.clone()} {search} {pick} {select} />
+        <Topbar progress={self.progress.clone()} {message} omnibox={self.omnibox.clone()} {search} {pick} {select} />
     </div>
     <div class="alerts"></div>
     {page}
