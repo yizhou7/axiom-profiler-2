@@ -59,7 +59,7 @@ pub static PREVENT_DEFAULT_DRAG_OVER: OnceLock<Mutex<bool>> = OnceLock::new();
 
 pub enum Msg {
     File(Option<File>),
-    LoadedFile(String, u64, Z3Parser, ParseState, bool),
+    LoadedFile(String, u64, Z3Parser, ParseState<bool>, bool),
     LoadingState(LoadingState),
     RenderedGraph(RenderedGraph),
     SelectedNodes(Vec<RawNodeIndex>),
@@ -123,7 +123,7 @@ impl ParseProgress {
 pub struct OpenedFileInfo {
     file_name: String,
     file_size: u64,
-    parser_state: ParseState,
+    parser_state: ParseState<bool>,
     parser_cancelled: bool,
     update: Rc<RefCell<Result<Callback<SVGMsg>, Vec<SVGMsg>>>>,
     filter: WeakComponentLink<FiltersState>,
