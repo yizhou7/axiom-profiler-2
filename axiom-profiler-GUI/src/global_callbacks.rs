@@ -20,6 +20,9 @@ pub struct GlobalCallbacks {
     pub register_keyboard_down: CallbackRegisterer<KeyboardEvent>,
     pub register_keyboard_up: CallbackRegisterer<KeyboardEvent>,
     pub register_drag_over: CallbackRegisterer<DragEvent>,
+    pub register_drag_enter: CallbackRegisterer<DragEvent>,
+    pub register_drag_leave: CallbackRegisterer<DragEvent>,
+    pub register_drop: CallbackRegisterer<DragEvent>,
     pub register_resize: CallbackRegisterer<Event>,
 }
 impl PartialEq for GlobalCallbacks {
@@ -51,6 +54,9 @@ pub struct GlobalCallbacksProvider {
     keyboard_down: CallbackHolder<KeyboardEvent>,
     keyboard_up: CallbackHolder<KeyboardEvent>,
     drag_over: CallbackHolder<DragEvent>,
+    drag_enter: CallbackHolder<DragEvent>,
+    drag_leave: CallbackHolder<DragEvent>,
+    drop: CallbackHolder<DragEvent>,
     resize: CallbackHolder<Event>,
 
     registerer: Rc<GlobalCallbacks>,
@@ -140,6 +146,9 @@ impl GlobalCallbacksProvider {
     fn get_drag_mut(&mut self, kind: DragEventKind) -> &mut CallbackHolder<DragEvent> {
         match kind {
             DragEventKind::DragOver => &mut self.drag_over,
+            DragEventKind::DragEnter => &mut self.drag_enter,
+            DragEventKind::DragLeave => &mut self.drag_leave,
+            DragEventKind::Drop => &mut self.drop,
         }
     }
     fn get_mut(&mut self, kind: EventKind) -> &mut CallbackHolder<Event> {
@@ -165,6 +174,9 @@ pub enum KeyboardEventKind {
 #[derive(Debug, Copy, Clone)]
 pub enum DragEventKind {
     DragOver,
+    DragEnter,
+    DragLeave,
+    Drop,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -209,6 +221,9 @@ impl Component for GlobalCallbacksProvider {
             register_keyboard_down: CallbackRegisterer::new_keyboard(ctx.link().clone(), KeyboardEventKind::KeyDown),
             register_keyboard_up: CallbackRegisterer::new_keyboard(ctx.link().clone(), KeyboardEventKind::KeyUp),
             register_drag_over: CallbackRegisterer::new_drag(ctx.link().clone(), DragEventKind::DragOver),
+            register_drag_enter: CallbackRegisterer::new_drag(ctx.link().clone(), DragEventKind::DragEnter),
+            register_drag_leave: CallbackRegisterer::new_drag(ctx.link().clone(), DragEventKind::DragLeave),
+            register_drop: CallbackRegisterer::new_drag(ctx.link().clone(), DragEventKind::Drop),
             register_resize: CallbackRegisterer::new(ctx.link().clone(), EventKind::Resize),
         };
         Self {
@@ -218,6 +233,9 @@ impl Component for GlobalCallbacksProvider {
             keyboard_down: CallbackHolder::default(),
             keyboard_up: CallbackHolder::default(),
             drag_over: CallbackHolder::default(),
+            drag_enter: CallbackHolder::default(),
+            drag_leave: CallbackHolder::default(),
+            drop: CallbackHolder::default(),
             resize: CallbackHolder::default(),
 
             registerer: Rc::new(registerer),
@@ -278,8 +296,11 @@ impl Component for GlobalCallbacksProvider {
         let onmouseup = ctx.link().callback(|ev: MouseEvent| Msg::OnMouse(MouseEventKind::MouseUp, ev));
         let onmouseout = ctx.link().callback(|ev: MouseEvent| Msg::OnMouse(MouseEventKind::MouseOut, ev));
         let ondragover = ctx.link().callback(|ev: DragEvent| Msg::OnDrag(DragEventKind::DragOver, ev));
+        let ondragenter = ctx.link().callback(|ev: DragEvent| Msg::OnDrag(DragEventKind::DragEnter, ev));
+        let ondragleave = ctx.link().callback(|ev: DragEvent| Msg::OnDrag(DragEventKind::DragLeave, ev));
+        let ondrop = ctx.link().callback(|ev: DragEvent| Msg::OnDrag(DragEventKind::Drop, ev));
         yew::html! {
-            <div style="position=absolute; top: 0; left: 0; width: 100%; height: 100%" {onmousemove} {onmouseup} {onmouseout} {ondragover}>
+            <div id="body" style="position=absolute; top: 0; left: 0; width: 100%; height: 100%" {onmousemove} {onmouseup} {onmouseout} {ondragover} {ondragenter} {ondragleave} {ondrop}>
                 <ContextProvider<Rc<GlobalCallbacks>> context={self.registerer.clone()}>
                     {for ctx.props().children.iter()}
                 </ContextProvider<Rc<GlobalCallbacks>>>
