@@ -143,13 +143,13 @@ impl<T: AsRef<[u8]> + Unpin> AsyncCursorRead for T {}
 ////////////////////
 
 #[derive(Debug, Clone)]
-pub enum ParseState {
-    Paused(ReaderState),
+pub enum ParseState<T> {
+    Paused(T, ReaderState),
     Completed { end_of_stream: bool },
     Error(FatalError),
 }
 
-impl ParseState {
+impl<T> ParseState<T> {
     pub fn is_timeout(&self) -> bool {
         matches!(self, Self::Paused(..))
     }
@@ -250,25 +250,27 @@ mod wrapper {
         }
 
         /// Parse the the input while calling the `predicate` callback after
-        /// each line. Keep parsing until the callback returns `false` or we
+        /// each line. Keep parsing until the callback returns `Some(t)` or we
         /// reach the end of the input. If we stopped due to the callback,
-        /// return the current progress as `ParseState::Paused`. After this
-        /// function returns, use [`parser`](Self::parser) to retrieve the
+        /// return the current progress as `ParseState::Paused(t, state)`. After
+        /// this function returns, use [`parser`](Self::parser) to retrieve the
         /// parser state.
         ///
         /// The `predicate` callback should aim to return quickly since **it is
         /// called between each line!** If heavier processing is required
-        /// consider using [`process_check_every`] or doing it under a
-        /// `reader_state.lines_read % LINES_PER_CHECK == 0` condition instead.
-        pub async fn process_until(
+        /// consider using [`process_check_every`] or [`process_until_every`].
+        pub async fn process_until<T>(
             &mut self,
-            mut predicate: impl FnMut(&Parser, ReaderState) -> bool,
-        ) -> ParseState {
+            mut predicate: impl FnMut(&Parser, ReaderState) -> Option<T>,
+        ) -> ParseState<T> {
             let Some(reader) = self.reader.as_mut() else {
                 return ParseState::Completed { end_of_stream: true };
             };
             let mut buf = String::new();
-            while predicate(&self.parser, self.reader_state) {
+            loop {
+                if let Some(t) = predicate(&self.parser, self.reader_state) {
+                    return ParseState::Paused(t, self.reader_state);
+                }
                 let state = match add_await([Self::process_line(reader, &mut self.reader_state, &mut self.parser, &mut buf)]) {
                     Ok(None) => continue,
                     Ok(Some(end_of_stream)) => ParseState::Completed { end_of_stream },
@@ -278,19 +280,38 @@ mod wrapper {
                 self.parser.end_of_file();
                 return state;
             }
-            ParseState::Paused(self.reader_state)
         }
+        /// Identical to [`process_until`] except the predicate is only checked
+        /// every `lines_per_check` lines.
+        pub async fn process_until_every<T>(
+            &mut self,
+            mut predicate: impl FnMut(&Parser, ReaderState) -> Option<T>,
+            lines_per_check: usize,
+        ) -> ParseState<T> {
+            assert!(lines_per_check > 0);
+            let mut remaining = lines_per_check;
+            add_await([self.process_until(move |p, rs| {
+                remaining -= 1;
+                if remaining == 0 {
+                    remaining = lines_per_check;
+                    predicate(p, rs)
+                } else {
+                    None
+                }
+            })])
+        }
+
         /// Parse the the input while calling the `predicate` callback every
-        /// `delta` time. Keep parsing until the callback returns `false` or we
-        /// reach the end of the input. If we stopped due to the callback,
-        /// return the current progress as `ParseState::Paused`. After this
-        /// function returns, use [`parser`](Self::parser) to retrieve the
+        /// `delta` time. Keep parsing until the callback returns `Some(t)` or
+        /// we reach the end of the input. If we stopped due to the callback,
+        /// return the current progress as `ParseState::Paused(t, state)`. After
+        /// this function returns, use [`parser`](Self::parser) to retrieve the
         /// parser state.
-        pub async fn process_check_every(
+        pub async fn process_check_every<T>(
             &mut self,
             delta: Duration,
-            mut predicate: impl FnMut(&Parser, ReaderState) -> bool,
-        ) -> ParseState {
+            mut predicate: impl FnMut(&Parser, ReaderState) -> Option<T>,
+        ) -> ParseState<T> {
             // Calling `Instant::now` between each line can get expensive, so
             // we'll try to avoid it. We will try to check every
             // `MAX_LINES_PER_TIME_VARIATION * time_left`, ensuring that we
@@ -352,7 +373,7 @@ mod wrapper {
                         }
                     }
                 }
-                true
+                None
             })])
         }
 
@@ -360,8 +381,9 @@ mod wrapper {
         /// instead is recommended as this method will cause the process to hang
         /// if given a very large file.
         pub async fn process_all(mut self) -> FResult<Parser> {
-            match add_await([self.process_until(|_, _| true)]) {
-                ParseState::Paused(_) => unreachable!(),
+            enum Never {}
+            match add_await([self.process_until(|_, _| None::<Never>)]) {
+                ParseState::Paused(n, _) => match n {},
                 ParseState::Completed { .. } => Ok(self.parser),
                 ParseState::Error(err) => Err(err),
             }
@@ -377,8 +399,8 @@ mod wrapper {
         pub async fn process_all_timeout(
             mut self,
             timeout: Duration,
-        ) -> (ParseState, Parser) {
-            let result = add_await([self.process_check_every(timeout, |_, _| false)]);
+        ) -> (ParseState<()>, Parser) {
+            let result = add_await([self.process_check_every(timeout, |_, _| Some(()))]);
             (result, self.parser)
         }
         /// Try to parse everything, but stop after parsing `limit` bytes. The
@@ -391,8 +413,8 @@ mod wrapper {
         pub async fn process_all_byte_limit(
             mut self,
             limit: usize,
-        ) -> (ParseState, Parser) {
-            let result = add_await([self.process_until(|_, s| s.bytes_read < limit)]);
+        ) -> (ParseState<()>, Parser) {
+            let result = add_await([self.process_until(|_, s| (s.bytes_read < limit).then(|| ()))]);
             (result, self.parser)
         }
     }

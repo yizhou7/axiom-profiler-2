@@ -14,9 +14,9 @@ impl FileDataComponent {
         /// Detects if a file is being dragged over the window
         fn file_drag(event: &DragEvent) -> bool {
             event.data_transfer().as_ref().map(DataTransfer::types)
-                .filter(|types| types.length() == 1)
-                .and_then(|types| types.get(0).as_string())
-                .is_some_and(|ty| ty == "Files")
+                .is_some_and(|types|
+                    types.iter().flat_map(|ty| ty.as_string()).any(|ty| ty == "Files")
+                )
         }
         let last_drag_target = Rc::new(RefCell::new(None));
         let last_drag_target_ref = last_drag_target.clone();
@@ -89,16 +89,23 @@ impl FileDataComponent {
                 let mut parser = Z3Parser::from_async(stream.buffer());
                 wasm_bindgen_futures::spawn_local(async move {
                     log::info!("Parsing \"{file_name}\"");
-                    let finished = parser.process_until(|_, state| {
-                        if state.lines_read % 100_000 == 0 {
-                            let parsing = ParseProgress::new(state, file_size);
-                            link.send_message(Msg::LoadingState(LoadingState::Parsing(parsing, cancel_cb.clone())));
-                        }
-                        !*cancel.borrow() && state.bytes_read <= 1024 * 1024 * 1024
-                    }).await;
+                    let finished = loop {
+                        let mut lines_to_read = 100_000;
+                        let finished = parser.process_until(|_, state| {
+                            lines_to_read -= 1;
+                            let pause = lines_to_read == 0;
+                            (pause || *cancel.borrow() || state.bytes_read >= 1024 * 1024 * 1024).then(|| pause)
+                        }).await;
+                        let ParseState::Paused(true, state) = finished else {
+                            break finished;
+                        };
+                        let parsing = ParseProgress::new(state, file_size);
+                        link.send_message(Msg::LoadingState(LoadingState::Parsing(parsing, cancel_cb.clone())));
+                        gloo::timers::future::TimeoutFuture::new(0).await;
+                    };
                     let cancel = *cancel.borrow();
                     match finished {
-                        ParseState::Paused(_) if !cancel => {
+                        ParseState::Paused(..) if !cancel => {
                             let message = OmnibarMessage {
                                 message: "Stopped parsing at 1GB".to_string(),
                                 is_error: false,
@@ -118,7 +125,7 @@ impl FileDataComponent {
             Err((_err, _stream)) => {
                 let link = link.clone();
                 link.send_message(Msg::LoadingState(LoadingState::ReadingToString));
-                let reader = gloo_file::callbacks::read_as_bytes(&file, move |res| {
+                let reader = gloo::file::callbacks::read_as_bytes(&file, move |res| {
                     log::info!("Loading to string \"{file_name}\"");
                     let res = res.and_then(|res| String::from_utf8(res)
                         .map_err(|err| gloo::file::FileReadError::NotReadable(err.to_string())));
@@ -131,31 +138,40 @@ impl FileDataComponent {
                     };
                     log::info!("Parsing \"{file_name}\"");
                     link.send_message(Msg::LoadingState(LoadingState::StartParsing));
-                    let mut parser = Z3Parser::from_str(&text_data);
-                    let finished = parser.process_until(|_, state| {
-                        if state.lines_read % 100_000 == 0 {
+                    wasm_bindgen_futures::spawn_local(async move {
+                        let mut parser = Z3Parser::from_str(&text_data);
+                        let finished = loop {
+                            let mut lines_to_read = 100_000;
+                            let finished = parser.process_until(|_, state| {
+                                lines_to_read -= 1;
+                                let pause = lines_to_read == 0;
+                                (pause || *cancel.borrow() || state.bytes_read >= 512 * 1024 * 1024).then(|| pause)
+                            });
+                            let ParseState::Paused(true, state) = finished else {
+                                break finished;
+                            };
                             let parsing = ParseProgress::new(state, file_size);
                             link.send_message(Msg::LoadingState(LoadingState::Parsing(parsing, cancel_cb.clone())));
+                            gloo::timers::future::TimeoutFuture::new(0).await;
+                        };
+                        let cancel = *cancel.borrow();
+                        match finished {
+                            ParseState::Paused(..) if !cancel => {
+                                let message = OmnibarMessage {
+                                    message: "Stopped parsing at 500MB, use Chrome or Firefox to increase this limit".to_string(),
+                                    is_error: false,
+                                };
+                                link.send_message(Msg::ShowMessage(message, 8000));
+                            }
+                            ParseState::Error(err) => {
+                                link.send_message(Msg::FailedOpening(err.to_string()));
+                                return;
+                            }
+                            _ => (),
                         }
-                        !*cancel.borrow() && state.bytes_read <= 512 * 1024 * 1024
+                        link.send_message(Msg::LoadingState(LoadingState::DoneParsing(finished.is_timeout(), cancel)));
+                        link.send_message(Msg::LoadedFile(file_name, file_size, parser.take_parser(), finished, cancel))
                     });
-                    let cancel = *cancel.borrow();
-                    match finished {
-                        ParseState::Paused(_) if !cancel => {
-                            let message = OmnibarMessage {
-                                message: "Stopped parsing at 500MB, use Chrome or Firefox to increase this limit".to_string(),
-                                is_error: false,
-                            };
-                            link.send_message(Msg::ShowMessage(message, 8000));
-                        }
-                        ParseState::Error(err) => {
-                            link.send_message(Msg::FailedOpening(err.to_string()));
-                            return;
-                        }
-                        _ => (),
-                    }
-                    link.send_message(Msg::LoadingState(LoadingState::DoneParsing(finished.is_timeout(), cancel)));
-                    link.send_message(Msg::LoadedFile(file_name, file_size, parser.take_parser(), finished, cancel))
                 });
                 self.reader = Some(reader);
             }

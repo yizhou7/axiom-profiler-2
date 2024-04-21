@@ -233,8 +233,9 @@ pub fn Graph(props: &GraphProps) -> Html {
                             if let Some(parent) = edge_path.parent_node() {
                                 if let Some(duplicate) = edge_path.clone_node().ok().and_then(|e| e.dyn_into::<Element>().ok()) {
                                     let _ = parent.append_child(&duplicate);
-                                    duplicate.set_attribute("stroke-width", "25").unwrap();
+                                    duplicate.set_attribute("stroke-width", "15").unwrap();
                                     duplicate.set_attribute("stroke", "transparent").unwrap();
+                                    duplicate.remove_attribute("stroke-dasharray").ok();
                                     edge_hover_select = duplicate;
                                 }
                             }
