@@ -172,11 +172,26 @@ impl EGraph {
             // There was a root mismatch (and `can_mismatch` was true), so we
             // can't construct a simple path.
             self.enodes[from].transitive.try_reserve(1)?;
-            self.equalities.transitive.raw.try_reserve(1)?;
-            let trans = *self.enodes[from].transitive.entry(to).or_insert_with(|| {
-                self.equalities.transitive.push_and_get_key(TransitiveExpl::empty(to))
-            });
-            debug_assert_eq!(self.equalities.transitive[trans].given_len, 0);
+            let trans = match self.enodes[from].transitive.entry(to) {
+                Entry::Occupied(mut o) => {
+                    let trans = *o.get();
+                    if self.equalities.transitive[trans].given_len != 0 {
+                        // These two nodes are no longer equal (this is an old
+                        // transitive equality that is no longer valid).
+                        self.equalities.transitive.raw.try_reserve(1)?;
+                        let trans = self.equalities.transitive.push_and_get_key(TransitiveExpl::empty(to));
+                        o.insert(trans);
+                        trans
+                    } else {
+                        trans
+                    }
+                }
+                Entry::Vacant(v) => {
+                    self.equalities.transitive.raw.try_reserve(1)?;
+                    let trans = self.equalities.transitive.push_and_get_key(TransitiveExpl::empty(to));
+                    *v.insert(trans)
+                }
+            };
             return Ok(trans)
         };
         let edges_len = simple_path.edges_len();
