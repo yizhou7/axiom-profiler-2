@@ -111,6 +111,21 @@ impl Component for Omnibox {
             _commands_search,
         }
     }
+    fn changed(&mut self, ctx: &Context<Self>, old_props: &Self::Properties) -> bool {
+        if ctx.props() == old_props {
+            return false;
+        }
+        if ctx.props().progress != old_props.progress {
+            self.focused = false;
+            self.command_mode = false;
+            self.input = None;
+            self.highlighted = 0;
+            self.picked = None;
+            self.actions = None;
+            self.commands = None;
+        }
+        true
+    }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
