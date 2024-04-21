@@ -5,15 +5,13 @@ use std::sync::{Mutex, OnceLock, RwLock};
 use fxhash::{FxHashMap, FxHashSet};
 use gloo_file::File;
 use gloo_file::{callbacks::FileReader, FileList};
-use petgraph::visit::{EdgeRef, IntoEdgeReferences};
+use petgraph::visit::EdgeRef;
 use results::svg_result::{Msg as SVGMsg, RenderedGraph, RenderingState, SVGResult};
-use smt_log_parser::items::{InstIdx, QuantIdx};
 use smt_log_parser::parsers::z3::graph::{InstGraph, VisibleEdgeIndex, RawNodeIndex};
 use smt_log_parser::parsers::z3::z3parser::Z3Parser;
-use smt_log_parser::parsers::{AsyncBufferRead, LogParser, ParseState, ReaderState};
+use smt_log_parser::parsers::{ParseState, ReaderState};
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
-use wasm_streams::ReadableStream;
 use wasm_timer::Instant;
 use web_sys::{HtmlElement, HtmlInputElement};
 use yew::prelude::*;
@@ -34,6 +32,7 @@ mod global_callbacks;
 pub mod configuration;
 pub mod homepage;
 pub mod shortcuts;
+pub mod file;
 
 pub const GIT_DESCRIBE: &str = env!("VERGEN_GIT_DESCRIBE");
 pub fn version() -> Option<semver::Version> {
@@ -173,7 +172,7 @@ pub struct FileDataComponent {
     showing_help: bool,
     omnibox: NodeRef,
     sidebar_button: NodeRef,
-    _callback_refs: [CallbackRef; 3],
+    _callback_refs: [CallbackRef; 6],
 }
 
 impl Component for FileDataComponent {
@@ -189,12 +188,14 @@ impl Component for FileDataComponent {
         let pd = PREVENT_DEFAULT_DRAG_OVER.get_or_init(|| Mutex::default());
         let drag_over_ref = (registerer.register_drag_over)(Callback::from(|event: DragEvent| {
             *mouse_position().write().unwrap() = PagePosition { x: event.client_x(), y: event.client_y() };
-            if *pd.lock().unwrap() {
+            let pd = *pd.lock().unwrap();
+            if pd {
                 event.prevent_default();
             }
         }));
+        let [drag_enter_ref, drag_leave_ref, drop_ref] = Self::file_drag(&registerer, ctx.link());
         let keydown = (registerer.register_keyboard_down)(ctx.link().callback(Msg::KeyDown));
-        let _callback_refs = [mouse_move_ref, drag_over_ref, keydown];
+        let _callback_refs = [mouse_move_ref, drag_over_ref, drag_enter_ref, drag_leave_ref, drop_ref, keydown];
         Self {
             file_select: NodeRef::default(),
             file: None,
@@ -214,80 +215,14 @@ impl Component for FileDataComponent {
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
             Msg::File(file) => {
-                // reset the configuration to default
-                let cfg = ctx.link().get_configuration().unwrap();
-                cfg.update_parser(|p| *p = None);
                 let Some(file) = file else {
                     return false;
                 };
-                let changed = self.file.is_some() || self.reader.is_some();
-                drop(self.file.take());
-                drop(self.reader.take());
+                // reset the configuration to default
+                let cfg = ctx.link().get_configuration().unwrap();
+                cfg.update_parser(|p| *p = None);
 
-                let file_name = file.name();
-                let file_size = file.size();
-                log::info!("Selected file \"{file_name}\"");
-                *self.cancel.borrow_mut() = false;
-                let cancel = self.cancel.clone();
-                let cancel_cb = Callback::from(move |_| {
-                    *cancel.borrow_mut() = true;
-                });
-                let cancel = self.cancel.clone();
-                // Turn into stream
-                let blob: &web_sys::Blob = file.as_ref();
-                let stream = ReadableStream::from_raw(blob.stream().unchecked_into());
-                match stream.try_into_async_read() {
-                    Ok(stream) => {
-                        let link = ctx.link().clone();
-                        link.send_message(Msg::LoadingState(LoadingState::StartParsing));
-                        let mut parser = Z3Parser::from_async(stream.buffer());
-                        wasm_bindgen_futures::spawn_local(async move {
-                            log::info!("Parsing \"{file_name}\"");
-                            let finished = parser.process_until(|_, state| {
-                                if state.lines_read % 100_000 == 0 {
-                                    let parsing = ParseProgress::new(state, file_size);
-                                    link.send_message(Msg::LoadingState(LoadingState::Parsing(parsing, cancel_cb.clone())));
-                                }
-                                !*cancel.borrow() && state.bytes_read <= 1024 * 1024 * 1024
-                            }).await;
-                            if finished.is_timeout() && !*cancel.borrow() {
-                                // TODO: make this clear in the UI
-                                log::info!("Stopped parsing at 1GB");
-                            }
-                            let cancel = *cancel.borrow();
-                            link.send_message(Msg::LoadingState(LoadingState::DoneParsing(finished.is_timeout(), cancel)));
-                            link.send_message(Msg::LoadedFile(file_name, file_size, parser.take_parser(), finished, cancel))
-                        });
-                    }
-                    Err((_err, _stream)) => {
-                        let link = ctx.link().clone();
-                        link.send_message(Msg::LoadingState(LoadingState::ReadingToString));
-                        let reader = gloo_file::callbacks::read_as_bytes(&file, move |res| {
-                            log::info!("Loading to string \"{file_name}\"");
-                            let text_data =
-                                String::from_utf8(res.expect("failed to read file")).unwrap();
-                            log::info!("Parsing \"{file_name}\"");
-                            link.send_message(Msg::LoadingState(LoadingState::StartParsing));
-                            let mut parser = Z3Parser::from_str(&text_data);
-                            let finished = parser.process_until(|_, state| {
-                                if state.lines_read % 100_000 == 0 {
-                                    let parsing = ParseProgress::new(state, file_size);
-                                    link.send_message(Msg::LoadingState(LoadingState::Parsing(parsing, cancel_cb.clone())));
-                                }
-                                !*cancel.borrow() && state.bytes_read <= 512 * 1024 * 1024
-                            });
-                            if finished.is_timeout() && !*cancel.borrow() {
-                                // TODO: make this clear in the UI
-                                log::info!("Stopped parsing at 0.5GB (use Chrome or Firefox to increase this limit to 1GB)");
-                            }
-                            let cancel = *cancel.borrow();
-                            link.send_message(Msg::LoadingState(LoadingState::DoneParsing(finished.is_timeout(), cancel)));
-                            link.send_message(Msg::LoadedFile(file_name, file_size, parser.take_parser(), finished, cancel))
-                        });
-                        self.reader = Some(reader);
-                    }
-                };
-                changed
+                self.load_opened_file(file, ctx.link())
             }
             Msg::LoadingState(mut state) => {
                 log::info!("New state \"{state:?}\"");
