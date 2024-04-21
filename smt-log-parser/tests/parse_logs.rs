@@ -57,7 +57,7 @@ fn parse_all_logs() {
 
             parser.process_check_every(Duration::from_millis(100), |_, s| {
                 assert!(now.elapsed() < timeout, "Parsing took longer than timeout");
-                parse_limit > s.bytes_read as u64
+                (parse_limit <= s.bytes_read as u64).then(|| ())
             });
             let elapsed = now.elapsed();
             max_parse_ovhd = f64::max(max_parse_ovhd, (ALLOCATOR.allocated() as u64 - start_alloc) as f64 / parse_bytes as f64);

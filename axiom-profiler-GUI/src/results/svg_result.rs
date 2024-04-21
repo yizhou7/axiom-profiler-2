@@ -125,7 +125,7 @@ impl Component for SVGResult {
         let colour_map = QuantIdxToColourMap::from(quant_count, non_quant_insts);
         let link = ctx.link().clone();
         wasm_bindgen_futures::spawn_local(async move {
-            gloo_timers::future::TimeoutFuture::new(10).await;
+            gloo::timers::future::TimeoutFuture::new(10).await;
             let mut cfg = link.get_configuration().unwrap();
             let mut parser = cfg.config.parser.unwrap();
             let inst_graph = InstGraph::new(&parser.parser).unwrap();
