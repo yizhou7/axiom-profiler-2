@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use gloo::timers::callback::Timeout;
 use material_yew::icon::MatIcon;
 use petgraph::graph::NodeIndex;
@@ -290,8 +292,8 @@ pub struct ExistingFilterProps {
 
 #[function_component]
 pub fn ExistingFilter(props: &ExistingFilterProps) -> Html {
-    let cfg = use_context::<ConfigurationProvider>().unwrap();
-    let graph = cfg.config.parser.and_then(|p| p.graph);
+    let cfg = use_context::<Rc<ConfigurationProvider>>().unwrap();
+    let graph = cfg.config.parser.as_ref().and_then(|p| p.graph.as_ref());
     let fc = |i| graph.as_ref().map(|g| {
         *g.borrow().raw[i].kind()
     }).unwrap();

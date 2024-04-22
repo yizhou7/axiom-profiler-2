@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use material_yew::icon::MatIcon;
 use petgraph::{visit::{Dfs, Reversed, Walker}, Direction};
 use smt_log_parser::parsers::z3::graph::{raw::{Node, NodeKind}, RawNodeIndex};
@@ -15,8 +17,8 @@ pub struct AddFilterSidebarProps {
 
 #[function_component]
 pub fn AddFilterSidebar(props: &AddFilterSidebarProps) -> Html {
-    let cfg = use_context::<ConfigurationProvider>().unwrap();
-    let Some(parser) = cfg.config.parser else {
+    let cfg = use_context::<Rc<ConfigurationProvider>>().unwrap();
+    let Some(parser) = &cfg.config.parser else {
         return html!{}
     };
 

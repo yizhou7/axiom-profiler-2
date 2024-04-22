@@ -139,7 +139,7 @@ impl Component for Homepage {
         });
         let set_hover = ctx.link().callback(|_| HomepageMessage::FieldsetHover(true));
         html! {
-            <div class="page home-page"><div class="home-page-center">
+            <><div class="home-page-center">
                 <div class="home-page-title">
                     <img src="html/logo_small.png" class="logo" />{"Axiom Profiler"}</div>
                 <div class="home-page-hints">
@@ -160,7 +160,7 @@ impl Component for Homepage {
                     </fieldset>
                 </div>
             // Can add a footer here
-            </div><a href="#" target="_blank" class="footer">{""}</a></div>
+            </div><a href="#" target="_blank" class="footer">{""}</a></>
         }
     }
 }
