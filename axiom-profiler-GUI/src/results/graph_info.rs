@@ -52,7 +52,6 @@ pub enum Msg {
     // SelectNodes(Vec<RawNodeIndex>),
     DeselectAll,
     SelectAll,
-    ToggleIgnoreTermIds,
     ShowGeneralizedTerms(Vec<String>),
 }
 
@@ -146,13 +145,6 @@ impl Component for GraphInfo {
             //     ctx.props().update_selected_nodes.emit(selected_nodes);
             //     true
             // }
-            Msg::ToggleIgnoreTermIds => {
-                let cfg = ctx.link().get_configuration().unwrap();
-                cfg.update_display(|display| {
-                    display.display_term_ids = !display.display_term_ids;
-                });
-                false
-            }
             Msg::ShowGeneralizedTerms(terms) => {
                 self.generalized_terms = terms;
                 true
@@ -177,7 +169,6 @@ impl Component for GraphInfo {
             let link = ctx.link().clone();
             Callback::from(move |edge: VisibleEdgeIndex| link.send_message(Msg::ToggleOpenEdge(edge)))
         };
-        let toggle = ctx.link().callback(|_| Msg::ToggleIgnoreTermIds);
         let ignore_term_ids = !ctx.link().get_configuration().unwrap().config.persistent.display.display_term_ids;
         let on_node_select = ctx.link().callback(Msg::UserSelectedNode);
         let on_edge_select = ctx.link().callback(Msg::UserSelectedEdge);
@@ -204,10 +195,6 @@ impl Component for GraphInfo {
                 />
 
                 <div style="width:100%; height:100%; overflow-wrap:anywhere; overflow:clip auto;">
-                    <div style="position: sticky; top: 0px; left: 0px">
-                        <label for="term_expander">{"Ignore term IDs "}</label>
-                        <input type="checkbox" checked={ignore_term_ids} onclick={toggle} id="term_expander" />
-                    </div>
                     <SelectedNodesInfo selected_nodes={self.selected_nodes.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>()} on_click={on_node_click} />
                     <SelectedEdgesInfo selected_edges={self.selected_edges.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>()} rendered={ctx.props().rendered.clone()} on_click={on_edge_click} />
                     // TODO: re-add matching loops

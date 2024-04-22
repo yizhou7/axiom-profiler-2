@@ -23,11 +23,11 @@ use yew_router::prelude::*;
 use material_yew::{MatIcon, MatIconButton, MatDialog, WeakComponentLink};
 
 use crate::commands::CommandsProvider;
-use crate::configuration::{ConfigurationContext, ConfigurationProvider};
+use crate::configuration::{ConfigurationContext, ConfigurationProvider, Flags};
 use crate::filters::FiltersState;
 use crate::infobars::{OmnibarMessage, SearchActionResult, SidebarSectionHeader, Topbar};
 use crate::results::svg_result::GraphState;
-use crate::utils::lookup::StringLookupZ3;
+use crate::utils::{lookup::StringLookupZ3, overlay_page::{Overlay, SetVisibleCallback}};
 
 pub use global_callbacks::{GlobalCallbacksProvider, CallbackRef, GlobalCallbacksContext};
 pub use utils::position::*;
@@ -178,8 +178,9 @@ pub struct FileDataComponent {
     showing_help: bool,
     omnibox: NodeRef,
     sidebar_button: NodeRef,
+    flags_visible: SetVisibleCallback,
     _callback_refs: [CallbackRef; 6],
-    _command_refs: [CommandRef; 3],
+    _command_refs: [CommandRef; 4],
 }
 
 impl FileDataComponent {
@@ -212,6 +213,7 @@ impl Component for FileDataComponent {
         let help_dialog = WeakComponentLink::<MatDialog>::default();
         let sidebar_button = NodeRef::default();
         let omnibox = NodeRef::default();
+        let flags_visible = SetVisibleCallback::default();
 
         // Global Callbacks
         let registerer = ctx.link().get_callbacks_registerer().unwrap();
@@ -261,7 +263,17 @@ impl Component for FileDataComponent {
             disabled: false,
         };
         let hide_sidebar_cmd = (commands)(hide_sidebar_cmd);
-        let _command_refs = [help_cmd, hide_sidebar_cmd, search_cmd];
+        let flags_visible_ref = flags_visible.clone();
+        let toggle_flags_cmd = Command {
+            name: "Toggle flags page".to_string(),
+            execute: Callback::from(move |_| {
+                flags_visible_ref.borrow().emit(None);
+            }),
+            keyboard_shortcut: vec!["Cmd", ","],
+            disabled: false,
+        };
+        let toggle_flags_cmd = (commands)(toggle_flags_cmd);
+        let _command_refs = [help_cmd, hide_sidebar_cmd, search_cmd, toggle_flags_cmd];
         Self {
             file_select: NodeRef::default(),
             file: None,
@@ -276,6 +288,7 @@ impl Component for FileDataComponent {
             showing_help: false,
             omnibox,
             sidebar_button,
+            flags_visible,
             _callback_refs,
             _command_refs,
         }
@@ -287,9 +300,11 @@ impl Component for FileDataComponent {
                 let Some(file) = file else {
                     return false;
                 };
-                // reset the configuration to default
+                // remove any old parser in the configuration
                 let cfg = ctx.link().get_configuration().unwrap();
-                cfg.update_parser(|p| *p = None);
+                cfg.update_parser(|p| p.take().is_some());
+                // hide the flags page if shown
+                self.flags_visible.borrow().emit(Some(false));
 
                 self.load_opened_file(file, ctx.link())
             }
@@ -348,7 +363,7 @@ impl Component for FileDataComponent {
                 let file = self.file.take();
                 drop(file);
                 let cfg = ctx.link().get_configuration().unwrap();
-                cfg.update_parser(|p| *p = None);
+                cfg.update_parser(|p| p.take().is_some());
 
                 if let Some(navigation_section) = self.navigation_section.cast::<web_sys::Element>() {
                     let _ = navigation_section.class_list().add_1("expanded");
@@ -368,7 +383,10 @@ impl Component for FileDataComponent {
                 drop(self.reader.take());
                 let parser = RcParser::new(parser);
                 let cfg = ctx.link().get_configuration().unwrap();
-                cfg.update_parser(|p| *p = Some(RcParser::clone(&parser)));
+                cfg.update_parser(move |p| {
+                    *p = Some(parser);
+                    true
+                });
                 let file = OpenedFileInfo {
                     file_name,
                     file_size,
@@ -429,6 +447,13 @@ impl Component for FileDataComponent {
                     }
                     false
                 }
+                "," => {
+                    if event.meta_key() {
+                        event.prevent_default();
+                        self.flags_visible.borrow().emit(None);
+                    }
+                    false
+                }
                 _ => false,
             }
             Msg::SearchMatchingLoops => {
@@ -472,7 +497,8 @@ impl Component for FileDataComponent {
             None => html!{},
         };
 
-        let parser = ctx.link().get_configuration().unwrap().config.parser;
+        let cfg = ctx.link().get_configuration().unwrap();
+        let parser = cfg.config.parser.clone();
         let parser_ref = parser.clone();
         let visible = self.file.as_ref().and_then(|f| f.rendered.as_ref().map(|r| r.graph.clone()));
         let visible_ref = visible.clone();
@@ -522,6 +548,7 @@ impl Component for FileDataComponent {
         });
         let onopened = ctx.link().callback(|_| Msg::ShowHelpToggled(true));
         let onclosed = ctx.link().callback(|_| Msg::ShowHelpToggled(false));
+        let at_homepage = self.file.is_none();
         let page = self.file.as_ref().map(|f| {
             let (timeout, cancel) = (f.parser_state.is_timeout(), f.parser_cancelled);
             let progress = ctx.link().callback(move |rs| match rs {
@@ -531,16 +558,18 @@ impl Component for FileDataComponent {
             });
             let selected_nodes = ctx.link().callback(Msg::SelectedNodes);
             let selected_edges = ctx.link().callback(Msg::SelectedEdges);
-            html! {
-                <div class="page">
-                    <SVGResult file={f.clone()} {progress} {selected_nodes} {selected_edges} insts_info_link={self.insts_info_link.clone()}/>
-                </div>
-            }
+            html! {<SVGResult file={f.clone()} {progress} {selected_nodes} {selected_edges} insts_info_link={self.insts_info_link.clone()}/>}
         }).unwrap_or_else(|| {
             html!{<homepage::Homepage {is_canary}/>}
         });
         let message = self.message.as_ref().map(|(_, message)| message).cloned();
         let header_class = if is_canary { "canary" } else { "stable" };
+        let page_class = if at_homepage { "page home-page" } else { "page" };
+        let flags_visible = self.flags_visible.clone();
+        let toggle_settings = Callback::from(move |click: MouseEvent| {
+            click.prevent_default();
+            flags_visible.borrow().emit(None);
+        });
         html! {
 <>
     <nav class="sidebar" ref={sidebar}>
@@ -554,7 +583,7 @@ impl Component for FileDataComponent {
             <SidebarSectionHeader header_text="Support" collapsed_text="Documentation & Bugs"><ul>
                 <li><a href="#" draggable="false" onclick={show_shortcuts} id="keyboard_shortcuts"><div class="material-icons"><MatIcon>{"help"}</MatIcon></div>{"Keyboard shortcuts"}</a></li>
                 <li><a href="https://github.com/viperproject/axiom-profiler-2/blob/main/README.md" target="_blank" id="documentation"><div class="material-icons"><MatIcon>{"find_in_page"}</MatIcon></div>{"Documentation"}</a></li>
-                <li><a href="#" draggable="false" id="flags"><div class="material-icons"><MatIcon>{"emoji_flags"}</MatIcon></div>{"Flags"}</a></li>
+                <li><a href="#" draggable="false" onclick={toggle_settings} id="flags"><div class="material-icons"><MatIcon>{"emoji_flags"}</MatIcon></div>{"Flags"}</a></li>
                 <li><a href="https://github.com/viperproject/axiom-profiler-2/issues/new" target="_blank" id="report_a_bug"><div class="material-icons"><MatIcon>{"bug_report"}</MatIcon></div>{"Report a bug"}</a></li>
             </ul></SidebarSectionHeader>
             <div class="sidebar-footer">
@@ -568,7 +597,10 @@ impl Component for FileDataComponent {
         <Topbar progress={self.progress.clone()} {message} omnibox={self.omnibox.clone()} {search} {pick} {select} />
     </div>
     <div class="alerts"></div>
-    {page}
+    <div class={page_class}>
+        {page}
+        <Overlay set_visible={self.flags_visible.clone()}><Flags /></Overlay>
+    </div>
 
     // Shortcuts dialog
     <shortcuts::Shortcuts noderef={self.help_dialog.clone()} {onopened} {onclosed}/>

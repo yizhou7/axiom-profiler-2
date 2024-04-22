@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use smt_log_parser::{display_with::{DisplayCtxt, DisplayWithCtxt}, items::{MatchKind, VarNames}, parsers::z3::graph::{raw::{EdgeKind, Node, NodeKind}, visible::{VisibleEdge, VisibleEdgeKind}, InstGraph, VisibleEdgeIndex, RawNodeIndex}};
 use yew::{function_component, html, use_context, AttrValue, Callback, Html, MouseEvent, Properties};
 
@@ -161,14 +163,14 @@ pub fn SelectedNodesInfo(
         return html! {}
     }
 
-    let cfg = use_context::<ConfigurationProvider>().unwrap();
-    let parser = cfg.config.parser.unwrap();
-    let graph = parser.graph.unwrap();
+    let cfg = use_context::<Rc<ConfigurationProvider>>().unwrap();
+    let parser = cfg.config.parser.as_ref().unwrap();
+    let graph = parser.graph.as_ref().unwrap();
     let parser = &*parser.parser;
     let graph = graph.borrow();
     let ctxt = &DisplayCtxt {
         parser,
-        config: cfg.config.persistent.display,
+        config: cfg.config.persistent.display.clone(),
     };
 
     let infos = selected_nodes
@@ -333,14 +335,14 @@ pub fn SelectedEdgesInfo(
         return html! {}
     };
 
-    let cfg = use_context::<ConfigurationProvider>().unwrap();
-    let parser = cfg.config.parser.unwrap();
-    let graph = parser.graph.unwrap();
+    let cfg = use_context::<Rc<ConfigurationProvider>>().unwrap();
+    let parser = cfg.config.parser.as_ref().unwrap();
+    let graph = parser.graph.as_ref().unwrap();
     let parser = &*parser.parser;
     let graph = graph.borrow();
     let ctxt = &DisplayCtxt {
         parser,
-        config: cfg.config.persistent.display,
+        config: cfg.config.persistent.display.clone(),
     };
 
     let infos = selected_edges

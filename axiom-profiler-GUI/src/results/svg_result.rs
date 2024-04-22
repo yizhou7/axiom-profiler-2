@@ -123,8 +123,8 @@ impl Component for SVGResult {
         let link = ctx.link().clone();
         wasm_bindgen_futures::spawn_local(async move {
             gloo::timers::future::TimeoutFuture::new(10).await;
-            let mut cfg = link.get_configuration().unwrap();
-            let mut parser = cfg.config.parser.unwrap();
+            let cfg = link.get_configuration().unwrap();
+            let parser = cfg.config.parser.as_ref().unwrap();
             let inst_graph = match InstGraph::new(&parser.parser) {
                 Ok(inst_graph) => inst_graph,
                 Err(err) => {
@@ -140,9 +140,11 @@ impl Component for SVGResult {
                 }
             };
             let inst_graph = Rc::new(RefCell::new(inst_graph));
-            parser.graph.replace(inst_graph.clone());
-            cfg.config.parser = Some(parser);
-            cfg.update.emit(cfg.config);
+            let inst_graph_ref = inst_graph.clone();
+            cfg.update.update(|cfg| cfg.parser.as_mut().map(|p| {
+                p.graph = Some(inst_graph_ref);
+                true
+            }).unwrap_or_default());
             link.send_message(Msg::ConstructedGraph(inst_graph));
         });
         Self {
@@ -196,7 +198,7 @@ impl Component for SVGResult {
             Msg::WorkerOutput(_out) => false,
             Msg::ApplyFilter(filter) => {
                 log::debug!("Applying filter {:?}", filter);
-                match filter.apply(inst_graph, parser, cfg.config.persistent.display) {
+                match filter.apply(inst_graph, parser, &cfg.config.persistent.display) {
                     FilterOutput::LongestPath(path) => {
                         ctx.props().selected_nodes.emit(path);
                         // self.insts_info_link
@@ -270,7 +272,7 @@ impl Component for SVGResult {
                     let filtered_graph = &calculated.graph;
                     let ctxt = &DisplayCtxt {
                         parser,
-                        config: cfg.config.persistent.display,
+                        config: cfg.config.persistent.display.clone(),
                     };
 
                     // Performance observations (default value is in [])
