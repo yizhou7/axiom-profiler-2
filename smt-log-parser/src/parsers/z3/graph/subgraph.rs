@@ -1,11 +1,13 @@
 use fxhash::FxHashSet;
+#[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
 use petgraph::{graph::{DiGraph, EdgeIndex, Neighbors, NodeIndex, IndexType}, Directed, Direction::{self, Incoming, Outgoing}, Undirected};
 use roaring::RoaringBitmap;
 
 use super::{raw::RawIx, RawNodeIndex};
 
-#[derive(Debug, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[derive(Debug)]
 pub struct Subgraph {
     pub(super) nodes: Vec<RawNodeIndex>,
     /// `reach_fwd[idx]` gives the set of nodes that can be reached from `idx`

@@ -1,10 +1,12 @@
+#[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
 
 use crate::{
     error::Either, items::{Meaning, QuantIdx, Term, TermAndMeaning, TermId, TermIdToIdxMap, TermIdx, TermKind}, Error, FxHashMap, Result, StringTable, TiVec
 };
 
-#[derive(Debug, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[derive(Debug)]
 pub struct Terms {
     term_id_map: TermIdToIdxMap,
     terms: TiVec<TermIdx, Term>,

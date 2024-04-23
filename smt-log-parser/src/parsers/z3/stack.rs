@@ -1,8 +1,10 @@
+#[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
 
 use crate::{items::StackIdx, Error, Result, TiVec};
 
-#[derive(Debug, Default, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[derive(Debug, Default)]
 pub struct Stack {
     pub(super) stack: Vec<StackIdx>,
     pub(super) stack_frames: TiVec<StackIdx, StackFrame>,
@@ -60,7 +62,8 @@ impl Stack {
     }
 }
 
-#[derive(Debug, Clone, Copy, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[derive(Debug, Clone, Copy)]
 pub struct StackFrame {
     pub active: bool,
 }

@@ -1,6 +1,6 @@
-use std::fmt;
+use std::{borrow::Cow, fmt};
 
-use crate::{items::*, parsers::z3::z3parser::Z3Parser};
+use crate::{items::*, parsers::z3::z3parser::Z3Parser, StringTable};
 
 ////////////
 // General
@@ -76,7 +76,8 @@ pub struct DisplayCtxt<'a> {
     pub config: DisplayConfiguration,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DisplayConfiguration {
     pub display_term_ids: bool,
     pub display_quantifier_name: bool,
@@ -353,6 +354,27 @@ impl<'a: 'b, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a Term 
     }
 }
 
+
+impl VarNames {
+    pub fn get_name<'a>(strings: &'a StringTable, this: Option<&Self>, idx: usize, config: &DisplayConfiguration) -> Cow<'a, str> {
+        let name = match this {
+            Some(Self::NameAndType(names)) => Cow::Borrowed(&strings[*names[idx].0]),
+            None | Some(Self::TypeOnly(_)) => Cow::Owned(if config.use_mathematical_symbols {
+                format!("•{idx}")
+            } else {
+                format!("qvar_{idx}")
+            }),
+        };
+        if config.html {
+            const COLORS: [&str; 9] = ["blue", "green", "olive", "maroon", "teal", "purple", "red", "fuchsia", "navy"];
+            let color = COLORS[idx % COLORS.len()];
+            let name = format!("<div style=\"color:{color};display:inline\">{name}</div>");
+            Cow::Owned(name)
+        } else {
+            name
+        }
+    }
+}
 impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a TermKind {
     fn fmt_with(
         self,
@@ -438,6 +460,7 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a ProofOrAp
                 }
                 Ok(())
             }),
+            // `if` -> `$[#0|7] ? $[#1|7] : $[#2|7]_7`
             Ternary(op1, op2) => data.with_bind_power(TERNARY_BIND, |data, bind_power| {
                 let need_brackets = bind_power >= TERNARY_BIND;
                 if need_brackets {
@@ -457,6 +480,7 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a ProofOrAp
                 }
                 Ok(())
             }),
+            // `pattern` -> `{ $(#0:-0|0|, ) }_256`
             Pattern => data.with_bind_power(NO_BIND, |data, _| {
                 // BIND_POWER is highest
                 write!(f, "{{")?;

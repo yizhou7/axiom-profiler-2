@@ -1,8 +1,10 @@
+#[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
 
 use crate::{items::{Fingerprint, InstIdx, Instantiation, Match, MatchIdx}, FxHashMap, Result, TiVec};
 
-#[derive(Debug, Default, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[derive(Debug, Default)]
 pub struct Insts {
     // `theory-solving` fingerprints are always 0, others rarely repeat.
     fingerprint_to_match: FxHashMap<Fingerprint, (MatchIdx, Option<InstIdx>)>,

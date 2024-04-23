@@ -1,10 +1,9 @@
+#[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
-use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
+
 use std::fmt;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::ops::Index;
-use crate::display_with::DisplayConfiguration;
 use crate::error::Either;
 use crate::{BoxSlice, FxHashMap, IString, StringTable};
 use crate::{Result, Error};
@@ -12,8 +11,10 @@ use crate::{Result, Error};
 #[macro_export]
 macro_rules! idx {
     ($struct:ident, $prefix:tt) => {
+        #[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         #[derive(
-            Clone, Copy, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord, Hash, MemSize, MemDbg,
+            Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash,
         )]
         pub struct $struct(NonZeroUsize);
         impl From<usize> for $struct {
@@ -49,7 +50,9 @@ idx!(EqTransIdx, "={}");
 idx!(GraphIdx, "g{}");
 
 /// A Z3 term and associated data.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Clone, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Term {
     pub id: Option<TermId>,
     pub kind: TermKind,
@@ -57,7 +60,9 @@ pub struct Term {
     pub child_ids: Box<[TermIdx]>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Copy, PartialEq, Eq, Hash, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TermKind {
     Var(usize),
     ProofOrApp(ProofOrApp),
@@ -65,7 +70,9 @@ pub enum TermKind {
     Generalised,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Copy, PartialEq, Eq, Hash, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ProofOrApp {
     pub is_proof: bool,
     pub name: IString,
@@ -92,7 +99,9 @@ impl TermKind {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy, Hash, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Meaning {
     /// The theory in which the value should be interpreted (e.g. `bv`)
     pub theory: IString,
@@ -101,14 +110,17 @@ pub struct Meaning {
 }
 
 /// Returned when indexing with `TermIdx`
-#[derive(Debug, PartialEq, Eq, Clone, Hash, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct TermAndMeaning<'a> {
     pub term: &'a Term,
     pub meaning: Option<&'a Meaning>,
 }
 
 /// A Z3 quantifier and associated data.
-#[derive(Debug, MemSize, MemDbg, Serialize, Deserialize)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug)]
 pub struct Quantifier {
     pub kind: QuantKind,
     pub num_vars: usize,
@@ -117,7 +129,9 @@ pub struct Quantifier {
 }
 
 /// Represents an ID string of the form `name!id`.
-#[derive(Debug, Clone, MemSize, MemDbg, Serialize, Deserialize)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone)]
 pub enum QuantKind {
     Other(IString), // From `[inst-discovered]` with `theory-solving` or `MBQI`
     Lambda,
@@ -159,30 +173,14 @@ impl QuantKind {
     }
 }
 
-#[derive(Debug, MemSize, MemDbg, Serialize, Deserialize)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug)]
 pub enum VarNames {
     TypeOnly(Box<[IString]>),
     NameAndType(Box<[(IString, IString)]>),
 }
 impl VarNames {
-    pub fn get_name<'a>(strings: &'a StringTable, this: Option<&Self>, idx: usize, config: &DisplayConfiguration) -> Cow<'a, str> {
-        let name = match this {
-            Some(Self::NameAndType(names)) => Cow::Borrowed(&strings[*names[idx].0]),
-            None | Some(Self::TypeOnly(_)) => Cow::Owned(if config.use_mathematical_symbols {
-                format!("•{idx}")
-            } else {
-                format!("qvar_{idx}")
-            }),
-        };
-        if config.html {
-            const COLORS: [&str; 9] = ["blue", "green", "olive", "maroon", "teal", "purple", "red", "fuchsia", "navy"];
-            let color = COLORS[idx % COLORS.len()];
-            let name = format!("<div style=\"color:{color};display:inline\">{name}</div>");
-            Cow::Owned(name)
-        } else {
-            name
-        }
-    }
     pub fn get_type(strings: &StringTable, this: Option<&Self>, idx: usize) -> String {
         this.as_ref()
             .map(|this| {
@@ -203,7 +201,9 @@ impl VarNames {
 }
 
 /// A Z3 instantiation.
-#[derive(Debug, Clone, MemSize, MemDbg, Serialize, Deserialize)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone)]
 pub struct Instantiation {
     pub match_: MatchIdx,
     pub fingerprint: Fingerprint,
@@ -218,7 +218,9 @@ impl Instantiation {
     }
 }
 
-#[derive(Debug, Clone, MemSize, MemDbg, Serialize, Deserialize)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone)]
 pub struct Match {
     pub kind: MatchKind,
     pub blamed: Box<[BlameKind]>,
@@ -243,7 +245,9 @@ impl Match {
     }
 }
 
-#[derive(Debug, Clone, MemSize, MemDbg, Serialize, Deserialize)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone)]
 pub enum MatchKind {
     MBQI {
         quant: QuantIdx,
@@ -312,7 +316,9 @@ impl MatchKind {
 /// The kind of dependency between two quantifier instantiations.
 /// - Term: one instantiation produced a term that the other triggered on
 /// - Equality: dependency based on an equality.
-#[derive(Debug, Clone, MemSize, MemDbg, Serialize, Deserialize)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone)]
 pub enum BlameKind {
     Term { term: ENodeIdx },
     Equality { eq: EqTransIdx },
@@ -360,7 +366,9 @@ impl Index<usize> for Blame<'_> {
 
 /// An identifier for a Z3 quantifier instantiation (called "fingerprint" in the original Axiom Profiler).
 /// Represented as a 16-digit hexadecimal number in log files.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, MemSize, MemDbg, Serialize, Deserialize)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Fingerprint(pub u64);
 impl Fingerprint {
     pub fn parse(value: &str) -> Result<Self> {
@@ -385,7 +393,9 @@ impl fmt::Display for Fingerprint {
 }
 
 /// Represents an ID string of the form `name#id` or `name#`.
-#[derive(Debug, Clone, Copy, MemSize, MemDbg, Serialize, Deserialize, Default, Hash, PartialEq, Eq)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq)]
 pub struct TermId {
     pub namespace: IString,
     pub id: Option<NonZeroU32>,
@@ -417,7 +427,8 @@ impl TermId {
 /// of terms but `TermId`s don't map to this nicely, additionally the `TermId`s
 /// may repeat and so we want to map to the latest current `TermIdx`. Has a
 /// special fast path for the common empty namespace case.
-#[derive(Debug, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[derive(Debug)]
 pub struct TermIdToIdxMap {
     empty_string: IString,
     empty_namespace: Vec<Option<TermIdx>>,
@@ -471,7 +482,9 @@ impl TermIdToIdxMap {
 /// A Z3 equality explanation.
 /// Root represents a term that is a root of its equivalence class.
 /// All other variants represent an equality between two terms and where it came from.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq)]
 pub enum EqualityExpl {
     Root {
         id: ENodeIdx,
@@ -556,7 +569,9 @@ impl EqualityExpl {
 
 // Whenever a pair of enodes are said to be equal this uses transitive reasoning
 // with one or more `EqualityExpl` to explain why.
-#[derive(Debug, MemSize, MemDbg, Serialize, Deserialize)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug)]
 pub struct TransitiveExpl {
     pub path: Box<[TransitiveExplSegment]>,
     pub given_len: usize,
@@ -595,7 +610,9 @@ impl TransitiveExpl {
     }
 }
 
-#[derive(Debug, Clone, Copy, MemSize, MemDbg, Serialize, Deserialize)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy)]
 pub struct TransitiveExplSegment {
     pub forward: bool,
     pub kind: TransitiveExplSegmentKind,
@@ -612,7 +629,9 @@ impl TransitiveExplSegment {
     }
 }
 
-#[derive(Debug, Clone, Copy, MemSize, MemDbg, Serialize, Deserialize)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy)]
 pub enum TransitiveExplSegmentKind {
     Given(EqGivenIdx, Option<NonZeroU32>),
     Transitive(EqTransIdx),

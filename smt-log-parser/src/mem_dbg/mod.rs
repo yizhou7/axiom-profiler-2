@@ -1,9 +1,10 @@
+#[cfg(feature = "mem_dbg")]
 mod r#impl;
 
 use core::fmt;
 use std::ops::{Deref, DerefMut};
 
-use serde::{Deserialize, Serialize};
+
 use typed_index_collections::TiVec as TiVecInner;
 
 // TiVec
@@ -54,7 +55,8 @@ impl<K, V> Default for FxHashMap<K, V> {
 
 // StringTable
 
-#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug)]
 pub struct StringTable(lasso::Rodeo<lasso::Spur, fxhash::FxBuildHasher>);
 impl Deref for StringTable {
     type Target = lasso::Rodeo<lasso::Spur, fxhash::FxBuildHasher>;
@@ -75,7 +77,8 @@ impl StringTable {
 
 // IString
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct IString(pub lasso::Spur);
 impl Deref for IString {
     type Target = lasso::Spur;
@@ -91,7 +94,8 @@ impl DerefMut for IString {
 
 // BoxSlice
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BoxSlice<T>(pub Box<[T]>);
 impl<T> Deref for BoxSlice<T> {
     type Target = [T];

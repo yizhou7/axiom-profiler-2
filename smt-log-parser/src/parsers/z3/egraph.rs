@@ -1,6 +1,7 @@
 use std::collections::hash_map::Entry;
 
 use fxhash::FxHashSet;
+#[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
 use petgraph::{graph::{DiGraph, EdgeIndex, NodeIndex}, visit::EdgeRef};
 
@@ -10,7 +11,8 @@ use crate::{
 
 use super::stack::Stack;
 
-#[derive(Debug, Default, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[derive(Debug, Default)]
 pub struct EGraph {
     term_to_enode: FxHashMap<TermIdx, ENodeIdx>,
     pub(super) enodes: TiVec<ENodeIdx, ENode>,
@@ -293,7 +295,8 @@ impl std::ops::Index<ENodeIdx> for EGraph {
     }
 }
 
-#[derive(Debug, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[derive(Debug)]
 pub struct ENode {
     frame: Option<StackIdx>,
     pub created_by: Option<InstIdx>,
@@ -316,14 +319,16 @@ impl ENode {
     }
 }
 
-#[derive(Debug, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[derive(Debug)]
 pub struct Equality {
     _frame: Option<StackIdx>,
     pub to: ENodeIdx,
     pub expl: EqGivenIdx,
 }
 
-#[derive(Debug, Default, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[derive(Debug, Default)]
 pub struct Equalities {
     pub(super) given: TiVec<EqGivenIdx, EqualityExpl>,
     pub(super) transitive: TiVec<EqTransIdx, TransitiveExpl>,
