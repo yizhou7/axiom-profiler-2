@@ -1,6 +1,7 @@
 pub mod cost;
 pub mod depth;
 
+#[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
 use petgraph::Direction;
 
@@ -10,7 +11,8 @@ use self::{cost::DefaultCost, depth::DefaultDepth};
 
 use super::{raw::Node, InstGraph, RawNodeIndex};
 
-#[derive(Debug, Default, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[derive(Debug, Default)]
 pub struct Analysis {
     // Highest to lowest
     pub cost: Vec<RawNodeIndex>,

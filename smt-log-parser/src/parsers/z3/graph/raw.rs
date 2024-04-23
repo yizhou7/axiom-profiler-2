@@ -1,5 +1,6 @@
 use std::{fmt, num::NonZeroU32, ops::{Index, IndexMut}};
 
+#[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
 use petgraph::{graph::NodeIndex, visit::{Reversed, Visitable}, Direction::{self, Incoming, Outgoing}};
 
@@ -9,7 +10,8 @@ use super::subgraph::{Subgraph, VisitBox};
 
 graph_idx!(raw_idx, RawNodeIndex, RawEdgeIndex, RawIx);
 
-#[derive(Debug, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[derive(Debug)]
 pub struct RawInstGraph {
     pub graph: DiGraph<Node, EdgeKind, RawIx>,
     enode_idx: RawNodeIndex,
@@ -180,7 +182,8 @@ impl RawInstGraph {
     }
 }
 
-#[derive(Debug, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[derive(Debug)]
 pub struct GraphStats {
     pub hidden: u32,
     pub disabled: u32,

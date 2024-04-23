@@ -1,3 +1,4 @@
+#[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
 
 use crate::{
@@ -13,7 +14,8 @@ use super::{
 
 /// A parser for Z3 log files. Use one of the various `Z3Parser::from_*` methods
 /// to construct this parser.
-#[derive(Debug, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[derive(Debug)]
 pub struct Z3Parser {
     pub(super) version_info: VersionInfo,
     pub(super) terms: Terms,

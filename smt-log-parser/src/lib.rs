@@ -5,6 +5,7 @@ pub mod items;
 pub mod parsers;
 
 /// Pretty printing for items.
+#[cfg(feature = "display")]
 pub mod display_with;
 
 mod error;

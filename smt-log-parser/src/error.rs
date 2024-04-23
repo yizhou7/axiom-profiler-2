@@ -1,15 +1,18 @@
 use core::fmt;
 use std::{collections::TryReserveError, num::ParseIntError};
 
+#[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
-use serde::{Deserialize, Serialize};
+
 
 use crate::items::{TermId, TermIdx, StackIdx, ENodeIdx, BlameKind, Fingerprint};
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type FResult<T> = std::result::Result<T, FatalError>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, MemSize, MemDbg, Serialize, Deserialize)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Either<T, U> {
     Left(T),
     Right(U),

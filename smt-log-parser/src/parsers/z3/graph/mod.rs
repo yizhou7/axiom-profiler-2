@@ -1,3 +1,4 @@
+#[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
 
 use crate::{items::GraphIdx, Result, TiVec, Z3Parser};
@@ -17,7 +18,8 @@ pub mod analysis;
 pub use raw::{RawNodeIndex, RawEdgeIndex};
 pub use visible::{VisibleNodeIndex, VisibleEdgeIndex};
 
-#[derive(Debug, MemSize, MemDbg)]
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[derive(Debug)]
 pub struct InstGraph {
     pub raw: RawInstGraph,
     pub subgraphs: TiVec<GraphIdx, Subgraph>,
@@ -45,10 +47,9 @@ macro_rules! graph_idx {
         mod $mod_name {
             use crate::idx;
             use petgraph::graph::IndexType;
-            use mem_dbg::{MemDbg, MemSize};
-            use serde::{Deserialize, Serialize};
             use std::fmt;
             use std::num::NonZeroUsize;
+            #[cfg(feature = "mem_dbg")]
             use mem_dbg::*;
 
             idx!($inner, "ix{}");
@@ -73,21 +74,27 @@ macro_rules! graph_idx {
             #[derive(Debug, Copy, Clone, Default, PartialEq, PartialOrd, Eq, Ord, Hash)]
             pub struct $edge(pub petgraph::graph::EdgeIndex<$inner>);
             
+            #[cfg(feature = "mem_dbg")]
             impl MemDbgImpl for $node where {}
+            #[cfg(feature = "mem_dbg")]
             impl MemSize for $node where {
                 fn mem_size(&self, _flags: SizeFlags) -> usize {
                     std::mem::size_of::<Self>()
                 }
             }
+            #[cfg(feature = "mem_dbg")]
             impl CopyType for $node {
                 type Copy = True;
             }
+            #[cfg(feature = "mem_dbg")]
             impl MemDbgImpl for $edge where {}
+            #[cfg(feature = "mem_dbg")]
             impl MemSize for $edge where {
                 fn mem_size(&self, _flags: SizeFlags) -> usize {
                     std::mem::size_of::<Self>()
                 }
             }
+            #[cfg(feature = "mem_dbg")]
             impl CopyType for $edge {
                 type Copy = True;
             }
