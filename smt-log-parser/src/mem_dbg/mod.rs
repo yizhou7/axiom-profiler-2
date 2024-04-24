@@ -4,49 +4,108 @@ mod r#impl;
 use core::fmt;
 use std::ops::{Deref, DerefMut};
 
+macro_rules! derive_wrapper {
+    ($head:ident $(:: $tail:ident)+ $(<$($rest1:tt)*)? $(: $($rest2:tt)*)?) => {
+        derive_wrapper!( $head :: ; $($tail,)* $(<$($rest1)*)? $(: $($rest2)*)? );
+    };
+    ($($module:ident ::)+ ; $head:ident , $($tail:ident,)+ $($rest:tt)*) => {
+        derive_wrapper!( $($module ::)* $head :: ; $($tail,)* $($rest)* );
+    };
+    ($($module:ident ::)+ ; $struct:ident, $(<$($t:ident$(= $default:ty)?),*>)? $(: $trait:ident $(+ $other:ident)*)?) => {
+        derive_wrapper!(
+            $(#[derive($trait$(,$other)*)])?
+            struct $struct$(<$($t$(= $default)?),*>)?($($module::)+$struct$(<$($t),*>)?);
+        );
+    };
+    (
+        $(#[derive($($d:ident),*)])?
+        struct $struct:ident$(<$($t:ident$(= $default:ty)?),*>)?($p:vis $inner:ty);
+    ) => {
+        $(#[derive($($d),*)])?
+        pub struct $struct$(<$($t$(= $default)?),*>)?($p $inner);
+        impl$(<$($t),*>)? Deref for $struct$(<$($t),*>)? {
+            type Target = $inner;
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+        impl$(<$($t),*>)? DerefMut for $struct$(<$($t),*>)? {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                &mut self.0
+            }
+        }
+        impl$(<$($t),*>)? Clone for $struct$(<$($t),*>)?
+        where $inner: Clone {
+            fn clone(&self) -> Self {
+                Self(self.0.clone())
+            }
+        }
+        impl$(<$($t),*>)? fmt::Debug for $struct$(<$($t),*>)?
+        where $inner: fmt::Debug {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                self.0.fmt(f)
+            }
+        }
+        #[cfg(feature = "serde")]
+        impl$(<$($t),*>)? serde::Serialize for $struct$(<$($t),*>)?
+        where $inner: serde::Serialize {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                self.0.serialize(serializer)
+            }
+        }
+        #[cfg(feature = "serde")]
+        impl<'de, $($($t),*)?> serde::Deserialize<'de> for $struct$(<$($t),*>)?
+        where $inner: serde::Deserialize<'de> {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                <$inner as serde::Deserialize<'de>>::deserialize(deserializer).map(Self)
+            }
+        }
+    };
+}
 
-use typed_index_collections::TiVec as TiVecInner;
+macro_rules! derive_non_max {
+    ($name:ident, $prim:ident) => {
+        derive_wrapper!(nonmax::$name: Copy + Eq + PartialEq + PartialOrd + Ord + Hash);
+        impl $name {
+            pub const fn new(value: $prim) -> Option<Self> {
+                match nonmax::$name::new(value) {
+                    Some(value) => Some(Self(value)),
+                    None => None,
+                }
+            }
+            pub const fn get(self) -> $prim {
+                self.0.get()
+            }
+        }
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                self.0.fmt(f)
+            }
+        }
+    };
+}
+
+derive_non_max!(NonMaxU32, u32);
+derive_non_max!(NonMaxUsize, usize);
 
 // TiVec
 
-pub struct TiVec<K, V>(TiVecInner<K, V>);
-impl<K, V> Deref for TiVec<K, V> {
-    type Target = TiVecInner<K, V>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl<K, V> DerefMut for TiVec<K, V> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-impl<K: fmt::Debug + From<usize>, V: fmt::Debug> fmt::Debug for TiVec<K, V> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
+derive_wrapper!(typed_index_collections::TiVec<K, V>);
 impl<K, V> Default for TiVec<K, V> {
     fn default() -> Self {
-        Self(TiVecInner::default())
+        Self(typed_index_collections::TiVec::default())
     }
 }
 
 // FxHashMap
 
-#[derive(Debug, Clone)]
-pub struct FxHashMap<K, V>(fxhash::FxHashMap<K, V>);
-impl<K, V> Deref for FxHashMap<K, V> {
-    type Target = fxhash::FxHashMap<K, V>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl<K, V> DerefMut for FxHashMap<K, V> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
+derive_wrapper!(fxhash::FxHashMap<K, V>);
 impl<K, V> Default for FxHashMap<K, V> {
     fn default() -> Self {
         Self(fxhash::FxHashMap::default())
@@ -55,20 +114,10 @@ impl<K, V> Default for FxHashMap<K, V> {
 
 // StringTable
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug)]
-pub struct StringTable(lasso::Rodeo<lasso::Spur, fxhash::FxBuildHasher>);
-impl Deref for StringTable {
-    type Target = lasso::Rodeo<lasso::Spur, fxhash::FxBuildHasher>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl DerefMut for StringTable {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
+derive_wrapper!(
+    // #[derive(Default)]
+    struct StringTable(lasso::Rodeo<lasso::Spur, fxhash::FxBuildHasher>);
+);
 impl StringTable {
     pub fn with_hasher(hash_builder: fxhash::FxBuildHasher) -> Self {
         Self(lasso::Rodeo::with_hasher(hash_builder))
@@ -77,69 +126,30 @@ impl StringTable {
 
 // IString
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct IString(pub lasso::Spur);
-impl Deref for IString {
-    type Target = lasso::Spur;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl DerefMut for IString {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
+derive_wrapper!(
+    #[derive(Copy, Default, PartialEq, Eq, Hash)]
+    struct IString(pub lasso::Spur);
+);
 
 // BoxSlice
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, PartialEq)]
-pub struct BoxSlice<T>(pub Box<[T]>);
-impl<T> Deref for BoxSlice<T> {
-    type Target = [T];
-    fn deref(&self) -> &Self::Target {
+derive_wrapper!(
+    #[derive(PartialEq)]
+    struct BoxSlice<T>(pub Box<[T]>);
+);
+impl<T> BoxSlice<T> {
+    pub fn as_slice(&self) -> &[T] {
         &self.0
-    }
-}
-impl<T> DerefMut for BoxSlice<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }
 
 // Graph
 
-
-pub struct Graph<N, E, Ty = petgraph::Directed, Ix = petgraph::graph::DefaultIx>(petgraph::graph::Graph<N, E, Ty, Ix>);
+derive_wrapper!(petgraph::graph::Graph<N, E, Ty = petgraph::Directed, Ix = petgraph::graph::DefaultIx>);
 pub type DiGraph<N, E, Ix = petgraph::graph::DefaultIx> = Graph<N, E, petgraph::Directed, Ix>;
 pub type UnGraph<N, E, Ix = petgraph::graph::DefaultIx> = Graph<N, E, petgraph::Undirected, Ix>;
-impl<N, E, Ty, Ix> Deref for Graph<N, E, Ty, Ix> {
-    type Target = petgraph::graph::Graph<N, E, Ty, Ix>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-impl<N, E, Ty, Ix> DerefMut for Graph<N, E, Ty, Ix> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
 impl<N, E, Ty: petgraph::EdgeType, Ix: petgraph::graph::IndexType> Graph<N, E, Ty, Ix> {
     pub fn with_capacity(nodes: usize, edges: usize) -> Self {
         Self(petgraph::graph::Graph::<N, E, Ty, Ix>::with_capacity(nodes, edges))
-    }
-}
-
-impl<N, E, Ty, Ix> fmt::Debug for Graph<N, E, Ty, Ix>
-where
-    N: fmt::Debug,
-    E: fmt::Debug,
-    Ty: petgraph::EdgeType,
-    Ix: petgraph::graph::IndexType,
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
     }
 }

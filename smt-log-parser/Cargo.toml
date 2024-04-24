@@ -8,16 +8,17 @@ resolver = "2"
 
 [dependencies]
 futures = "0.3"
-serde = { version = "1.0.183", features = ["derive"], optional = true }
 petgraph = "0.6.4"
 wasm-timer = "0.2"
 semver = "1.0"
-typed-index-collections = { version = "3.1", features = ["serde"] }
+typed-index-collections = "3.1"
 fxhash = "0.2"
 duplicate = "1.0"
 gloo-console = "0.3.0"
 roaring = "0.10"
-lasso = { version = "0.7", features = ["serialize"] }
+lasso = "0.7"
+nonmax = "0.5"
+serde = { version = "1.0.183", features = ["derive"], optional = true }
 mem_dbg = { version = "0.1.8", features = ["std", "derive"], default-features = false, optional = true }
 
 [dev-dependencies]
@@ -32,4 +33,4 @@ display = []
 # when a crate doesn't support `try_reserve`. Currently some panics may still happen.
 never_panic = []
 mem_dbg = ["dep:mem_dbg"]
-serde = ["dep:serde"]
+serde = ["dep:serde", "lasso/serialize", "nonmax/serde", "typed-index-collections/serde-std", "petgraph/serde-1"]
