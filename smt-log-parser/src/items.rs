@@ -28,12 +28,12 @@ macro_rules! idx {
         }
         impl fmt::Debug for $struct {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, $prefix, *self)
+                write!(f, $prefix, self.0)
             }
         }
         impl fmt::Display for $struct {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "{}", *self)
+                write!(f, "{}", self.0)
             }
         }
     };
@@ -415,10 +415,7 @@ impl TermId {
         Ok(Self { namespace, id })
     }
     pub fn order(&self) -> u32 {
-        self.id.map(|id| id.get()).unwrap_or_default()
-    }
-    pub fn display_id(&self) -> Option<u32> {
-        self.id.map(|id| id.get() - 1)
+        self.id.map(|id| id.get() + 1).unwrap_or_default()
     }
 }
 

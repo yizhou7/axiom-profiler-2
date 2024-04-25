@@ -292,7 +292,7 @@ impl fmt::Display for NodeKind {
         match self {
             NodeKind::ENode(enode) => write!(f, "{enode:?}"),
             NodeKind::GivenEquality(eq, use_) =>
-                write!(f, "{eq:?}{}", use_.filter(|u| u.get() != 1).map(|u| format!("[{}]", u.get() - 1)).unwrap_or_default()),
+                write!(f, "{eq:?}{}", use_.filter(|u| *u != NonMaxU32::ZERO).map(|u| format!("[{u}]")).unwrap_or_default()),
             NodeKind::TransEquality(eq) => write!(f, "{eq:?}"),
             NodeKind::Instantiation(inst) => write!(f, "{inst:?}"),
         }

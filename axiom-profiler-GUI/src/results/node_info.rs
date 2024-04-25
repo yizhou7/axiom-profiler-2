@@ -78,7 +78,7 @@ impl<'a, 'b> NodeInfo<'a, 'b> {
                     ctxt.parser[*quant].kind.with(&ctxt).to_string(),
                 MatchKind::TheorySolving { axiom_id, .. } => {
                     let namespace = &ctxt.parser[axiom_id.namespace];
-                    let id = axiom_id.display_id().map(|id| id.to_string()).unwrap_or_default();
+                    let id = axiom_id.id.map(|id| id.to_string()).unwrap_or_default();
                     format!("{namespace}[{id}]")
                 }
                 MatchKind::Axiom { axiom, .. } =>

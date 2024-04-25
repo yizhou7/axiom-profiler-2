@@ -73,6 +73,9 @@ macro_rules! derive_non_max {
     ($name:ident, $prim:ident) => {
         derive_wrapper!(nonmax::$name: Copy + Eq + PartialEq + PartialOrd + Ord + Hash);
         impl $name {
+            pub const ZERO: Self = Self(nonmax::$name::ZERO);
+            pub const ONE: Self = Self(nonmax::$name::ONE);
+            pub const MAX: Self = Self(nonmax::$name::MAX);
             pub const fn new(value: $prim) -> Option<Self> {
                 match nonmax::$name::new(value) {
                     Some(value) => Some(Self(value)),
