@@ -14,4 +14,4 @@ mod mem_dbg;
 pub use parsers::z3::z3parser::Z3Parser;
 pub use parsers::LogParser;
 pub use error::{Error, FatalError, Result, FResult};
-pub use mem_dbg::{TiVec, FxHashMap, IString, BoxSlice, StringTable, Graph, DiGraph, UnGraph};
+pub use mem_dbg::{TiVec, FxHashMap, IString, BoxSlice, StringTable, Graph, DiGraph, UnGraph, NonMaxU32, NonMaxUsize};

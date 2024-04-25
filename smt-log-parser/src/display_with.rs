@@ -338,7 +338,7 @@ impl<'a: 'b, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a Term 
                     None => write!(f, "[synthetic]")?,
                     Some(id) => {
                         let namespace = &ctxt.parser[id.namespace];
-                        let id = id.id.map(|id| (u32::from(id) - 1).to_string()).unwrap_or_default();
+                        let id = id.id.map(|id| id.get().to_string()).unwrap_or_default();
                         write!(f, "[{namespace}#{id}]")?
                     }
                 }

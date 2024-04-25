@@ -6,7 +6,7 @@ use mem_dbg::{MemDbg, MemSize};
 use petgraph::{graph::{DiGraph, EdgeIndex, NodeIndex}, visit::EdgeRef};
 
 use crate::{
-    items::{ENodeIdx, EqGivenIdx, EqTransIdx, EqualityExpl, InstIdx, StackIdx, TermIdx, TransitiveExpl, TransitiveExplSegment, TransitiveExplSegmentKind}, FxHashMap, Error, Result, BoxSlice, TiVec
+    items::{ENodeIdx, EqGivenIdx, EqTransIdx, EqualityExpl, InstIdx, StackIdx, TermIdx, TransitiveExpl, TransitiveExplSegment, TransitiveExplSegmentKind}, BoxSlice, Error, FxHashMap, NonMaxU32, Result, TiVec
 };
 
 use super::stack::Stack;
@@ -274,11 +274,11 @@ impl EGraph {
                 let EqualityExpl::Congruence { uses, .. } = &mut self.equalities.given[*cg] else {
                     unreachable!()
                 };
-                let real_idx = uses.iter().position(|u| &**u == use_).unwrap_or_else(|| {
+                let real_idx = uses.iter().position(|u| &***u == use_).unwrap_or_else(|| {
                     uses.push(BoxSlice(use_.into_boxed_slice()));
                     uses.len() - 1
                 });
-                *idx = Some(std::num::NonZeroU32::new(real_idx as u32 + 1).unwrap());
+                *idx = Some(NonMaxU32::new(real_idx as u32).unwrap());
             }
         }
 

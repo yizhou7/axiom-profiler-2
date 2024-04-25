@@ -1,10 +1,10 @@
-use std::{fmt, num::NonZeroU32, ops::{Index, IndexMut}};
+use std::{fmt, ops::{Index, IndexMut}};
 
 #[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
 use petgraph::{graph::NodeIndex, visit::{Reversed, Visitable}, Direction::{self, Incoming, Outgoing}};
 
-use crate::{graph_idx, items::{ENodeIdx, EqGivenIdx, EqTransIdx, EqualityExpl, GraphIdx, InstIdx, TransitiveExplSegmentKind}, DiGraph, FxHashMap, Result, TiVec, Z3Parser};
+use crate::{graph_idx, items::{ENodeIdx, EqGivenIdx, EqTransIdx, EqualityExpl, GraphIdx, InstIdx, TransitiveExplSegmentKind}, DiGraph, FxHashMap, NonMaxU32, Result, TiVec, Z3Parser};
 
 use super::subgraph::{Subgraph, VisitBox};
 
@@ -17,7 +17,7 @@ pub struct RawInstGraph {
     enode_idx: RawNodeIndex,
     eq_trans_idx: RawNodeIndex,
     inst_idx: RawNodeIndex,
-    eq_given_idx: FxHashMap<(EqGivenIdx, Option<NonZeroU32>), RawNodeIndex>,
+    eq_given_idx: FxHashMap<(EqGivenIdx, Option<NonMaxU32>), RawNodeIndex>,
 
     pub(super) stats: GraphStats,
 }
@@ -49,7 +49,7 @@ impl RawInstGraph {
             match eq {
                 EqualityExpl::Congruence { uses, .. } => {
                     for i in 0..uses.len() {
-                        let use_ = Some(NonZeroU32::new(i as u32 + 1).unwrap());
+                        let use_ = Some(NonMaxU32::new(i as u32).unwrap());
                         let node = graph.add_node(Node::new(NodeKind::GivenEquality(eq_given, use_)));
                         eq_given_idx.insert((eq_given, use_), RawNodeIndex(node));
                     }
@@ -84,7 +84,7 @@ impl RawInstGraph {
                 EqualityExpl::Literal { eq, .. } =>
                     self_.add_edge(*eq, (idx, None), EdgeKind::EqualityFact),
                 EqualityExpl::Congruence { uses, .. } => for (use_, arg_eqs) in uses.iter().enumerate() {
-                    let use_ = Some(NonZeroU32::new(use_ as u32 + 1).unwrap());
+                    let use_ = Some(NonMaxU32::new(use_ as u32).unwrap());
                     for arg_eq in arg_eqs.iter() {
                         self_.add_edge(*arg_eq, (idx, use_), EdgeKind::EqualityCongruence);
                     }
@@ -271,7 +271,7 @@ pub enum NodeKind {
     /// `ENode` or a `TransEquality` depending on if it's a `Literal` or
     /// `Congruence` resp.\
     /// **Children:** arbitrary count, will always be `TransEquality` of type.
-    GivenEquality(EqGivenIdx, Option<NonZeroU32>),
+    GivenEquality(EqGivenIdx, Option<NonMaxU32>),
     /// Corresponds to `EqTransIdx`.
     /// 
     /// **Parents:** arbitrary count, will always be `GivenEquality` or
@@ -306,7 +306,7 @@ impl NodeKind {
             _ => None,
         }
     }
-    pub fn eq_given(&self) -> Option<(EqGivenIdx, Option<NonZeroU32>)> {
+    pub fn eq_given(&self) -> Option<(EqGivenIdx, Option<NonMaxU32>)> {
         match self {
             Self::GivenEquality(eq, use_) => Some((*eq, *use_)),
             _ => None,
@@ -362,7 +362,7 @@ impl IndexesInstGraph for InstIdx {
         RawNodeIndex(NodeIndex::new(graph.inst_idx.0.index() + usize::from(*self)))
     }
 }
-impl IndexesInstGraph for (EqGivenIdx, Option<NonZeroU32>) {
+impl IndexesInstGraph for (EqGivenIdx, Option<NonMaxU32>) {
     fn index(&self, graph: &RawInstGraph) -> RawNodeIndex {
         graph.eq_given_idx[self]
     }

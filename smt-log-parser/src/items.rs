@@ -2,10 +2,9 @@
 use mem_dbg::{MemDbg, MemSize};
 
 use std::fmt;
-use std::num::{NonZeroU32, NonZeroUsize};
 use std::ops::Index;
 use crate::error::Either;
-use crate::{BoxSlice, FxHashMap, IString, StringTable};
+use crate::{BoxSlice, FxHashMap, IString, StringTable, NonMaxU32};
 use crate::{Result, Error};
 
 #[macro_export]
@@ -16,25 +15,25 @@ macro_rules! idx {
         #[derive(
             Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash,
         )]
-        pub struct $struct(NonZeroUsize);
+        pub struct $struct(crate::NonMaxUsize);
         impl From<usize> for $struct {
             fn from(value: usize) -> Self {
-                Self(NonZeroUsize::new(value.checked_add(1).unwrap()).unwrap())
+                Self(crate::NonMaxUsize::new(value).unwrap())
             }
         }
         impl From<$struct> for usize {
             fn from(value: $struct) -> Self {
-                value.0.get() - 1
+                value.0.get()
             }
         }
         impl fmt::Debug for $struct {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, $prefix, self.0.get() - 1)
+                write!(f, $prefix, *self)
             }
         }
         impl fmt::Display for $struct {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "{}", self.0.get() - 1)
+                write!(f, "{}", *self)
             }
         }
     };
@@ -398,7 +397,7 @@ impl fmt::Display for Fingerprint {
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq)]
 pub struct TermId {
     pub namespace: IString,
-    pub id: Option<NonZeroU32>,
+    pub id: Option<NonMaxU32>,
 }
 impl TermId {
     /// Splits an ID string into namespace and ID number.
@@ -411,7 +410,7 @@ impl TermId {
         let id = &value[hash_idx + 1..];
         let id = match id {
             "" => None,
-            id => Some(NonZeroU32::new(id.parse::<u32>().map_err(Error::InvalidIdNumber)?.checked_add(1).unwrap()).unwrap()),
+            id => Some(NonMaxU32::new(id.parse::<u32>().map_err(Error::InvalidIdNumber)?).unwrap()),
         };
         Ok(Self { namespace, id })
     }
@@ -633,7 +632,7 @@ impl TransitiveExplSegment {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy)]
 pub enum TransitiveExplSegmentKind {
-    Given(EqGivenIdx, Option<NonZeroU32>),
+    Given(EqGivenIdx, Option<NonMaxU32>),
     Transitive(EqTransIdx),
 }
 impl TransitiveExplSegmentKind {

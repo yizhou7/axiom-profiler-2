@@ -48,7 +48,6 @@ macro_rules! graph_idx {
             use crate::idx;
             use petgraph::graph::IndexType;
             use std::fmt;
-            use std::num::NonZeroUsize;
             #[cfg(feature = "mem_dbg")]
             use mem_dbg::*;
 

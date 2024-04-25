@@ -3,7 +3,25 @@ use petgraph::{graph::{Edge, IndexType, Node}, EdgeType};
 
 use crate::parsers::z3::{graph::subgraph::TransitiveClosure, VersionInfo};
 
-use super::{TiVec, FxHashMap, IString, BoxSlice, StringTable, Graph};
+use super::{NonMaxU32, NonMaxUsize, TiVec, FxHashMap, IString, BoxSlice, StringTable, Graph};
+
+macro_rules! copy_impl {
+    ($t:ty) => {
+        impl MemDbgImpl for $t where {}
+        impl MemSize for $t where {
+            fn mem_size(&self, _flags: mem_dbg::SizeFlags) -> usize {
+                core::mem::size_of::<Self>()
+            }
+        }
+        impl CopyType for $t {
+            type Copy = True;
+        }
+    };
+}
+
+copy_impl!(NonMaxU32);
+copy_impl!(NonMaxUsize);
+copy_impl!(IString);
 
 // TiVec
 
@@ -75,18 +93,6 @@ impl MemSize for StringTable where {
         } +
         self.0.len() * std::mem::size_of::<IString>()
     }
-}
-
-// IString
-
-impl MemDbgImpl for IString where {}
-impl MemSize for IString where {
-    fn mem_size(&self, _flags: mem_dbg::SizeFlags) -> usize {
-        core::mem::size_of::<Self>()
-    }
-}
-impl CopyType for IString {
-    type Copy = True;
 }
 
 // BoxSlice

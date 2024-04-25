@@ -1,9 +1,9 @@
-use std::{num::NonZeroU32, ops::{Index, IndexMut}};
+use std::ops::{Index, IndexMut};
 
 use fxhash::FxHashMap;
 use petgraph::{graph::{DiGraph, EdgeIndex, NodeIndex}, visit::{EdgeRef, IntoEdges, NodeFiltered}, Direction};
 
-use crate::{graph_idx, items::{ENodeIdx, EqGivenIdx}};
+use crate::{graph_idx, items::{ENodeIdx, EqGivenIdx}, NonMaxU32};
 
 use super::{raw::{EdgeKind, Node, NodeKind}, InstGraph, RawEdgeIndex, RawNodeIndex};
 
@@ -249,19 +249,19 @@ pub enum VisibleEdgeKind {
     /// `Instantiation` -> `ENode` -> `Instantiation`
     YieldBlame { enode: ENodeIdx, trigger_term: u16 },
     /// `Instantiation` -> `ENode` -> `GivenEquality` -> `TransEquality`
-    YieldEq((EqGivenIdx, Option<NonZeroU32>)),
+    YieldEq((EqGivenIdx, Option<NonMaxU32>)),
     /// `Instantiation` -> `ENode` -> `GivenEquality` ->
     /// `TransEquality` (only 1 parent) -> `Instantiation`
-    YieldBlameEq { given_eq: (EqGivenIdx, Option<NonZeroU32>), trigger_term: u16, eq_order: u16 },
+    YieldBlameEq { given_eq: (EqGivenIdx, Option<NonMaxU32>), trigger_term: u16, eq_order: u16 },
     /// `Instantiation` -> `ENode` -> `GivenEquality` -> ...
-    YieldEqOther((EqGivenIdx, Option<NonZeroU32>), Vec<EdgeKind>),
+    YieldEqOther((EqGivenIdx, Option<NonMaxU32>), Vec<EdgeKind>),
 
     /// `ENode` -> `GivenEquality` -> `TransEquality`
-    ENodeEq((EqGivenIdx, Option<NonZeroU32>)),
+    ENodeEq((EqGivenIdx, Option<NonMaxU32>)),
     /// `ENode` -> `GivenEquality` -> `TransEquality` -> `Instantiation`
-    ENodeBlameEq { given_eq: (EqGivenIdx, Option<NonZeroU32>), trigger_term: u16, eq_order: u16 },
+    ENodeBlameEq { given_eq: (EqGivenIdx, Option<NonMaxU32>), trigger_term: u16, eq_order: u16 },
     /// `ENode` -> `GivenEquality` -> ...
-    ENodeEqOther((EqGivenIdx, Option<NonZeroU32>), Vec<EdgeKind>),
+    ENodeEqOther((EqGivenIdx, Option<NonMaxU32>), Vec<EdgeKind>),
 
     Unknown(RawEdgeIndex, Vec<EdgeKind>, RawEdgeIndex),
 }
