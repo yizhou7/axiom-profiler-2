@@ -44,7 +44,7 @@ jobs:
     - uses: actions/cache/restore@v3
       with:
         path: logs
-        key: logs-${{ steps.configure-z3-id.outputs.z3_v_clean }}-${{ hashFiles('smt-problems/**/*.smt2') }}
+        key: use-restore-key-instead
         restore-keys: logs-${{ steps.configure-z3-id.outputs.z3_v_clean }}-
     - id: check-logs-cached
       run: ls -la logs
@@ -73,9 +73,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3 # this copies the whole repository
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # needed, see GitHub Action "Changed Files"
+          lfs: true
 
       - name: Install Z3 for older version
         uses: pavpanchekha/setup-z3@1.2.2 # see GitHub Action "Install Z3"
