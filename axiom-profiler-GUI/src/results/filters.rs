@@ -1,5 +1,5 @@
-use petgraph::{visit::{Dfs, IntoNeighborsDirected, Reversed, Walker}, Direction};
-use smt_log_parser::{display_with::{DisplayConfiguration, DisplayCtxt, DisplayWithCtxt}, items::{InstIdx, QuantIdx}, parsers::z3::graph::{raw::{Node, NodeKind, RawInstGraph}, InstGraph, RawNodeIndex}, Z3Parser};
+use petgraph::{visit::{Dfs, Walker}, Direction, Graph};
+use smt_log_parser::{display_with::{DisplayConfiguration, DisplayCtxt, DisplayWithCtxt}, items::QuantIdx, parsers::z3::graph::{analysis::matching_loop::MLGraphNode, raw::{Node, NodeKind, RawInstGraph}, InstGraph, RawNodeIndex}, Z3Parser};
 
 use super::svg_result::DEFAULT_NODE_COUNT;
 
@@ -69,8 +69,34 @@ impl Filter {
                 ))
             }
             // TODO: implement
-            Filter::SelectNthMatchingLoop(n) => (),//return FilterOutput::MatchingLoopGeneralizedTerms(graph.show_nth_matching_loop(n, parser)),
-            Filter::ShowMatchingLoopSubgraph => (),// graph.show_matching_loop_subgraph(),
+            Filter::SelectNthMatchingLoop(n) => {
+                graph.raw.reset_visibility_to(true);
+                let nth_ml_endnode = graph.analysis.matching_loop_end_nodes.as_ref().unwrap().get(n).unwrap();
+                let nodes_of_nth_matching_loop = graph.raw.node_indices().filter(|nx| graph.raw[*nx].part_of_ml.contains(&n)).collect::<fxhash::FxHashSet<_>>();
+                let relevant_non_qi_nodes: Vec<_> = Dfs::new(&*graph.raw.graph, nth_ml_endnode.0)
+                    .iter(graph.raw.rev())
+                    .filter(|nx| graph.raw.graph[*nx].kind().inst().is_none())
+                    .filter(|nx| graph.raw.graph[*nx].inst_children.nodes.intersection(&nodes_of_nth_matching_loop).count() > 0 && graph.raw.graph[*nx].inst_parents.nodes.intersection(&nodes_of_nth_matching_loop).count() > 0)
+                    .map(RawNodeIndex)
+                    .collect();
+                graph.raw.set_visibility_many(false, relevant_non_qi_nodes.into_iter());
+                graph.raw.set_visibility_when(false, |_: RawNodeIndex, node: &Node| node.kind().inst().is_some() && node.part_of_ml.contains(&n));
+                graph.raw.set_visibility_when(true, |_: RawNodeIndex, node: &Node| node.kind().inst().is_some() && !node.part_of_ml.contains(&n));
+                let dot_graph = graph.nth_matching_loop_graph(n);
+                return FilterOutput::MatchingLoopGraph(dot_graph);
+            },
+            Filter::ShowMatchingLoopSubgraph => {
+                // graph.raw.reset_visibility_to(true);
+                graph.raw.set_visibility_when(false, |_: RawNodeIndex, node: &Node| node.kind().inst().is_some() && node.part_of_ml.len() > 0);
+                graph.raw.set_visibility_when(true, |_: RawNodeIndex, node: &Node| node.kind().inst().is_some() && node.part_of_ml.len() <= 0)
+                // if let Some(nodes) = &graph.analysis.matching_loop_end_nodes {
+                //     graph.raw.reset_visibility_to(true);
+                //     for nidx in nodes {
+                //         let nodes: Vec<_> = Dfs::new(graph.raw.rev(), nidx.0).iter(graph.raw.rev()).map(RawNodeIndex).collect();
+                //         graph.raw.set_visibility_many(false, nodes.into_iter())
+                //     }
+                // }
+            },
         }
         FilterOutput::None
     }
@@ -86,6 +112,7 @@ impl Filter {
 pub enum FilterOutput {
     LongestPath(Vec<RawNodeIndex>),
     MatchingLoopGeneralizedTerms(Vec<String>),
+    MatchingLoopGraph(Graph<(String, MLGraphNode), ()>),
     None
 }
 

@@ -1,13 +1,15 @@
 pub mod cost;
 pub mod depth;
+pub mod next_insts;
+pub mod matching_loop;
 
 #[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
 use petgraph::Direction;
 
-use crate::{Result, Z3Parser};
+use crate::{Graph, Result, Z3Parser};
 
-use self::{cost::DefaultCost, depth::DefaultDepth};
+use self::{cost::DefaultCost, depth::DefaultDepth, matching_loop::MLGraphNode, next_insts::DefaultNextInsts};
 
 use super::{raw::Node, InstGraph, RawNodeIndex};
 
@@ -22,6 +24,8 @@ pub struct Analysis {
     pub fwd_depth_min: Vec<RawNodeIndex>,
     // // Most to least
     // pub(super) max_depth: Vec<RawNodeIndex>,
+    pub matching_loop_end_nodes: Option<Vec<RawNodeIndex>>,
+    pub matching_loop_graphs: Vec<Graph<(String, MLGraphNode), ()>>,
 }
 
 impl Analysis {
@@ -38,7 +42,7 @@ impl Analysis {
         let mut fwd_depth_min = Vec::new();
         fwd_depth_min.try_reserve_exact(nodes.len())?;
         fwd_depth_min.extend(nodes.clone());
-        Ok(Self { cost, children, fwd_depth_min })
+        Ok(Self { cost, children, fwd_depth_min, matching_loop_end_nodes: None, matching_loop_graphs: vec![], })
     }
 }
 
@@ -79,7 +83,7 @@ impl InstGraph {
                 let mut neighbors = self.raw.graph.neighbors_directed(idx.0, I::direction()).detach();
                 let mut i = 0;
                 while let Some((_, neighbor)) = neighbors.next(&self.raw.graph) {
-                    let transfer = initialiser.transfer(&self.raw.graph[idx.0], i, &incoming);
+                    let transfer = initialiser.transfer(&self.raw.graph[idx.0], RawNodeIndex(idx.0), i, &incoming);
                     initialiser.add(&mut self.raw.graph[neighbor], transfer);
                     i += 1;
                 }
@@ -98,6 +102,11 @@ impl InstGraph {
         self.initialise_collect(DefaultDepth::<false>, parser);
 
         self.analyse();
+    }
+
+    pub fn initialise_inst_succs_and_preds(&mut self, parser: &Z3Parser) {
+        self.initialise_transfer(DefaultNextInsts::<true>, parser);
+        self.initialise_transfer(DefaultNextInsts::<false>, parser);
     }
 
     pub fn analyse(&mut self) {
@@ -137,7 +146,7 @@ pub trait Initialiser<const FORWARD: bool, const ID: u8> {
 pub trait TransferInitialiser<const FORWARD: bool, const ID: u8>: Initialiser<FORWARD, ID> {
     type Observed;
     fn observe(&mut self, node: &Node, parser: &Z3Parser) -> Self::Observed;
-    fn transfer(&mut self, from: &Node, to_idx: usize, to_all: &[Self::Observed]) -> Self::Value;
+    fn transfer(&mut self, from: &Node, from_idx: RawNodeIndex, to_idx: usize, to_all: &[Self::Observed]) -> Self::Value;
     fn add(&mut self, node: &mut Node, value: Self::Value);
 }
 /// Initialiser where values are transferred from the neighbors to the current node.

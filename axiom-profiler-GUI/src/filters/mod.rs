@@ -3,19 +3,22 @@ mod manage_filter;
 
 use std::fmt::Display;
 
-use material_yew::{icon::MatIcon, switch::MatSwitch};
+use gloo::console::log;
+use material_yew::icon::MatIcon;
 use petgraph::Direction;
 use smt_log_parser::parsers::{z3::graph::{raw::NodeKind, RawNodeIndex}, ParseState};
 use yew::{html, Callback, Component, Context, Html, MouseEvent, NodeRef, Properties};
 
-use crate::{filters::{add_filter::AddFilterSidebar, manage_filter::{DraggableList, ExistingFilter}}, infobars::SidebarSectionHeader, results::{filters::{Disabler, Filter, DEFAULT_DISABLER_CHAIN, DEFAULT_FILTER_CHAIN}, svg_result::Msg as SVGMsg}, utils::toggle_list::ToggleList, OpenedFileInfo, RcParser, SIZE_NAMES};
+use crate::{configuration::ConfigurationContext, filters::{add_filter::AddFilterSidebar, manage_filter::{DraggableList, ExistingFilter}}, infobars::SidebarSectionHeader, results::{filters::{Disabler, Filter, DEFAULT_DISABLER_CHAIN, DEFAULT_FILTER_CHAIN}, svg_result::Msg as SVGMsg}, utils::{indexer::Indexer, toggle_list::ToggleList}, OpenedFileInfo, SIZE_NAMES};
 
 use self::manage_filter::DragState;
+use material_yew::WeakComponentLink;
 
 #[derive(Properties, PartialEq)]
 pub struct FiltersInput {
     pub file: OpenedFileInfo,
     pub search_matching_loops: Callback<()>,
+    pub weak_link: WeakComponentLink<FiltersState>,
 }
 
 pub enum Msg {
@@ -29,6 +32,7 @@ pub enum Msg {
     EndEdit(usize, Filter),
     AddFilter(bool, Filter),
     ToggleDisabler(usize),
+    ToggleMlViewerMode,
 }
 
 pub struct FiltersState {
@@ -73,6 +77,10 @@ impl Component for FiltersState {
     type Properties = FiltersInput;
 
     fn create(ctx: &Context<Self>) -> Self {
+        ctx.props()
+            .weak_link
+            .borrow_mut()
+            .replace(ctx.link().clone());
         *ctx.props().file.filter.borrow_mut() = Some(ctx.link().clone());
         let disabler_chain = DEFAULT_DISABLER_CHAIN.to_vec();
         let filter_chain = DEFAULT_FILTER_CHAIN.to_vec();
@@ -153,10 +161,10 @@ impl Component for FiltersState {
                 }
                 if let Filter::SelectNthMatchingLoop(n) = &filter {
                     // TODO: re-add finding matching loops
-                    // let graph = &ctx.props().file.parser.graph;
-                    // if !graph.as_ref().is_some_and(|g| g.borrow().found_matching_loops().is_some_and(|mls| mls > *n)) {
-                    //     return modified;
-                    // }
+                    let graph = &ctx.props().file.parser.graph;
+                    if !graph.as_ref().is_some_and(|g| (& *g.borrow()).found_matching_loops().is_some_and(|mls| mls > *n)) {
+                        return modified;
+                    }
                 }
                 self.filter_chain[idx] = filter;
                 self.send_updates(&ctx.props().file, true) || modified
@@ -164,11 +172,11 @@ impl Component for FiltersState {
             Msg::AddFilter(edit, filter) => {
                 if let Filter::SelectNthMatchingLoop(n) = &filter {
                     // TODO: re-add finding matching loops
-                    // let graph = &ctx.props().file.parser.graph;
-                    // // This relies on the fact that the graph is updated before the `AddFilter` is
-                    // if !graph.as_ref().is_some_and(|g| g.borrow().found_matching_loops().is_some_and(|mls| mls > *n)) {
-                    //     return false;
-                    // }
+                    let graph = &ctx.props().file.parser.graph;
+                    // This relies on the fact that the graph is updated before the `AddFilter` is
+                    if !graph.as_ref().is_some_and(|g| g.borrow().found_matching_loops().is_some_and(|mls| mls > *n)) {
+                        return false;
+                    }
                 }
                 self.prev_filter_chain.clone_from(&self.filter_chain);
                 self.edit_filter = edit.then(|| self.filter_chain.len());
@@ -182,6 +190,17 @@ impl Component for FiltersState {
                 self.disabler_chain[idx].1 = !self.disabler_chain[idx].1;
                 self.reset_disabled(&ctx.props().file);
                 false
+            },
+            Msg::ToggleMlViewerMode => {
+                let search_matching_loops = ctx.props().search_matching_loops.clone();
+                let found_mls = ctx.props().file.parser.found_mls;
+                if let None = found_mls {
+                    search_matching_loops.emit(());
+                }
+                let link = ctx.link().clone();
+                let cfg = link.get_configuration().unwrap();
+                cfg.update.update(|cfg| { cfg.persistent.ml_viewer_mode = !cfg.persistent.ml_viewer_mode; true });
+                true
             }
         }
     }
@@ -199,7 +218,6 @@ impl Component for FiltersState {
             ParseState::Error(err) =>
                 format!("{} (error {err:?})", file.file_name),
         };
-
         // Existing ops
         let elem_hashes: Vec<_> = self.filter_chain.iter().map(Filter::get_hash).collect();
         let elements: Vec<_> = self.filter_chain.iter().enumerate().map(|(idx, filter)| {
@@ -214,21 +232,17 @@ impl Component for FiltersState {
         let drag = ctx.link().callback(Msg::Drag);
         let will_delete = ctx.link().callback(Msg::WillDelete);
         // TODO: re-add finding matching loops
-        // let found_mls = ctx.props().file.parser.found_mls;
-        // let matching_loops = found_mls.is_none().then(|| {
-        //     let search_matching_loops = ctx.props().search_matching_loops.clone();
-        //     let show_first = ctx.link().callback(|edit| Msg::AddFilter(edit, Filter::SelectNthMatchingLoop(0)));
-        //     let matching_loops = Callback::from(move |e: MouseEvent| {
-        //         e.prevent_default();
-        //         search_matching_loops.emit(());
-        //         show_first.emit(false);
-        //     });
-        //     html! {
-        //         <li><a draggable="false" href="#" onclick={matching_loops}><div class="material-icons"><MatIcon>{"youtube_searched_for"}</MatIcon></div>{"Search matching loops"}</a></li>
-        //     }
-        // });
-        let found_mls = None;
-        let matching_loops = "";
+        let found_mls = ctx.props().file.parser.found_mls;
+        let toggle_ml_viewer_mode = ctx.link().callback(|_| Msg::ToggleMlViewerMode); 
+        let ml_viewer_mode = if ctx.link().get_configuration().unwrap().config.persistent.ml_viewer_mode {
+            html! {
+                <li><a draggable="false" href="#" onclick={toggle_ml_viewer_mode}><div class="material-icons"><MatIcon>{"close"}</MatIcon></div>{"Exit matching loop viewer"}</a></li>
+            }
+        } else {
+            html! {
+                <li><a draggable="false" href="#" onclick={toggle_ml_viewer_mode}><div class="material-icons"><MatIcon>{"loop"}</MatIcon></div>{"View matching loops"}</a></li>
+            }
+        }; 
         let reset = ctx.link().callback(|e: MouseEvent| {
             e.prevent_default();
             Msg::ResetOperations
@@ -276,7 +290,7 @@ impl Component for FiltersState {
         let graph_details = file.rendered.as_ref().map(|g| {
             let class = if self.dragging { "hidden" } else { "" };
             // TODO: re-add finding matching loops
-            let mls = ""; // g.found_matching_loops().map(|mls| format!(", {mls} mtch loops")).unwrap_or_default();
+            let mls = ctx.props().file.parser.found_mls.map(|mls| format!(", {mls} mtch loops")).unwrap_or_default();
             let details = format!("{} nodes, {} edges{mls}", g.graph.graph.node_count(), g.graph.graph.edge_count());
             html! { <li class={class}><a draggable="false" class="trace-file-name">{details}</a></li> }
         });
@@ -296,7 +310,7 @@ impl Component for FiltersState {
             <SidebarSectionHeader header_text="Current Trace" collapsed_text="Actions on the current trace"><ul>
                 <li><a draggable="false" class="trace-file-name">{details}</a></li>
                 <AddFilterSidebar new_filter={new_filter} found_mls={found_mls} nodes={Vec::new()} general_filters={true}/>
-                {matching_loops}
+                {ml_viewer_mode}
                 <li><a draggable="false" href="#" onclick={reset}><div class="material-icons"><MatIcon>{"restore"}</MatIcon></div>{"Reset operations"}</a></li>
                 {undo}
             </ul></SidebarSectionHeader>

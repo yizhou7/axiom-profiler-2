@@ -2,6 +2,7 @@ use std::{fmt, ops::{Index, IndexMut}};
 
 #[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
+use fxhash::FxHashSet;
 use petgraph::{graph::NodeIndex, visit::{Reversed, Visitable}, Direction::{self, Incoming, Outgoing}};
 
 use crate::{graph_idx, items::{ENodeIdx, EqGivenIdx, EqTransIdx, EqualityExpl, GraphIdx, InstIdx, TransitiveExplSegmentKind}, DiGraph, FxHashMap, NonMaxU32, Result, TiVec, Z3Parser};
@@ -180,6 +181,9 @@ impl RawInstGraph {
     pub fn visible_nodes(&self) -> usize {
         self.graph.node_count() - self.stats.hidden as usize - self.stats.disabled as usize
     }
+    pub fn node_indices(&self) -> impl Iterator<Item = RawNodeIndex> {
+        self.graph.node_indices().map(RawNodeIndex)
+    }
 }
 
 #[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
@@ -221,6 +225,9 @@ pub struct Node {
     pub bwd_depth: Depth,
     pub subgraph: Option<(GraphIdx, u32)>,
     kind: NodeKind,
+    pub inst_parents: NextInsts,
+    pub inst_children: NextInsts,
+    pub part_of_ml: fxhash::FxHashSet<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -238,9 +245,15 @@ pub struct Depth {
     pub max: u32,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct NextInsts {
+    /// What are the immediate next instantiation nodes 
+    pub nodes: FxHashSet<RawNodeIndex>,
+}
+
 impl Node {
     fn new(kind: NodeKind) -> Self {
-        Self { state: NodeState::Hidden, cost: 0.0, fwd_depth: Depth::default(), bwd_depth: Depth::default(), subgraph: None, kind }
+        Self { state: NodeState::Hidden, cost: 0.0, fwd_depth: Depth::default(), bwd_depth: Depth::default(), subgraph: None, kind, inst_parents: NextInsts { nodes: FxHashSet::default() }, inst_children: NextInsts { nodes: FxHashSet::default() }, part_of_ml: FxHashSet::default() }
     }
     pub fn kind(&self) -> &NodeKind {
         &self.kind
@@ -254,6 +267,9 @@ impl Node {
     }
     pub fn visible(&self) -> bool {
         matches!(self.state, NodeState::Visible)
+    }
+    pub fn hidden_inst(&self) -> bool {
+        matches!((self.state, self.kind), (NodeState::Hidden, NodeKind::Instantiation(_)))
     }
 }
 

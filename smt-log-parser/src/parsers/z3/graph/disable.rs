@@ -1,3 +1,7 @@
+use std::collections::HashSet;
+
+use fxhash::FxHashSet;
+
 use crate::Z3Parser;
 
 use super::{raw::{NodeState, RawInstGraph}, InstGraph, RawNodeIndex};
@@ -10,6 +14,16 @@ impl InstGraph {
     pub fn reset_disabled_to(&mut self, parser: &Z3Parser, f: impl Fn(RawNodeIndex, &RawInstGraph) -> bool) {
         self.raw.reset_disabled_to_raw(f);
         self.initialise_default(parser);
+    }
+
+    pub fn disabled_nodes(&self) -> FxHashSet<RawNodeIndex> {
+        let mut disabled_nodes = HashSet::default();
+        for node in self.raw.graph.node_indices() {
+            if self.raw.graph[node].disabled() {
+                disabled_nodes.insert(RawNodeIndex(node));
+            }
+        }
+        disabled_nodes
     }
 }
 

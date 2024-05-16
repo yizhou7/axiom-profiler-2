@@ -1,11 +1,11 @@
 use std::rc::Rc;
 
 use material_yew::icon::MatIcon;
-use petgraph::{visit::{Dfs, Reversed, Walker}, Direction};
-use smt_log_parser::parsers::z3::graph::{raw::{Node, NodeKind}, RawNodeIndex};
+use petgraph::{visit::{Dfs, Walker}, Direction};
+use smt_log_parser::parsers::z3::graph::{raw::NodeKind, RawNodeIndex};
 use yew::{function_component, html, use_context, Callback, Html, MouseEvent, Properties};
 
-use crate::{configuration::ConfigurationProvider, results::{filters::Filter, svg_result::DEFAULT_NODE_COUNT}, RcParser};
+use crate::{configuration::ConfigurationProvider, results::{filters::Filter, svg_result::DEFAULT_NODE_COUNT}};
 
 #[derive(PartialEq, Properties)]
 pub struct AddFilterSidebarProps {
@@ -52,7 +52,7 @@ pub fn AddFilterSidebar(props: &AddFilterSidebarProps) -> Html {
                 NodeKind::Instantiation(i) => Some(i),
                 _ => None
             };
-            let q = i.and_then(|i| parser.parser[parser.parser[i].match_].kind.quant_idx());
+            let q = i.and_then(|i| (& *parser.parser.borrow())[(& *parser.parser.borrow())[i].match_].kind.quant_idx());
             (*n, i, q)
         });
         vec![

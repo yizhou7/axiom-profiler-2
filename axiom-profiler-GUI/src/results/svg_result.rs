@@ -1,27 +1,24 @@
 use crate::{
-    configuration::{Configuration, ConfigurationContext}, filters, results::{filters::FilterOutput, graph_info::{GraphInfo, Msg as GraphInfoMsg}, node_info::{EdgeInfo, NodeInfo}}, OpenedFileInfo, RcParser
+    configuration::ConfigurationContext, filters, results::{filters::FilterOutput, graph_info::{GraphInfo, Msg as GraphInfoMsg}, node_info::{EdgeInfo, NodeInfo}}, OpenedFileInfo
 };
 
 use super::{
     filters::{Disabler, Filter}, render_warning::{Warning, WarningChoice}, worker::Worker
 };
-use gloo::console::log;
 use material_yew::{dialog::MatDialog, WeakComponentLink};
-use num_format::{Locale, ToFormattedString};
-use palette::{encoding::Srgb, white_point::D65, FromColor, Hsl, Hsluv, Hsv, LuvHue, RgbHue};
-use petgraph::{dot::{Config, Dot}, visit::EdgeRef};
+use palette::{encoding::Srgb, white_point::D65, FromColor, Hsluv, Hsv, LuvHue};
+use petgraph::{dot::{Config, Dot}, visit::EdgeRef, Graph};
 use smt_log_parser::{
-    display_with::DisplayCtxt, items::{BlameKind, InstIdx, MatchKind, QuantIdx}, parsers::{
-        z3::{
+    display_with::DisplayCtxt, items::QuantIdx, parsers::
+        z3::
             // inst_graph::{EdgeInfo, EdgeType, InstGraph, InstInfo, Node, NodeInfo, VisibleGraphInfo},
-            graph::{raw::{EdgeKind, NodeKind}, visible::{VisibleEdge, VisibleInstGraph}, InstGraph, RawNodeIndex, VisibleEdgeIndex}, z3parser::Z3Parser
-        },
-        LogParser,
-    }
+            graph::{analysis::matching_loop::MLGraphNode, raw::NodeKind, visible::VisibleInstGraph, InstGraph, RawNodeIndex, VisibleEdgeIndex}
+        
+    
 };
-use std::{borrow::BorrowMut, cell::RefCell, num::NonZeroUsize, rc::Rc};
+use std::{cell::RefCell, num::NonZeroUsize, rc::Rc};
 use viz_js::VizInstance;
-use web_sys::{window, Performance, Window};
+use web_sys::window;
 use yew::prelude::*;
 
 pub const EDGE_LIMIT: usize = 2000;
@@ -54,6 +51,7 @@ pub enum Msg {
     ResetGraph,
     UserPermission(WarningChoice),
     WorkerOutput(super::worker::WorkerOutput),
+    RenderMLGraph(Graph<(String, MLGraphNode), ()>),
     // UpdateSelectedNodes(Vec<RawNodeIndex>),
     // SearchMatchingLoops,
     // SelectNthMatchingLoop(usize),
@@ -125,7 +123,7 @@ impl Component for SVGResult {
             gloo::timers::future::TimeoutFuture::new(10).await;
             let cfg = link.get_configuration().unwrap();
             let parser = cfg.config.parser.as_ref().unwrap();
-            let inst_graph = match InstGraph::new(&parser.parser) {
+            let inst_graph = match InstGraph::new(&parser.parser.borrow()) {
                 Ok(inst_graph) => inst_graph,
                 Err(err) => {
                     log::error!("Failed constructing instantiation graph: {err:?}");
@@ -198,7 +196,7 @@ impl Component for SVGResult {
             Msg::WorkerOutput(_out) => false,
             Msg::ApplyFilter(filter) => {
                 log::debug!("Applying filter {:?}", filter);
-                match filter.apply(inst_graph, parser, &cfg.config.persistent.display) {
+                match filter.apply(inst_graph, &parser.borrow(), &cfg.config.persistent.display) {
                     FilterOutput::LongestPath(path) => {
                         ctx.props().selected_nodes.emit(path);
                         // self.insts_info_link
@@ -215,6 +213,10 @@ impl Component for SVGResult {
                             .as_ref()
                             .unwrap()
                             .send_message(GraphInfoMsg::ShowGeneralizedTerms(gen_terms));
+                        false
+                    }
+                    FilterOutput::MatchingLoopGraph(graph) => {
+                        ctx.link().send_message(Msg::RenderMLGraph(graph));
                         false
                     }
                     FilterOutput::None => false
@@ -250,7 +252,7 @@ impl Component for SVGResult {
                 false
             }
             Msg::SetDisabled(disablers) => {
-                Disabler::apply(disablers.iter().copied(), inst_graph, parser);
+                Disabler::apply(disablers.iter().copied(), inst_graph, &parser.borrow());
                 false
             }
             Msg::RenderGraph => {
@@ -271,7 +273,7 @@ impl Component for SVGResult {
                     ctx.props().progress.emit(GraphState::Rendering(RenderingState::GraphToDot));
                     let filtered_graph = &calculated.graph;
                     let ctxt = &DisplayCtxt {
-                        parser,
+                        parser: &parser.borrow(),
                         config: cfg.config.persistent.display.clone(),
                     };
 
@@ -337,7 +339,7 @@ impl Component for SVGResult {
                                 let label = node_data.kind().to_string();
                                 match node_data.kind() {
                                     NodeKind::Instantiation(inst) => {
-                                        let mkind = &parser[parser[*inst].match_].kind;
+                                        let mkind = &(& *parser.borrow())[(& *parser.borrow())[*inst].match_].kind;
                                         style = Some(if mkind.is_mbqi() { "filled,dashed" } else { "filled" });
                                         let s = match (data.hidden_children, data.hidden_parents) {
                                             (0, 0) => "box",
@@ -378,7 +380,7 @@ impl Component for SVGResult {
                             .expect("Could not render graphviz");
                         let end_timestamp = performance.now();
                         let elapsed_seconds = (end_timestamp - start_timestamp) / 1000.0;
-                        log::info!("Converting dot-String to SVG took {} seconds", elapsed_seconds);
+                        log::info!("Graph: Converting dot-String to SVG took {} seconds", elapsed_seconds);
                         let svg_text = svg.outer_html();
                         link.send_message(Msg::UpdateSvgText(
                             AttrValue::from(svg_text),
@@ -420,6 +422,76 @@ impl Component for SVGResult {
                 self.rendered = Some(rendered.clone());
                 ctx.props().progress.emit(GraphState::Constructed(rendered));
                 true
+            }
+            Msg::RenderMLGraph(graph) => {
+                    let _filtered_graph = &graph;
+                    let _ctxt = &DisplayCtxt {
+                        parser: &parser.borrow(),
+                        config: cfg.config.persistent.display.clone(),
+                    };
+
+                    // Performance observations (default value is in [])
+                    //  - splines=false -> 38s | [splines=true] -> ??
+                    //  - nslimit=2 -> 7s | nslimit=4 -> 9s | nslimit=7 -> 11.5s | nslimit=10 -> 14s | [nslimit=INT_MAX] -> 38s
+                    //  - [mclimit=1] -> 7s | mclimit=0.5 -> 4s (with nslimit=2)
+                    // `ranksep` dictates the distance between ranks (rows) in the graph,
+                    // it should be set dynamically based on the average number of children
+                    // per node out of all nodes with at least one child.
+                    let settings = [
+                        "ranksep=1.0;",
+                        "splines=false;",
+                        "nslimit=6;",
+                        "mclimit=0.6;",
+                    ];
+                    let dot_output = format!(
+                        "digraph {{\n{}\n{:?}\n}}",
+                        settings.join("\n"),
+                        Dot::with_attr_getters(
+                            &graph,
+                            &[
+                                Config::EdgeNoLabel,
+                                Config::NodeNoLabel,
+                                Config::GraphContentOnly
+                            ],
+                            &|_, _| "".to_string(),
+                            &|_, (_, node_data)| {
+                                format!("label=\"{}\" shape=\"{}\" style=filled fillcolor=\"{}\"",
+                                        node_data.0,
+                                        "box",
+                                        match &node_data.1 {
+                                            MLGraphNode::QI(quant) => {
+                                                let hue = rc_parser.colour_map.get_graphviz_hue_for_quant_idx(&quant);
+                                                format!("{hue} {NODE_COLOUR_SATURATION} {NODE_COLOUR_VALUE}")
+                                            },
+                                            MLGraphNode::ENode => format!("lightgrey"),
+                                            MLGraphNode::Equality => format!("white"),
+                                        }
+                                    )
+                            },
+                        )
+                    );
+                    ctx.props().progress.emit(GraphState::Rendering(RenderingState::RenderingGraph));
+                    let link = ctx.props().insts_info_link.borrow().clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        gloo_timers::future::TimeoutFuture::new(10).await;
+                        let graphviz = VizInstance::new().await;
+                        let options = viz_js::Options::default();
+                        // options.engine = "twopi".to_string();
+                        let window = window().expect("should have a window in this context");
+                        let performance = window.performance().expect("should have a performance object");
+                        let start_timestamp = performance.now();
+                        let svg = graphviz
+                            .render_svg_element(dot_output, options)
+                            .expect("Could not render graphviz");
+                        let end_timestamp = performance.now();
+                        let elapsed_seconds = (end_timestamp - start_timestamp) / 1000.0;
+                        log::info!("ML-graph: Converting dot-String to SVG took {} seconds", elapsed_seconds);
+                        let svg_text = svg.outer_html();
+                        link.unwrap()
+                            .send_message(GraphInfoMsg::ShowMatchingLoopGraph(AttrValue::from(svg_text)));
+                    });
+                    // only need to re-render once the new SVG has been set
+                   true 
             }
         }
     }
@@ -504,6 +576,23 @@ impl QuantIdxToColourMap {
         let colour = Hsluv::<D65, f64>::new(hue, 100.0, 50.0);
         let colour = Hsv::<Srgb, f64>::from_color(colour);
         colour.hue.into_positive_degrees()
+    }
+    pub fn get_for_quant_idx(&self, mkind: QuantIdx) -> LuvHue<f64> {
+        let qidx = Some(mkind);
+        debug_assert!(self.non_quant_insts || qidx.is_some());
+        let idx = qidx
+            .map(usize::from)
+            .map(|q| q + self.non_quant_insts as usize)
+            .unwrap_or_default();
+        // debug_assert!(idx < idx);
+        let idx_perm = (idx * self.coprime.get() + self.shift) % self.total_count;
+        LuvHue::new(360. * idx_perm as f64 / self.total_count as f64)
+    }
+    pub fn get_graphviz_hue_for_quant_idx(&self, mkind: &QuantIdx) -> f64 {
+        let hue = self.get_for_quant_idx(*mkind);
+        let colour = Hsluv::<D65, f64>::new(hue, 100.0, 50.0);
+        let colour = Hsv::<Srgb, f64>::from_color(colour);
+        colour.hue.into_positive_degrees() / 360.0
     }
 
     fn find_coprime(n: usize) -> NonZeroUsize {

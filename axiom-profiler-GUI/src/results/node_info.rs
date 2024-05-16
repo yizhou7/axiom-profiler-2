@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use smt_log_parser::{display_with::{DisplayCtxt, DisplayWithCtxt}, items::{MatchKind, VarNames}, parsers::z3::graph::{raw::{EdgeKind, Node, NodeKind}, visible::{VisibleEdge, VisibleEdgeKind}, InstGraph, VisibleEdgeIndex, RawNodeIndex}};
+use smt_log_parser::{display_with::{DisplayCtxt, DisplayWithCtxt}, items::{MatchKind, VarNames}, parsers::z3::graph::{raw::{EdgeKind, Node, NodeKind}, visible::{VisibleEdge, VisibleEdgeKind}, InstGraph, RawNodeIndex, VisibleEdgeIndex}, NonMaxU32};
 use yew::{function_component, html, use_context, AttrValue, Callback, Html, MouseEvent, Properties};
 
 use crate::configuration::ConfigurationProvider;
@@ -50,25 +50,22 @@ impl<'a, 'b> NodeInfo<'a, 'b> {
             }
         }
     }
-    pub fn description(&self, char_limit: Option<usize>) -> Html {
+    pub fn description(&self, char_limit: Option<NonMaxU32>) -> Html {
         let description = self.tooltip(true, char_limit);
         let description = format!("<code>{description}</code>");
         Html::from_html_unchecked(AttrValue::from(description))
     }
     // TODO: rename
-    pub fn tooltip(&self, html: bool, char_limit: Option<usize>) -> String {
+    pub fn tooltip(&self, html: bool, char_limit: Option<NonMaxU32>) -> String {
         let mut ctxt = DisplayCtxt {
             parser: self.ctxt.parser,
             config: self.ctxt.config.clone(),
         };
         ctxt.config.html = html;
-        ctxt.config.limit_enode_chars = char_limit.is_some();
-        if let Some(char_limit) = char_limit {
-            ctxt.config.enode_char_limit = char_limit;
-        }
+        ctxt.config.enode_char_limit = char_limit;
         match *self.node.kind() {
             NodeKind::ENode(enode) => {
-                ctxt.config.enode_char_limit *= 2;
+                ctxt.config.enode_char_limit = ctxt.config.enode_char_limit.and_then(|limit| NonMaxU32::new(limit.get() * 2));
                 enode.with(&ctxt).to_string()
             }
             NodeKind::GivenEquality(eq, _) => eq.with(&ctxt).to_string(),
@@ -169,7 +166,7 @@ pub fn SelectedNodesInfo(
     let parser = &*parser.parser;
     let graph = graph.borrow();
     let ctxt = &DisplayCtxt {
-        parser,
+        parser: &parser.borrow(),
         config: cfg.config.persistent.display.clone(),
     };
 
@@ -187,8 +184,8 @@ pub fn SelectedNodesInfo(
             let index = info.index();
             let header_text = info.kind();
             let summary = format!("[{index}] {header_text}: ");
-            let description = info.description((!open).then(|| 10));
-            let z3_gen = info.node.kind().inst().and_then(|i| parser[i].z3_generation).map(|g| format!(" (z3 gen {g})"));
+            let description = info.description((!open).then(|| NonMaxU32::new(10).unwrap()));
+            let z3_gen = info.node.kind().inst().and_then(|i| (& *parser.borrow())[i].z3_generation).map(|g| format!(" (z3 gen {g})"));
 
             let quantifier_body = info.quantifier_body().map(|body| html! {
                 <><hr/>
@@ -341,7 +338,7 @@ pub fn SelectedEdgesInfo(
     let parser = &*parser.parser;
     let graph = graph.borrow();
     let ctxt = &DisplayCtxt {
-        parser,
+        parser: &parser.borrow(),
         config: cfg.config.persistent.display.clone(),
     };
 

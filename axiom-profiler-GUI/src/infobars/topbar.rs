@@ -1,9 +1,8 @@
-use chrono::{DateTime, Utc};
 use material_yew::linear_progress::MatLinearProgress;
 use smt_log_parser::parsers::z3::graph::RawNodeIndex;
-use yew::{function_component, html, Callback, Html, NodeRef, Properties};
+use yew::{function_component, html, use_context, Callback, Html, NodeRef, Properties};
 
-use crate::{infobars::{Omnibox, SearchActionResult}, utils::lookup::Kind, LoadingState};
+use crate::{configuration::ConfigurationProvider, infobars::{ml_omnibox::MlOmnibox, Omnibox, SearchActionResult}, utils::lookup::Kind, LoadingState};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct OmnibarMessage {
@@ -19,6 +18,8 @@ pub struct TopbarProps {
     pub search: Callback<String, Option<SearchActionResult>>,
     pub pick: Callback<(String, Kind), Option<Vec<RawNodeIndex>>>,
     pub select: Callback<RawNodeIndex>,
+    pub found_mls: Option<usize>,
+    pub pick_nth_ml: Callback<usize>,
 }
 
 #[function_component]
@@ -59,10 +60,19 @@ pub fn Topbar(props: &TopbarProps) -> Html {
         closed = false;
         indeterminate = false;
     }
-
+    let ml_viewer_mode = use_context::<std::rc::Rc<ConfigurationProvider> >().expect("no ctx found");
+    let omnibox = if ml_viewer_mode.config.persistent.ml_viewer_mode {
+        html! {
+            <MlOmnibox progress={props.progress.clone()} message={props.message.clone()} omnibox={props.omnibox.clone()} found_mls={props.found_mls.unwrap()} pick_nth_ml={props.pick_nth_ml.clone()} />
+        }
+    } else {
+        html! {
+            <Omnibox progress={props.progress.clone()} message={props.message.clone()} omnibox={props.omnibox.clone()} search={props.search.clone()} pick={props.pick.clone()} select={props.select.clone()} />
+        }
+    };
     html! {
     <>
-        <Omnibox progress={props.progress.clone()} message={props.message.clone()} omnibox={props.omnibox.clone()} search={props.search.clone()} pick={props.pick.clone()} select={props.select.clone()} />
+        {omnibox}
         <div {class}><MatLinearProgress {closed} {indeterminate} {progress} {buffer}/></div>
     </>
     }

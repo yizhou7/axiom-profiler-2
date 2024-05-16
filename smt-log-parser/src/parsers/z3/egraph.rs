@@ -335,6 +335,22 @@ pub struct Equalities {
 }
 
 impl Equalities {
+    pub fn from(&self, eq: EqTransIdx) -> ENodeIdx {
+        let eq = &self.transitive[eq];
+        eq.path.first().map(|seg| match seg {
+            TransitiveExplSegment { kind: TransitiveExplSegmentKind::Given(eq, _), forward } => if *forward {
+                    self.given[*eq].from()
+                } else {
+                    self.given[*eq].to()
+                },
+            TransitiveExplSegment { kind: TransitiveExplSegmentKind::Transitive(eq), forward } => if *forward {
+                    self.from(*eq)
+                } else {
+                    self.transitive[*eq].to
+                },
+        }).unwrap_or(eq.to)
+    }
+
     pub fn walk_trans<E>(&self, fwd: bool, eq: EqTransIdx, f: &mut impl FnMut(EqGivenIdx, bool) -> std::result::Result<(), E>) -> std::result::Result<(), E> {
         let mut all = self.transitive[eq].all(fwd);
         while let Some(next) = all.next() {

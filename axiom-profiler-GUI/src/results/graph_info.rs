@@ -1,13 +1,10 @@
-use crate::{configuration::{Configuration, ConfigurationContext, ConfigurationProvider, PersistentConfiguration}, utils::split_div::SplitDiv, RcParser};
+use std::rc::Rc;
+
+use crate::{configuration::{ConfigurationContext, ConfigurationProvider}, utils::split_div::SplitDiv};
 use indexmap::map::{Entry, IndexMap};
 use material_yew::WeakComponentLink;
-use scraper::node;
 // use smt_log_parser::parsers::z3::inst_graph::{EdgeType, NodeInfo};
-use smt_log_parser::{
-    display_with::DisplayConfiguration, items::BlameKind, parsers::z3::graph::{raw::NodeKind, RawNodeIndex, VisibleEdgeIndex}
-    // parsers::z3::inst_graph::{EdgeInfo, InstInfo},
-};
-use web_sys::HtmlElement;
+use smt_log_parser::parsers::z3::graph::{RawNodeIndex, VisibleEdgeIndex};
 use yew::prelude::*;
 
 use super::{graph::graph_container, node_info::{SelectedEdgesInfo, SelectedNodesInfo}, svg_result::RenderedGraph};
@@ -17,6 +14,9 @@ pub struct GraphInfo {
     selected_edges: IndexMap<VisibleEdgeIndex, bool>,
     generalized_terms: Vec<String>,
     graph_container: WeakComponentLink<graph_container::GraphContainer>,
+    displayed_matching_loop_graph: Option<AttrValue>,
+    in_ml_viewer_mode: bool,
+    _context_listener: ContextHandle<Rc<ConfigurationProvider>>,
 }
 
 fn toggle_selected<T: Copy + Eq + std::hash::Hash>(map: &mut IndexMap<T, bool>, entry: T) -> Vec<T> {
@@ -53,6 +53,8 @@ pub enum Msg {
     DeselectAll,
     SelectAll,
     ShowGeneralizedTerms(Vec<String>),
+    ShowMatchingLoopGraph(AttrValue),
+    ContextUpdated(Rc<ConfigurationProvider>),
 }
 
 #[derive(Properties, PartialEq)]
@@ -79,11 +81,18 @@ impl Component for GraphInfo {
             .weak_link
             .borrow_mut()
             .replace(ctx.link().clone());
+        let (msg, context_listener) = ctx
+            .link()
+            .context(ctx.link().callback(Msg::ContextUpdated))
+            .expect("No message context provided");
         Self {
             selected_nodes: ctx.props().selected_nodes.iter().copied().map(|n| (n, false)).collect(),
             selected_edges: ctx.props().selected_edges.iter().copied().map(|e| (e, false)).collect(),
             generalized_terms: Vec::new(),
             graph_container: WeakComponentLink::default(),
+            displayed_matching_loop_graph: None,
+            in_ml_viewer_mode: msg.config.persistent.ml_viewer_mode,
+            _context_listener: context_listener,
         }
     }
 
@@ -125,6 +134,7 @@ impl Component for GraphInfo {
                 self.selected_edges.clear();
                 ctx.props().update_selected_nodes.emit(Vec::new());
                 ctx.props().update_selected_edges.emit(Vec::new());
+                // self.displayed_matching_loop_graph = None;
                 true
             }
             Msg::SelectAll => {
@@ -149,6 +159,10 @@ impl Component for GraphInfo {
                 self.generalized_terms = terms;
                 true
             }
+            Msg::ShowMatchingLoopGraph(graph) => {
+                self.displayed_matching_loop_graph = Some(graph);
+                true
+            } 
             Msg::ScrollZoomSelection => {
                 let Some(graph_container) = &*self.graph_container.borrow() else {
                     return false;
@@ -156,6 +170,14 @@ impl Component for GraphInfo {
                 let msg = graph_container::Msg::ScrollZoomSelection(self.selected_nodes.keys().copied().collect(), self.selected_edges.keys().copied().collect());
                 graph_container.send_message(msg);
                 false
+            }
+            Msg::ContextUpdated(msg) => {
+                if self.in_ml_viewer_mode != msg.config.persistent.ml_viewer_mode {
+                    self.in_ml_viewer_mode = msg.config.persistent.ml_viewer_mode;
+                    true
+                } else {
+                    false
+                } 
             }
         }
     }
@@ -169,16 +191,16 @@ impl Component for GraphInfo {
             let link = ctx.link().clone();
             Callback::from(move |edge: VisibleEdgeIndex| link.send_message(Msg::ToggleOpenEdge(edge)))
         };
-        let ignore_term_ids = !ctx.link().get_configuration().unwrap().config.persistent.display.display_term_ids;
+        let _ignore_term_ids = !ctx.link().get_configuration().unwrap().config.persistent.display.display_term_ids;
         let on_node_select = ctx.link().callback(Msg::UserSelectedNode);
         let on_edge_select = ctx.link().callback(Msg::UserSelectedEdge);
         let deselect_all = ctx.link().callback(|_| Msg::DeselectAll);
         let select_all = ctx.link().callback(|_| Msg::SelectAll);
-        let generalized_terms = self.generalized_terms.iter().map(|term| html! {
+        let _generalized_terms = self.generalized_terms.iter().map(|term| html! {
             <li>{term}</li>
         });
         let outdated = ctx.props().outdated.then(|| html! {<div class="outdated"></div>});
-        let hide_right_bar = self.selected_nodes.is_empty() && self.selected_edges.is_empty();
+        let hide_right_bar = self.selected_nodes.is_empty() && self.selected_edges.is_empty() && !(self.in_ml_viewer_mode && self.displayed_matching_loop_graph.is_some());
         let left_bound = if hide_right_bar { 1.0 } else { 0.3 };
         html! {
             <>
@@ -197,6 +219,16 @@ impl Component for GraphInfo {
                 <div style="width:100%; height:100%; overflow-wrap:anywhere; overflow:clip auto;">
                     <SelectedNodesInfo selected_nodes={self.selected_nodes.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>()} on_click={on_node_click} />
                     <SelectedEdgesInfo selected_edges={self.selected_edges.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>()} rendered={ctx.props().rendered.clone()} on_click={on_edge_click} />
+                    { if let Some(graph) = &self.displayed_matching_loop_graph {
+                        html!{
+                            <>
+                                <h2>{"Information on Displayed Matching Loop"}</h2>
+                                <div style="overflow-x: auto;">{Html::from_html_unchecked(graph.clone())}</div>
+                            </>
+                        }
+                    } else {
+                        html!{}
+                    }}
                     // TODO: re-add matching loops
                     // <h2>{"Information about displayed matching loop:"}</h2>
                     // <div>

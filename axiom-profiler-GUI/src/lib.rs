@@ -19,13 +19,14 @@ use wasm_timer::Instant;
 use web_sys::{HtmlElement, HtmlInputElement};
 use yew::html::Scope;
 use yew::prelude::*;
-use yew_router::prelude::*;
 use material_yew::{MatIcon, MatIconButton, MatDialog, WeakComponentLink};
 
 use crate::commands::CommandsProvider;
 use crate::configuration::{ConfigurationContext, ConfigurationProvider, Flags};
 use crate::filters::FiltersState;
 use crate::infobars::{OmnibarMessage, SearchActionResult, SidebarSectionHeader, Topbar};
+use crate::results::filters::Filter;
+use crate::filters::Msg::AddFilter;
 use crate::results::svg_result::GraphState;
 use crate::utils::{lookup::StringLookupZ3, overlay_page::{Overlay, SetVisibleCallback}};
 
@@ -134,6 +135,7 @@ pub struct OpenedFileInfo {
     selected_nodes: Vec<RawNodeIndex>,
     selected_edges: Vec<VisibleEdgeIndex>,
     rendered: Option<RenderedGraph>,
+    parser: RcParser,
 }
 
 impl PartialEq for OpenedFileInfo {
@@ -175,6 +177,7 @@ pub struct FileDataComponent {
     navigation_section: NodeRef,
     help_dialog: WeakComponentLink<MatDialog>,
     insts_info_link: WeakComponentLink<graph_info::GraphInfo>,
+    filters_state_link: WeakComponentLink<FiltersState>,
     showing_help: bool,
     omnibox: NodeRef,
     sidebar_button: NodeRef,
@@ -285,6 +288,7 @@ impl Component for FileDataComponent {
             navigation_section: NodeRef::default(),
             help_dialog,
             insts_info_link: WeakComponentLink::default(),
+            filters_state_link: WeakComponentLink::default(),
             showing_help: false,
             omnibox,
             sidebar_button,
@@ -303,6 +307,7 @@ impl Component for FileDataComponent {
                 // remove any old parser in the configuration
                 let cfg = ctx.link().get_configuration().unwrap();
                 cfg.update_parser(|p| p.take().is_some());
+                cfg.reset_ml_viewer_mode();
                 // hide the flags page if shown
                 self.flags_visible.borrow().emit(Some(false));
 
@@ -382,9 +387,10 @@ impl Component for FileDataComponent {
                 log::info!("Processing \"{file_name}\"");
                 drop(self.reader.take());
                 let parser = RcParser::new(parser);
+                let rc_parser = parser.clone();
                 let cfg = ctx.link().get_configuration().unwrap();
                 cfg.update_parser(move |p| {
-                    *p = Some(parser);
+                    *p = Some(rc_parser);
                     true
                 });
                 let file = OpenedFileInfo {
@@ -397,6 +403,7 @@ impl Component for FileDataComponent {
                     selected_nodes: Vec::new(),
                     selected_edges: Vec::new(),
                     rendered: None,
+                    parser,
                 };
                 self.file = Some(file);
                 if let Some(navigation_section) = self.navigation_section.cast::<web_sys::Element>() {
@@ -457,13 +464,48 @@ impl Component for FileDataComponent {
                 _ => false,
             }
             Msg::SearchMatchingLoops => {
+                log::info!("Searching matching loops");
                 if let Some(file) = &mut self.file {
                     // TODO: re-add finding matching loops
-                    // if let Some(g) = file.parser.graph.borrow_mut().as_mut() {
-                    //     file.parser.found_mls = Some(g.search_matching_loops());
+                    // assert!(file.parser.graph.is_some());
+                    // let parser = ctx.link().get_configuration().unwrap().config.parser.unwrap();
+                    // let tmp = ctx.link().get_configuration().unwrap().config.parser.unwrap().clone();
+                    // let mut parser = tmp.parser.borrow_mut();
+                    // file.parser = ctx.link().get_configuration().unwrap().config.parser.unwrap().clone(); 
+                    let cfg = ctx.link().get_configuration().unwrap();
+                    let parser = cfg.config.parser.as_ref().unwrap();
+                    file.parser = parser.clone();
+                    if let Some(g) = &file.parser.graph {
+                        file.parser.found_mls = Some((&mut *g.borrow_mut())
+                        // .search_matching_loops(&mut *parser))
+                        .search_matching_loops(&mut *file.parser.parser.borrow_mut()))
+                    }
+                    return true;
+                    // file.parser.found_mls = Some(
+                    //     &file
+                    //     .parser
+                    //     .graph
+                    //     .unwrap()
+                    //     .borrow_mut()
+                    //     .deref_mut()
+                    //     .search_matching_loops()
+                    // );
+                    // assert!(parser.graph.is_some());
+                    // if let Some(g) = &file
+                    //     .parser
+                    //     .graph
+                    //     // .borrow_mut() 
+                    //     // .as_mut()
+                    //     {
+                    //     file.parser.found_mls = Some(g
+                    //         .borrow_mut()
+                    //         .deref_mut()
+                    //         .search_matching_loops());
+                    //     log::info!("Returning true");
                     //     return true;
                     // }
                 }
+                log::info!("Returning false");
                 false
             }
         }
@@ -491,7 +533,7 @@ impl Component for FileDataComponent {
             Some(file) => {
                 let search_matching_loops = ctx.link().callback(|_| Msg::SearchMatchingLoops);
                 html!{
-                    <FiltersState file={file.clone()} search_matching_loops={search_matching_loops}/>
+                    <FiltersState file={file.clone()} search_matching_loops={search_matching_loops} weak_link={self.filters_state_link.clone()} />
                 }
             }
             None => html!{},
@@ -523,6 +565,17 @@ impl Component for FileDataComponent {
             insts_info_link.send_message(graph_info::Msg::UserSelectedNode(idx));
             insts_info_link.send_message(graph_info::Msg::ScrollZoomSelection);
         });
+        let filters_state_link = self.filters_state_link.clone();
+        let pick_nth_ml = Callback::from({
+            let file = self.file.clone();
+            move |n: usize| {
+            if let Some(found_mls) = file.as_ref().and_then(|file| file.parser.found_mls) {
+                let Some(filters_state_link) = &*filters_state_link.borrow() else {
+                    return;
+                };
+                filters_state_link.send_message(crate::filters::Msg::AddFilter(false, Filter::SelectNthMatchingLoop(n)));
+            }
+        }});
 
         // Callbacks
         let file_select_ref = self.file_select.clone();
@@ -594,7 +647,7 @@ impl Component for FileDataComponent {
         </div></div>
     </nav>
     <div class="topbar">
-        <Topbar progress={self.progress.clone()} {message} omnibox={self.omnibox.clone()} {search} {pick} {select} />
+        <Topbar progress={self.progress.clone()} {message} omnibox={self.omnibox.clone()} {search} {pick} {select} found_mls={self.file.as_ref().and_then(|file| file.parser.found_mls)} {pick_nth_ml} />
     </div>
     <div class="alerts"></div>
     <div class={page_class}>
@@ -631,13 +684,15 @@ impl Component for FileDataComponent {
 pub fn app() -> Html {
     html! {
         <main><GlobalCallbacksProvider><CommandsProvider>
-            <ConfigurationProvider><FileDataComponent/></ConfigurationProvider>
+            <ConfigurationProvider>
+            <FileDataComponent/>
+            </ConfigurationProvider>
         </CommandsProvider></GlobalCallbacksProvider></main>
     }
 }
 
 pub struct RcParser {
-    parser: Rc<Z3Parser>,
+    parser: Rc<RefCell<Z3Parser>>,
     lookup: Rc<StringLookupZ3>,
     colour_map: QuantIdxToColourMap,
     graph: Option<Rc<RefCell<InstGraph>>>,
@@ -671,7 +726,7 @@ impl RcParser {
         let colour_map = QuantIdxToColourMap::new(quant_count, non_quant_insts);
         let lookup = StringLookupZ3::init(&parser);
         Self {
-            parser: Rc::new(parser),
+            parser: Rc::new(RefCell::new(parser)),
             lookup: Rc::new(lookup),
             colour_map,
             graph: None,
