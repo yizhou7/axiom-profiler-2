@@ -1,5 +1,0 @@
-/target
-/.vscode
-/out/
-temp.log
-**/Cargo.lock

@@ -74,8 +74,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          lfs: true
 
       - name: Install Z3 for older version
         uses: pavpanchekha/setup-z3@1.2.2 # see GitHub Action "Install Z3"
