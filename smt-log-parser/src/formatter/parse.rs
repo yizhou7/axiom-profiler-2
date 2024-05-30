@@ -49,7 +49,7 @@ macro_rules! map_res {
 // Const parsing
 
 impl ChildIndex {
-    pub const fn parse<'a>(s: &'a str, hash_prefix: bool) -> ResultFormatterConst<'a, Self> {
+    pub const fn parse(s: &str, hash_prefix: bool) -> ResultFormatterConst<'_, Self> {
         let s = if hash_prefix {
             let tail = ConstOperations::strip_prefix(s, '#');
             map_opt!(tail, Err(ParseErrorConst::missing_hash(s)))
@@ -62,20 +62,20 @@ impl ChildIndex {
 }
 
 impl ChildRange {
-    pub const fn parse<'a>(s: &'a str) -> ResultFormatterConst<'a, Self> {
+    pub const fn parse(s: &str) -> ResultFormatterConst<'_, Self> {
         let split = ConstOperations::split_first(s, ':');
         let (from, to) = map_opt!(split, Err(ParseErrorConst::missing_range(s)));
-        let from =  map_res!(ChildIndex::parse(from, true));
-        let to =  map_res!(ChildIndex::parse(to, false));
+        let from = map_res!(ChildIndex::parse(from, true));
+        let to = map_res!(ChildIndex::parse(to, false));
         Ok(ChildRange { from, to })
     }
 }
 
 impl BindPowerPair {
-    pub const fn parse<'a>(s: &'a str) -> ResultFormatterConst<'a, (bool, Self)> {
+    pub const fn parse(s: &str) -> ResultFormatterConst<'_, (bool, Self)> {
         let split = ConstOperations::split(s, ',');
         let (_, first, split) = split.next::<false>();
-        let first =  map_res!(ConstOperations::parse_u32(first));
+        let first = map_res!(ConstOperations::parse_u32(first));
         let (second, split) = ConstOperations::split_more(split);
         let second = map_opt!(second => map_res!(ConstOperations::parse_u32(second)));
         match (second, split) {
@@ -87,7 +87,7 @@ impl BindPowerPair {
 }
 
 impl SubFormatterSingle {
-    pub const fn parse<'a>(s: &'a str) -> ResultFormatterConst<'a, Self> {
+    pub const fn parse(s: &str) -> ResultFormatterConst<'_, Self> {
         let split = ConstOperations::split(s, SEPARATOR_CHARACTER);
         let (_, index, split) = split.next::<false>();
         let index = map_res!(ChildIndex::parse(index, true));
@@ -121,12 +121,15 @@ impl<'a> SubFormatterRepeatConst<'a> {
                 left_sep.separator_deduplicate = separator_deduplicate;
                 left_sep.separator = separator;
                 let (separator_deduplicate, separator, sep) = sep_two.next::<true>();
-                let sep = map_opt!(sep => sep, return Err(ParseErrorConst::too_many_control(sep_two)));
+                let sep =
+                    map_opt!(sep => sep, return Err(ParseErrorConst::too_many_control(sep_two)));
                 middle_sep.separator_deduplicate = separator_deduplicate;
                 middle_sep.separator = separator;
                 let (separator_deduplicate, separator, sep) = sep.next::<true>();
                 #[allow(unreachable_code)]
-                { map_opt!(sep => return Err(ParseErrorConst::too_many_control(sep))); }
+                {
+                    map_opt!(sep => return Err(ParseErrorConst::too_many_control(sep)));
+                }
                 right_sep.separator_deduplicate = separator_deduplicate;
                 right_sep.separator = separator;
             } else {
@@ -145,17 +148,23 @@ impl<'a> SubFormatterRepeatConst<'a> {
         })
     }
     /// Could have any of: ``, `n`, `n,n`, `n|n`, `n,n|n`, `n|n,n`, `n|n|n`, `n|n,n|n`
-    const fn parse_triple(split: Option<ConstSplit<'a, 1>>) -> ResultFormatterConst<'a, (BindPower, BindPowerPair, BindPower)> {
+    const fn parse_triple(
+        split: Option<ConstSplit<'a, 1>>,
+    ) -> ResultFormatterConst<'a, (BindPower, BindPowerPair, BindPower)> {
         const DEFAULT: BindPowerPair = BindPowerPair::symmetric(DEFAULT_BIND_POWER);
-        let split = map_opt!(split => split, return Ok((DEFAULT_BIND_POWER, DEFAULT, DEFAULT_BIND_POWER)));
+        let split =
+            map_opt!(split => split, return Ok((DEFAULT_BIND_POWER, DEFAULT, DEFAULT_BIND_POWER)));
         let (_, first, split) = split.next::<false>();
         let (pair, fst) = map_res!(BindPowerPair::parse(first));
         if pair {
             // `n,n` or `n,n|n`
-            let split = map_opt!(split => split, return Ok((DEFAULT_BIND_POWER, fst, DEFAULT_BIND_POWER)));
+            let split =
+                map_opt!(split => split, return Ok((DEFAULT_BIND_POWER, fst, DEFAULT_BIND_POWER)));
             let (_, second, split) = split.next::<false>();
             #[allow(unreachable_code)]
-            { map_opt!(split => return Err(ParseErrorConst::too_many_control(split))); }
+            {
+                map_opt!(split => return Err(ParseErrorConst::too_many_control(split)));
+            }
             let (pair, snd) = map_res!(BindPowerPair::parse(second));
             return if pair {
                 Err(ParseErrorConst::unexpected_pair(second))
@@ -163,7 +172,7 @@ impl<'a> SubFormatterRepeatConst<'a> {
                 // snd.left == snd.right
                 let snd = snd.left;
                 Ok((DEFAULT_BIND_POWER, fst, snd))
-            }
+            };
         }
         // fst.left == fst.right
         let split = map_opt!(split => split, return Ok((fst.left, fst, fst.right)));
@@ -181,7 +190,9 @@ impl<'a> SubFormatterRepeatConst<'a> {
         // `n|n|n` or `n|n,n|n`
         let (_, third, split) = split.next::<false>();
         #[allow(unreachable_code)]
-        { map_opt!(split => return Err(ParseErrorConst::too_many_control(split))); }
+        {
+            map_opt!(split => return Err(ParseErrorConst::too_many_control(split)));
+        }
         let (pair, thrd) = map_res!(BindPowerPair::parse(third));
         if pair {
             Err(ParseErrorConst::unexpected_pair(third))
@@ -200,14 +211,14 @@ impl<'a> SubFormatterConst<'a> {
             let (_, control, split) = split.next::<false>();
             let split = map_opt!(split, Err(ParseErrorConst::missing_control(s, "]$")));
             let control = map_res!(SubFormatterSingle::parse(control));
-            return Ok((Self::Single(control), split.remainder()))
+            return Ok((Self::Single(control), split.remainder()));
         }
         if let Some(s) = ConstOperations::strip_prefix(s, '(') {
             let split = ConstOperations::split_2(s, ')', CONTROL_CHARACTER);
             let (_, control, split) = split.next::<false>();
             let split = map_opt!(split, Err(ParseErrorConst::missing_control(s, ")$")));
             let control = map_res!(SubFormatterRepeatConst::parse(control));
-            return Ok((Self::Repeat(control), split.remainder()))
+            return Ok((Self::Repeat(control), split.remainder()));
         }
         if let Some(s) = ConstOperations::strip_prefix(s, '{') {
             let split = ConstOperations::split_2(s, '}', CONTROL_CHARACTER);
@@ -218,17 +229,22 @@ impl<'a> SubFormatterConst<'a> {
                 return Err(ParseErrorConst::capture_overflow(inner));
             }
             let capture = map_opt!(NonMaxU32::new(capture), s => s, loop {});
-            return Ok((Self::Capture(capture), split.remainder()))
+            return Ok((Self::Capture(capture), split.remainder()));
         }
         Err(ParseErrorConst::incorrect_control(s))
     }
-    pub const fn parse_one(s: &'a str) -> ResultFormatterConst<'a, (Option<SubFormatterString<'a>>, Option<(Self, &'a str)>)> {
+    pub const fn parse_one(
+        s: &'a str,
+    ) -> ResultFormatterConst<'a, (Option<SubFormatterString<'a>>, Option<(Self, &'a str)>)> {
         let split = ConstOperations::split(s, CONTROL_CHARACTER);
         let (control_deduplicate, first, rest) = split.next::<true>();
         let first = if first.is_empty() {
             None
         } else {
-            Some(SubFormatterString { data: first, control_deduplicate })
+            Some(SubFormatterString {
+                data: first,
+                control_deduplicate,
+            })
         };
         let rest = map_opt!(rest => map_res!(Self::parse_control(rest.remainder())));
         Ok((first, rest))
@@ -241,13 +257,19 @@ impl<'a> FormatterConst<'a> {
         let mut s = full;
         let mut bind_power = BindPowerPair::symmetric(DEFAULT_BIND_POWER);
         if let Some(rest) = ConstOperations::strip_prefix(s, CONTROL_CHARACTER) {
-            let (left, rest) = map_opt!(ConstOperations::split_first(rest, CONTROL_CHARACTER), Err(ParseErrorConst::missing_control(rest, "$")));
+            let (left, rest) = map_opt!(
+                ConstOperations::split_first(rest, CONTROL_CHARACTER),
+                Err(ParseErrorConst::missing_control(rest, "$"))
+            );
             let left = map_res!(ConstOperations::parse_u32(left));
             bind_power.left = left;
             s = rest;
         }
         if let Some(rest) = ConstOperations::strip_suffix(s, CONTROL_CHARACTER) {
-            let (right, rest) = map_opt!(ConstOperations::split_last(rest, CONTROL_CHARACTER), Err(ParseErrorConst::missing_control(rest, "$")));
+            let (right, rest) = map_opt!(
+                ConstOperations::split_last(rest, CONTROL_CHARACTER),
+                Err(ParseErrorConst::missing_control(rest, "$"))
+            );
             let right = map_res!(ConstOperations::parse_u32(right));
             bind_power.right = right;
             s = rest;
@@ -268,7 +290,10 @@ impl<'a> FormatterConst<'a> {
             idx += 1;
             s = rest;
         }
-        Ok(Self { bind_power, outputs })
+        Ok(Self {
+            bind_power,
+            outputs,
+        })
     }
 }
 
@@ -281,21 +306,28 @@ impl<'a> MatcherConst<'a> {
         } else {
             (s, MatcherKindConst::Exact)
         };
-        Ok(Self { data, children, kind })
+        Ok(Self {
+            data,
+            children,
+            kind,
+        })
     }
-    pub const fn parse_children(s: &'a str) -> ResultMatcherConst<'a, (&'a str, Option<NonMaxU32>)> {
+    pub const fn parse_children(
+        s: &'a str,
+    ) -> ResultMatcherConst<'a, (&'a str, Option<NonMaxU32>)> {
         let mut has_bracket = true;
         let s = map_opt!(ConstOperations::strip_prefix(s, '('), s => s, { has_bracket = false; s });
         let mut s = match ConstOperations::strip_suffix(s, ')') {
             Some(s) if has_bracket => s,
             None if !has_bracket => return Ok((s, None)),
-            Some(s) =>
-                return Err(ParseErrorConst::invalid_children_spec(s)),
+            Some(s) => return Err(ParseErrorConst::invalid_children_spec(s)),
             None => return Err(ParseErrorConst::invalid_children_spec(s)),
         };
         let mut children = NonMaxU32::ZERO;
         while let Some(rest) = ConstOperations::strip_suffix(s, '_') {
-            let Some(rest) = ConstOperations::strip_suffix(rest, ' ') else { break };
+            let Some(rest) = ConstOperations::strip_suffix(rest, ' ') else {
+                break;
+            };
             let new = NonMaxU32::new(children.get() + 1);
             children = map_opt!(new, Err(ParseErrorConst::invalid_children_spec(s)));
             s = rest;
@@ -340,7 +372,7 @@ impl FromStr for SubFormatterSingle {
 
 impl FromStr for SubFormatterRepeat {
     type Err = FormatterParseError;
-    fn from_str<'a>(s: &'a str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         let self_ = SubFormatterRepeatConst::parse(s)?;
         self_.try_into()
     }
@@ -363,7 +395,9 @@ impl FromStr for FallbackFormatter {
 impl FromStr for Matcher {
     type Err = ConversionError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(MatcherConst::parse(s).map_err(ParseError::from)?.try_into()?)
+        Ok(MatcherConst::parse(s)
+            .map_err(ParseError::from)?
+            .try_into()?)
     }
 }
 
@@ -382,7 +416,7 @@ impl<const SKIP_DOUBLE: bool, const N: usize> Check<SKIP_DOUBLE, N> {
 
 impl<'a, const N: usize> ConstSplit<'a, N> {
     const fn next<const SKIP_DOUBLE: bool>(self) -> (bool, &'a str, Option<Self>) {
-        let _ = Check::<SKIP_DOUBLE, N>::CHECK_N_SIZE;
+        Check::<SKIP_DOUBLE, N>::CHECK_N_SIZE;
 
         let full = self.0.as_bytes();
         let mut s = full;
@@ -415,25 +449,21 @@ impl<'a, const N: usize> ConstSplit<'a, N> {
                     }
                     idx += 1;
                 }
-                _ => loop {}
+                _ => loop {},
             }
         };
         match reached_sep {
             Some(reached_sep) => {
                 let (part, _) = full.split_at(reached_sep);
-                let part = unsafe {
-                    std::str::from_utf8_unchecked(part)
-                };
-                let rest = unsafe {
-                    std::str::from_utf8_unchecked(s)
-                };
+                let part = unsafe { std::str::from_utf8_unchecked(part) };
+                let rest = unsafe { std::str::from_utf8_unchecked(s) };
                 (skipped, part, Some(ConstSplit(rest, self.1)))
             }
             None => (skipped, self.0, None),
         }
     }
     const fn prev<const SKIP_DOUBLE: bool>(self) -> (bool, &'a str, Option<Self>) {
-        let _ = Check::<SKIP_DOUBLE, N>::CHECK_N_SIZE;
+        Check::<SKIP_DOUBLE, N>::CHECK_N_SIZE;
 
         let full = self.0.as_bytes();
         let mut s = full;
@@ -466,18 +496,14 @@ impl<'a, const N: usize> ConstSplit<'a, N> {
                     }
                     idx -= 1;
                 }
-                _ => loop {}
+                _ => loop {},
             }
         };
         match reached_sep {
             Some(reached_sep) => {
                 let (_, part) = full.split_at(reached_sep);
-                let part = unsafe {
-                    std::str::from_utf8_unchecked(part)
-                };
-                let rest = unsafe {
-                    std::str::from_utf8_unchecked(s)
-                };
+                let part = unsafe { std::str::from_utf8_unchecked(part) };
+                let rest = unsafe { std::str::from_utf8_unchecked(s) };
                 (skipped, part, Some(ConstSplit(rest, self.1)))
             }
             None => (skipped, self.0, None),
@@ -503,31 +529,31 @@ impl ConstOperations {
     const fn strip_prefix(s: &str, prefix: char) -> Option<&str> {
         let prefix = Self::char_as_ascii(prefix);
         match s.as_bytes() {
-            [b, s @ ..] if *b == prefix =>
-                Some(unsafe { std::str::from_utf8_unchecked(s) }),
+            [b, s @ ..] if *b == prefix => Some(unsafe { std::str::from_utf8_unchecked(s) }),
             _ => None,
         }
     }
     const fn strip_suffix(s: &str, suffix: char) -> Option<&str> {
         let suffix = Self::char_as_ascii(suffix);
         match s.as_bytes() {
-            [s @ .., b] if *b == suffix =>
-                Some(unsafe { std::str::from_utf8_unchecked(s) }),
+            [s @ .., b] if *b == suffix => Some(unsafe { std::str::from_utf8_unchecked(s) }),
             _ => None,
         }
     }
 
-    const fn split<'a>(s: &'a str, sep: char) -> ConstSplit<'a, 1> {
+    const fn split(s: &str, sep: char) -> ConstSplit<'_, 1> {
         let sep = Self::char_as_ascii(sep);
         ConstSplit(s, [sep])
     }
-    const fn split_2<'a>(s: &'a str, sep1: char, sep2: char) -> ConstSplit<'a, 2> {
+    const fn split_2(s: &str, sep1: char, sep2: char) -> ConstSplit<'_, 2> {
         let sep1 = Self::char_as_ascii(sep1);
         let sep2 = Self::char_as_ascii(sep2);
         ConstSplit(s, [sep1, sep2])
     }
 
-    const fn split_more<'a, const N: usize>(s: Option<ConstSplit<'a, N>>) -> (Option<&'a str>, Option<ConstSplit<'a, N>>) {
+    const fn split_more<const N: usize>(
+        s: Option<ConstSplit<'_, N>>,
+    ) -> (Option<&str>, Option<ConstSplit<'_, N>>) {
         map_opt!(s => {
             let (_, part, split) = s.next::<false>();
             (Some(part), split)
@@ -544,12 +570,12 @@ impl ConstOperations {
         map_opt!(split => (last, split.remainder()))
     }
 
-    const fn parse_i32<'a>(full: &'a str) -> ResultFormatterConst<'a, i32> {
+    const fn parse_i32(full: &str) -> ResultFormatterConst<'_, i32> {
         let neg = Self::strip_prefix(full, '-');
         let is_neg = neg.is_some();
         let s = map_opt!(neg => neg, full);
         if s.is_empty() {
-            return Err(ParseErrorConst::invalid_number(full))
+            return Err(ParseErrorConst::invalid_number(full));
         }
         let leading_zero = Self::strip_prefix(s, '0');
         if let Some(leading_zero) = leading_zero {
@@ -557,7 +583,7 @@ impl ConstOperations {
                 Err(ParseErrorConst::invalid_number(s))
             } else {
                 Ok(0)
-            }
+            };
         }
         let mut s = s.as_bytes();
 
@@ -565,7 +591,7 @@ impl ConstOperations {
         while !s.is_empty() {
             match s {
                 [b @ b'0'..=b'9', r @ ..] => {
-                    num = num * 10;
+                    num *= 10;
                     let delta = (*b - b'0') as i32;
                     if is_neg {
                         num -= delta;
@@ -576,13 +602,13 @@ impl ConstOperations {
                 }
                 _ => {
                     let s = unsafe { std::str::from_utf8_unchecked(s) };
-                    return Err(ParseErrorConst::invalid_number(s))
+                    return Err(ParseErrorConst::invalid_number(s));
                 }
             }
-        };
+        }
         Ok(num)
     }
-    const fn parse_u32<'a>(full: &'a str) -> ResultFormatterConst<'a, u32> {
+    const fn parse_u32(full: &str) -> ResultFormatterConst<'_, u32> {
         let data = map_res!(Self::parse_i32(full));
         Ok(data as u32)
     }

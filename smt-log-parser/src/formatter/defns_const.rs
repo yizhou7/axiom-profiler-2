@@ -34,8 +34,7 @@ impl TryFrom<MatcherConst<'_>> for Matcher {
     type Error = regex::Error;
     fn try_from(m: MatcherConst<'_>) -> Result<Self, Self::Error> {
         let kind = match m.kind {
-            MatcherKindConst::Exact =>
-                MatcherKind::Exact(m.data.to_string()),
+            MatcherKindConst::Exact => MatcherKind::Exact(m.data.to_string()),
             MatcherKindConst::Regex => {
                 MatcherKind::Regex(RegexMatcher::new(format!("^(?:{})$", m.data))?)
             }
@@ -62,7 +61,12 @@ pub struct FormatterConst<'a> {
 impl TryFrom<FormatterConst<'_>> for Formatter {
     type Error = FormatterParseError;
     fn try_from(f: FormatterConst<'_>) -> Result<Self, Self::Error> {
-        let outputs: Vec<_> = f.outputs.into_iter().map_while(|o| o).map(|o| SubFormatter::try_from(o)).collect::<Result<_, _>>()?;
+        let outputs: Vec<_> = f
+            .outputs
+            .into_iter()
+            .map_while(|o| o)
+            .map(SubFormatter::try_from)
+            .collect::<Result<_, _>>()?;
         let mut self_ = Self {
             bind_power: f.bind_power,
             outputs,
@@ -98,7 +102,7 @@ impl<'a> FormatterConst<'a> {
 pub enum SubFormatterConst<'a> {
     /// A simple string output, will be printed literally.
     String(SubFormatterString<'a>),
-    /// 
+    ///
     Single(SubFormatterSingle),
     Repeat(SubFormatterRepeatConst<'a>),
     Capture(NonMaxU32),
@@ -109,7 +113,7 @@ impl TryFrom<SubFormatterConst<'_>> for SubFormatter {
     fn try_from(sub: SubFormatterConst<'_>) -> Result<Self, Self::Error> {
         let sf = match sub {
             SubFormatterConst::String(s) => {
-                let c = s.control_deduplicate.then(|| CONTROL_CHARACTER);
+                let c = s.control_deduplicate.then_some(CONTROL_CHARACTER);
                 let data = deduplicate_character(s.data, c);
                 SubFormatter::String(data)
             }
@@ -181,7 +185,7 @@ pub struct SubFormatterRepeatSeparator<'a> {
 
 impl From<SubFormatterRepeatSeparator<'_>> for String {
     fn from(sep: SubFormatterRepeatSeparator<'_>) -> Self {
-        let c = sep.separator_deduplicate.then(|| SEPARATOR_CHARACTER);
+        let c = sep.separator_deduplicate.then_some(SEPARATOR_CHARACTER);
         deduplicate_character(sep.separator, c)
     }
 }

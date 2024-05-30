@@ -69,11 +69,14 @@ impl TermDisplayContext {
                 // compiler, the actual lifetime will end at the end of the
                 // block.
                 let s = unsafe { &*(s.as_str() as *const _) };
-                self.string_matchers.remove(&(Cow::Borrowed(s), matcher.children))
+                self.string_matchers
+                    .remove(&(Cow::Borrowed(s), matcher.children))
             }
             MatcherKind::Regex(r) => {
                 let idx = self.regex_matchers.iter().position(|t| {
-                    let MatcherKind::Regex(r2) = &t.matcher.kind else { unreachable!() };
+                    let MatcherKind::Regex(r2) = &t.matcher.kind else {
+                        unreachable!()
+                    };
                     r2.original() == r.original()
                 })?;
                 let removed = self.regex_matchers.remove(idx);
@@ -91,7 +94,7 @@ impl TermDisplayContext {
         }
         let must_recalculate = !other.regex_matchers.is_empty();
         let mut regex_matchers = other.regex_matchers.clone();
-        regex_matchers.extend(self.regex_matchers.drain(..));
+        regex_matchers.append(&mut self.regex_matchers);
         self.regex_matchers = regex_matchers;
         if must_recalculate {
             self.calculate_regex_set();
@@ -100,39 +103,46 @@ impl TermDisplayContext {
 
     /// Returns the formatter for the given string, defaulting to the fallback
     /// if none match. See [`Self::match_str_opt`] for more details.
-    pub fn match_str<'a, 'b>(&'b self, haystack: &'a str, children: NonMaxU32) -> MatchResult<'a, 'b> {
-        self.match_str_opt(haystack, children).unwrap_or_else(|| {
-            MatchResult {
+    pub fn match_str<'a, 'b>(
+        &'b self,
+        haystack: &'a str,
+        children: NonMaxU32,
+    ) -> MatchResult<'a, 'b> {
+        self.match_str_opt(haystack, children)
+            .unwrap_or_else(|| MatchResult {
                 haystack,
                 captures: None,
                 formatter: self.fallback().formatter(),
-            }
-        })
+            })
     }
 
     /// Returns the formatter for the given string, if one exists. If multiple
     /// matchers match the string, then the first one is returned. The order is
     /// determined as `Matcher::Exact` first and then the first `Matcher::Regex`
     /// in the order provided when constructing `self`.
-    pub fn match_str_opt<'a, 'b>(&'b self, haystack: &'a str, children: NonMaxU32) -> Option<MatchResult<'a, 'b>> {
+    pub fn match_str_opt<'a, 'b>(
+        &'b self,
+        haystack: &'a str,
+        children: NonMaxU32,
+    ) -> Option<MatchResult<'a, 'b>> {
         // SAFETY: though the lifetime is 'static in terms of the
         // compiler, the actual lifetime will end at the end of the
         // block.
-        let static_key = unsafe {
-            &*(haystack as *const _)
-        };
-        let string_match = self.string_matchers.get(&(Cow::Borrowed(static_key), Some(children)));
-        let string_match = string_match.or_else(|| self.string_matchers.get(&(Cow::Borrowed(static_key), None)));
+        let static_key = unsafe { &*(haystack as *const _) };
+        let string_match = self
+            .string_matchers
+            .get(&(Cow::Borrowed(static_key), Some(children)));
+        let string_match =
+            string_match.or_else(|| self.string_matchers.get(&(Cow::Borrowed(static_key), None)));
         if let Some(td) = string_match {
             Some(td.as_match_no_capture(haystack))
         } else {
-            let mut matches = self.regex_set
+            let mut matches = self
+                .regex_set
                 .matches(haystack)
                 .into_iter()
                 .map(|idx| &self.regex_matchers[idx])
-                .filter(|td|
-                    !td.matcher.children.is_some_and(|c| c != children)
-                );
+                .filter(|td| !td.matcher.children.is_some_and(|c| c != children));
             // Fallback match in case of no matches which specify exact children
             let first = matches.next();
             let mut matches = first.iter().copied().chain(matches);
@@ -142,10 +152,20 @@ impl TermDisplayContext {
         }
     }
 
-    pub(super) fn to_parts(&self) -> (&FxHashMap<(Cow<'static, str>, Option<NonMaxU32>), TermDisplay>, &Vec<TermDisplay>, &FallbackFormatter) {
+    pub(super) fn to_parts(
+        &self,
+    ) -> (
+        &FxHashMap<(Cow<'static, str>, Option<NonMaxU32>), TermDisplay>,
+        &Vec<TermDisplay>,
+        &FallbackFormatter,
+    ) {
         (&self.string_matchers, &self.regex_matchers, &self.fallback)
     }
-    pub(super) fn from_parts(string_matchers: FxHashMap<(Cow<'static, str>, Option<NonMaxU32>), TermDisplay>, regex_matchers: Vec<TermDisplay>, fallback: FallbackFormatter) -> Self {
+    pub(super) fn from_parts(
+        string_matchers: FxHashMap<(Cow<'static, str>, Option<NonMaxU32>), TermDisplay>,
+        regex_matchers: Vec<TermDisplay>,
+        fallback: FallbackFormatter,
+    ) -> Self {
         let mut this = TermDisplayContext::default();
         this.string_matchers = string_matchers;
         this.regex_matchers = regex_matchers;
@@ -160,8 +180,13 @@ impl TermDisplayContext {
                 let k = (Cow::Owned(s.to_string()), term.matcher.children);
                 let duplicate = self.string_matchers.insert(k, term);
                 if let Some(duplicate) = duplicate {
-                    let MatcherKind::Exact(s) = duplicate.matcher.kind else { unreachable!() };
-                    Err(TdcError::DuplicateExactMatcher(s, duplicate.matcher.children))
+                    let MatcherKind::Exact(s) = duplicate.matcher.kind else {
+                        unreachable!()
+                    };
+                    Err(TdcError::DuplicateExactMatcher(
+                        s,
+                        duplicate.matcher.children,
+                    ))
                 } else {
                     Ok(false)
                 }
@@ -174,9 +199,12 @@ impl TermDisplayContext {
     }
     fn calculate_regex_set(&mut self) {
         self.regex_set = regex::RegexSet::new(self.regex_matchers.iter().map(|t| {
-            let MatcherKind::Regex(r) = &t.matcher.kind else { unreachable!() };
+            let MatcherKind::Regex(r) = &t.matcher.kind else {
+                unreachable!()
+            };
             r.original()
-        })).unwrap();
+        }))
+        .unwrap();
     }
 }
 
@@ -220,16 +248,19 @@ impl TermDisplay {
     pub fn new(matcher: Matcher, formatter: Formatter) -> Result<Self, ConversionError> {
         if let Some(max_capture) = formatter.max_capture {
             let MatcherKind::Regex(r) = &matcher.kind else {
-                return Err(ConversionError::FormatterExpectsRegex(matcher, formatter))
+                return Err(ConversionError::FormatterExpectsRegex(matcher, formatter));
             };
             if max_capture.get() as usize >= r.regex().captures_len() {
-                return Err(ConversionError::RegexNotEnoughCaptures(matcher, formatter))
+                return Err(ConversionError::RegexNotEnoughCaptures(matcher, formatter));
             }
         }
         Ok(Self { matcher, formatter })
     }
     pub fn deparse_string(&self) -> (String, String) {
-        (self.matcher.deparse_string(), self.formatter.deparse_string())
+        (
+            self.matcher.deparse_string(),
+            self.formatter.deparse_string(),
+        )
     }
 
     pub fn is_empty(&self) -> bool {
@@ -251,7 +282,7 @@ impl TermDisplay {
             unreachable!()
         };
         let Some(max_capture) = self.formatter.max_capture else {
-            return self.as_match_no_capture(haystack)
+            return self.as_match_no_capture(haystack);
         };
         let captures = r.regex().captures(haystack).unwrap();
         debug_assert!(captures.len() > max_capture.get() as usize);
@@ -320,21 +351,25 @@ pub struct Formatter {
 
 impl Formatter {
     pub fn calculate_max_capture(&mut self) {
-        self.max_capture = self.outputs.iter().flat_map(|o| match o {
-            SubFormatter::Capture(c) => Some(*c),
-            SubFormatter::Repeat(r) =>
-                (r.left_sep.max_capture.is_some() ||
-                 r.middle_sep.max_capture.is_some() ||
-                 r.right_sep.max_capture.is_some()
-                ).then(|| {
+        self.max_capture = self
+            .outputs
+            .iter()
+            .flat_map(|o| match o {
+                SubFormatter::Capture(c) => Some(*c),
+                SubFormatter::Repeat(r) => (r.left_sep.max_capture.is_some()
+                    || r.middle_sep.max_capture.is_some()
+                    || r.right_sep.max_capture.is_some())
+                .then(|| {
                     r.left_sep.max_capture.unwrap_or_default().max(
-                        r.middle_sep.max_capture.unwrap_or_default().max(
-                            r.right_sep.max_capture.unwrap_or_default()
-                        )
+                        r.middle_sep
+                            .max_capture
+                            .unwrap_or_default()
+                            .max(r.right_sep.max_capture.unwrap_or_default()),
                     )
                 }),
-            _ => None,
-        }).max();
+                _ => None,
+            })
+            .max();
     }
 }
 
@@ -367,7 +402,10 @@ pub struct BindPowerPair {
 }
 impl BindPowerPair {
     pub const fn symmetric(power: BindPower) -> Self {
-        Self { left: power, right: power }
+        Self {
+            left: power,
+            right: power,
+        }
     }
     pub const fn asymmetric(left: BindPower, right: BindPower) -> Self {
         Self { left, right }

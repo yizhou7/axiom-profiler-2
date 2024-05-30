@@ -4,8 +4,7 @@ use std::{collections::TryReserveError, num::ParseIntError};
 #[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
 
-
-use crate::items::{TermId, TermIdx, StackIdx, ENodeIdx, BlameKind, Fingerprint};
+use crate::items::{BlameKind, ENodeIdx, Fingerprint, StackIdx, TermId, TermIdx};
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type FResult<T> = std::result::Result<T, FatalError>;

@@ -1,9 +1,10 @@
 use std::fmt::Debug;
 
-use crate::{Result, Error, FResult};
 use super::LogParser;
+use crate::{Error, FResult, Result};
 
 pub mod egraph;
+pub mod graph;
 pub mod inst;
 pub mod stack;
 pub mod terms;
@@ -11,7 +12,6 @@ pub mod terms;
 /// as long as the log format is the same for the important line cases.
 /// Compare with the log files in the `logs/` folder to see if this is the case.
 pub mod z3parser;
-pub mod graph;
 
 impl<T: Z3LogParser + Default> LogParser for T {
     fn is_line_start(&mut self, first_byte: u8) -> bool {
@@ -124,13 +124,14 @@ pub trait Z3LogParser {
 }
 
 /// Type of solver and version number
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default)]
 pub enum VersionInfo {
+    #[default]
     None,
     Present {
         solver: String,
         version: semver::Version,
-    }
+    },
 }
 impl VersionInfo {
     pub fn solver(&self) -> Option<&str> {
@@ -146,14 +147,11 @@ impl VersionInfo {
         }
     }
     pub fn is_version(&self, major: u64, minor: u64, patch: u64) -> bool {
-        self.version().is_some_and(|v| v == &semver::Version::new(major, minor, patch))
+        self.version()
+            .is_some_and(|v| v == &semver::Version::new(major, minor, patch))
     }
     pub fn is_ge_version(&self, major: u64, minor: u64, patch: u64) -> bool {
-        self.version().is_some_and(|v| v >= &semver::Version::new(major, minor, patch))
-    }
-}
-impl Default for VersionInfo {
-    fn default() -> Self {
-        VersionInfo::None
+        self.version()
+            .is_some_and(|v| v >= &semver::Version::new(major, minor, patch))
     }
 }

@@ -156,6 +156,8 @@ pub type DiGraph<N, E, Ix = petgraph::graph::DefaultIx> = Graph<N, E, petgraph::
 pub type UnGraph<N, E, Ix = petgraph::graph::DefaultIx> = Graph<N, E, petgraph::Undirected, Ix>;
 impl<N, E, Ty: petgraph::EdgeType, Ix: petgraph::graph::IndexType> Graph<N, E, Ty, Ix> {
     pub fn with_capacity(nodes: usize, edges: usize) -> Self {
-        Self(petgraph::graph::Graph::<N, E, Ty, Ix>::with_capacity(nodes, edges))
+        Self(petgraph::graph::Graph::<N, E, Ty, Ix>::with_capacity(
+            nodes, edges,
+        ))
     }
 }

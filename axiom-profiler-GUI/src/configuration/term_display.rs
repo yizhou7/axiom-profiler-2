@@ -1,11 +1,23 @@
 use core::fmt;
 use std::{borrow::Cow, rc::Rc};
 
-use smt_log_parser::{formatter::{ConversionError, DeParseTrait, FallbackFormatter, FallbackParseError, Formatter, FormatterParseError, Matcher, TdcError, TermDisplay, TermDisplayContext}, NonMaxUsize};
+use smt_log_parser::{
+    formatter::{
+        ConversionError, DeParseTrait, FallbackFormatter, FallbackParseError, Formatter,
+        FormatterParseError, Matcher, TdcError, TermDisplay, TermDisplayContext,
+    },
+    NonMaxUsize,
+};
 use web_sys::HtmlInputElement;
-use yew::{function_component, prelude::Context, use_context, Callback, Component, Event, Html, NodeRef, Properties};
+use yew::{
+    function_component, prelude::Context, use_context, Callback, Component, Event, Html, NodeRef,
+    Properties,
+};
 
-use crate::{configuration::{ConfigurationProvider, TermDisplayContextFiles}, state::{FileInfo, StateProvider}};
+use crate::{
+    configuration::{ConfigurationProvider, TermDisplayContextFiles},
+    state::{FileInfo, StateProvider},
+};
 
 #[derive(Properties, Clone)]
 pub struct TermDisplayFlagProps {
@@ -32,13 +44,20 @@ pub fn TermDisplayFlag(props: &TermDisplayFlagProps) -> Html {
     let reset = Callback::from(move |_| cfg.update_term_display(None, default.general.clone()));
     let general = term_display_file_to_html((term_display_general, apply, reset, None));
 
-    let term_display_file = file.map(|f| term_display.per_file.get(&f.name).map(Cow::Borrowed).unwrap_or_default());
+    let term_display_file = file.map(|f| {
+        term_display
+            .per_file
+            .get(&f.name)
+            .map(Cow::Borrowed)
+            .unwrap_or_default()
+    });
     let term_display_file = term_display_file.as_ref().map(|td| {
         let f = file.unwrap();
         let cfg = props.cfg.clone();
         let file = f.clone();
         let default = default.per_file.remove(&file.name).unwrap_or_default();
-        let reset = Callback::from(move |_| cfg.update_term_display(Some(file.clone()), default.clone()));
+        let reset =
+            Callback::from(move |_| cfg.update_term_display(Some(file.clone()), default.clone()));
         let cfg = props.cfg.clone();
         let file = f.clone();
         let apply = Callback::from(move |new| cfg.update_term_display(Some(file.clone()), new));
@@ -50,7 +69,14 @@ pub fn TermDisplayFlag(props: &TermDisplayFlagProps) -> Html {
     }
 }
 
-fn term_display_file_to_html((td_ctx, apply, reset, file): (&TermDisplayContext, Callback<TermDisplayContext>, Callback<()>, Option<&FileInfo>)) -> Html {
+fn term_display_file_to_html(
+    (td_ctx, apply, reset, file): (
+        &TermDisplayContext,
+        Callback<TermDisplayContext>,
+        Callback<()>,
+        Option<&FileInfo>,
+    ),
+) -> Html {
     let title = if let Some(file) = file {
         format!("Term Formatting ({})", file.name)
     } else {
@@ -123,18 +149,23 @@ impl Component for TermDisplayComponent {
     type Properties = TermDisplayComponentProps;
 
     fn create(ctx: &Context<Self>) -> Self {
-        let mut tds: Vec<_> = ctx.props().td_ctx.all().map(|td| {
-            let (matcher, formatter) = td.deparse_string();
-            TermDisplayRow {
-                matcher,
-                matcher_ref: NodeRef::default(),
-                matcher_err: None,
-                formatter,
-                formatter_ref: NodeRef::default(),
-                formatter_err: None,
-                parsed: Some(Ok(td.clone())),
-            }
-        }).collect();
+        let mut tds: Vec<_> = ctx
+            .props()
+            .td_ctx
+            .all()
+            .map(|td| {
+                let (matcher, formatter) = td.deparse_string();
+                TermDisplayRow {
+                    matcher,
+                    matcher_ref: NodeRef::default(),
+                    matcher_err: None,
+                    formatter,
+                    formatter_ref: NodeRef::default(),
+                    formatter_err: None,
+                    parsed: Some(Ok(td.clone())),
+                }
+            })
+            .collect();
         tds.sort_by(|a, b| a.cmp_key().cmp(&b.cmp_key()));
         let fallback = ctx.props().td_ctx.fallback();
         let mut self_ = Self {
@@ -161,7 +192,10 @@ impl Component for TermDisplayComponent {
                 let td = &mut self.tds[idx.get()];
                 td.try_parse();
                 self.try_parse();
-                self.modified = !self.parsed.as_ref().is_some_and(|p| p.as_ref().is_ok_and(|tdc| tdc == &ctx.props().td_ctx));
+                self.modified = !self
+                    .parsed
+                    .as_ref()
+                    .is_some_and(|p| p.as_ref().is_ok_and(|tdc| tdc == &ctx.props().td_ctx));
 
                 if idx.get() == self.tds.len() - 1 {
                     self.check_last_td();
@@ -173,7 +207,10 @@ impl Component for TermDisplayComponent {
                 self.fallback = fallback.value();
                 self.fallback_parsed = self.fallback.parse::<FallbackFormatter>();
                 self.try_parse();
-                self.modified = !self.parsed.as_ref().is_some_and(|p| p.as_ref().is_ok_and(|tdc| tdc == &ctx.props().td_ctx));
+                self.modified = !self
+                    .parsed
+                    .as_ref()
+                    .is_some_and(|p| p.as_ref().is_ok_and(|tdc| tdc == &ctx.props().td_ctx));
                 true
             }
             TdcMsg::Revert => {
@@ -181,7 +218,9 @@ impl Component for TermDisplayComponent {
                 true
             }
             TdcMsg::Apply => {
-                ctx.props().apply.emit(self.parsed.clone().unwrap().unwrap());
+                ctx.props()
+                    .apply
+                    .emit(self.parsed.clone().unwrap().unwrap());
                 false
             }
             TdcMsg::OnFocus(idx, matcher) => {
@@ -215,7 +254,7 @@ impl Component for TermDisplayComponent {
                 link.send_message(TdcMsg::OnBlur(idx, true));
             });
             let matcher_class = if td.matcher_err.is_some() { "td-matcher error" } else { "td-matcher" };
-            td.matcher_err.as_ref().map(AnyError::Matcher).map(|e| errors.push(e));
+            if let Some(e) = td.matcher_err.as_ref().map(AnyError::Matcher) { errors.push(e) }
 
             let link = ctx.link().clone();
             let formatter_change = Callback::from(move |e: Event| {
@@ -231,7 +270,7 @@ impl Component for TermDisplayComponent {
                 link.send_message(TdcMsg::OnBlur(idx, false));
             });
             let formatter_class = if td.formatter_err.is_some() { "td-formatter error" } else { "td-formatter" };
-            td.formatter_err.as_ref().map(AnyError::Formatter).map(|e| errors.push(e));
+            if let Some(e) = td.formatter_err.as_ref().map(AnyError::Formatter) { errors.push(e) }
 
             let error = td.parsed.as_ref().is_some_and(|p| p.is_err());
             let class = if error { "td-row error" } else { "td-row" };
@@ -248,7 +287,11 @@ impl Component for TermDisplayComponent {
         let formatter_change = Callback::from(move |e: Event| {
             link.send_message(TdcMsg::ChangedFallback(e));
         });
-        let formatter_class = if self.fallback_parsed.is_err() { "td-formatter error" } else { "td-formatter" };
+        let formatter_class = if self.fallback_parsed.is_err() {
+            "td-formatter error"
+        } else {
+            "td-formatter"
+        };
         let fallback = yew::html! {
             <li class="td-row">
                 <div class="td-matcher">{"Fallback:"}</div>
@@ -258,9 +301,12 @@ impl Component for TermDisplayComponent {
         };
         let tds = [fallback].into_iter().chain(tds);
         let modified = self.modified;
-        let can_apply = modified && self.fallback_parsed.is_ok() && self.tds.iter().all(|td|
-            td.is_empty() || td.parsed.as_ref().is_some_and(|p| p.is_ok())
-        );
+        let can_apply = modified
+            && self.fallback_parsed.is_ok()
+            && self
+                .tds
+                .iter()
+                .all(|td| td.is_empty() || td.parsed.as_ref().is_some_and(|p| p.is_ok()));
         let link = ctx.link().clone();
         let apply = Callback::from(move |_| {
             if !can_apply {
@@ -293,7 +339,11 @@ impl Component for TermDisplayComponent {
     fn rendered(&mut self, _ctx: &Context<Self>, _first_render: bool) {
         if let Some((idx, matcher)) = self.focused {
             let td = &self.tds[idx.get()];
-            let ref_ = if matcher { &td.matcher_ref } else { &td.formatter_ref };
+            let ref_ = if matcher {
+                &td.matcher_ref
+            } else {
+                &td.formatter_ref
+            };
             if let Some(element) = ref_.cast::<HtmlInputElement>() {
                 element.focus().ok();
             }
@@ -307,12 +357,19 @@ impl TermDisplayComponent {
         let Ok(fallback) = &self.fallback_parsed else {
             return;
         };
-        let all_td_ok = self.tds.iter().all(|td| td.is_empty() || td.parsed.as_ref().is_some_and(|p| p.is_ok()));
+        let all_td_ok = self
+            .tds
+            .iter()
+            .all(|td| td.is_empty() || td.parsed.as_ref().is_some_and(|p| p.is_ok()));
         if !all_td_ok {
             return;
         }
 
-        let tds = self.tds.iter().flat_map(|td| &td.parsed).map(|p| p.as_ref().unwrap().clone());
+        let tds = self
+            .tds
+            .iter()
+            .flat_map(|td| &td.parsed)
+            .map(|p| p.as_ref().unwrap().clone());
         let mut tdc: Result<TermDisplayContext, _> = tds.collect();
         if let Ok(tdc) = &mut tdc {
             tdc.set_fallback(fallback.clone());
@@ -390,8 +447,16 @@ impl fmt::Display for AnyError<'_> {
 }
 
 pub fn error_tooltip(errors: Vec<AnyError<'_>>) -> Html {
-    let title = errors.iter().map(AnyError::to_string).collect::<Vec<_>>().join("\n");
-    let class = if errors.is_empty() { "td-error" } else { "td-error error" };
+    let title = errors
+        .iter()
+        .map(AnyError::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let class = if errors.is_empty() {
+        "td-error"
+    } else {
+        "td-error error"
+    };
     yew::html! {
         <div {title} {class}>{if errors.is_empty() { "" } else { "❌" }}</div>
     }
