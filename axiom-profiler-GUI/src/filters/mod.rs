@@ -3,7 +3,6 @@ mod manage_filter;
 
 use std::{borrow::Borrow, fmt::Display};
 
-
 use material_yew::icon::MatIcon;
 use petgraph::Direction;
 use smt_log_parser::parsers::{
@@ -87,7 +86,8 @@ impl FiltersState {
         let msg = SVGMsg::SetDisabled(
             self.disabler_chain
                 .iter()
-                .filter(|&(_d, b)| *b).map(|(d, _b)| *d)
+                .filter(|&(_d, b)| *b)
+                .map(|(d, _b)| *d)
                 .collect(),
         );
         let msgs = self.rerender_msgs();
@@ -418,15 +418,11 @@ impl Filter {
             Self::MaxNodeIdx(node_idx) => format!("Hide all ≥ |{node_idx}|"),
             Self::MinNodeIdx(node_idx) => format!("Hide all < |{node_idx}|"),
             Self::IgnoreTheorySolving => "Hide theory solving".to_string(),
-            Self::IgnoreQuantifier(None) => {
-                "Hide no quant".to_string()
-            }
+            Self::IgnoreQuantifier(None) => "Hide no quant".to_string(),
             Self::IgnoreQuantifier(Some(qidx)) => {
                 format!("Hide quant |{qidx}|")
             }
-            Self::IgnoreAllButQuantifier(None) => {
-                "Hide all quant".to_string()
-            }
+            Self::IgnoreAllButQuantifier(None) => "Hide all quant".to_string(),
             Self::IgnoreAllButQuantifier(Some(qidx)) => {
                 format!("Hide all but quant ${qidx:?}$")
             }
@@ -463,9 +459,7 @@ impl Filter {
                 };
                 format!("Show only |{}{ordinal}| matching loop", n + 1)
             }
-            Self::ShowMatchingLoopSubgraph => {
-                "S only likely matching loops".to_string()
-            }
+            Self::ShowMatchingLoopSubgraph => "S only likely matching loops".to_string(),
         }
     }
     pub fn long_text(&self, d: impl Fn(RawNodeIndex) -> NodeKind, applied: bool) -> String {

@@ -650,7 +650,8 @@ impl Graph {
                 }
             }
         } else if trans_node.given_len <= edges_len - idx
-        && trans_node.to == self.simple_path.node_at(idx + trans_node.given_len) {
+            && trans_node.to == self.simple_path.node_at(idx + trans_node.given_len)
+        {
             let post_simple_edges = (idx..edges_len).map(|idx| self.graph[EdgeIndex::new(idx)]);
             let mut post_simple_edges =
                 post_simple_edges.map(|seg| (seg.kind.given().unwrap(), seg.forward));

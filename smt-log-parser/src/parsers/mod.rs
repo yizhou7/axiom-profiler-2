@@ -415,7 +415,8 @@ mod wrapper {
         /// Parsing cannot be resumed if the limit is reached. If you need
         /// support for resuming, use [`process_until`] instead.
         pub async fn process_all_byte_limit(mut self, limit: usize) -> (ParseState<()>, Parser) {
-            let result = add_await([self.process_until(|_, s| (s.bytes_read < limit).then_some(()))]);
+            let result =
+                add_await([self.process_until(|_, s| (s.bytes_read < limit).then_some(()))]);
             (result, self.parser)
         }
     }

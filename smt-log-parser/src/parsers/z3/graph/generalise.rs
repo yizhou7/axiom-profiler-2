@@ -76,11 +76,7 @@ impl Terms {
         }
     }
 
-    pub fn generalise_pattern(
-        &mut self,
-        strings: &mut StringTable,
-        pattern: TermIdx,
-    ) -> TermIdx {
+    pub fn generalise_pattern(&mut self, strings: &mut StringTable, pattern: TermIdx) -> TermIdx {
         match self[pattern].kind {
             TermKind::Var(_) => {
                 self.new_synthetic_term(TermKind::Generalised, Default::default(), None)

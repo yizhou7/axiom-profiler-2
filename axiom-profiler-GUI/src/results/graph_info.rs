@@ -1,9 +1,6 @@
 use std::rc::Rc;
 
-use crate::{
-    state::StateProvider,
-    utils::split_div::SplitDiv,
-};
+use crate::{state::StateProvider, utils::split_div::SplitDiv};
 use indexmap::map::{Entry, IndexMap};
 use material_yew::WeakComponentLink;
 // use smt_log_parser::parsers::z3::inst_graph::{EdgeType, NodeInfo};

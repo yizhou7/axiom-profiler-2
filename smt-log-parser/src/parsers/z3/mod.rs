@@ -124,8 +124,7 @@ pub trait Z3LogParser {
 }
 
 /// Type of solver and version number
-#[derive(Debug, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, PartialEq, Default)]
 pub enum VersionInfo {
     #[default]
     None,
@@ -156,4 +155,3 @@ impl VersionInfo {
             .is_some_and(|v| v >= &semver::Version::new(major, minor, patch))
     }
 }
-

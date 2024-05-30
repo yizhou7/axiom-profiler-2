@@ -1,19 +1,16 @@
 use std::{cmp::Ordering, rc::Rc};
 
-
-
-
-use web_sys::{HtmlElement};
+use web_sys::HtmlElement;
 use yew::{
-    html, prelude::Context, AttrValue, Callback, Component, ContextHandle, Html,
-    KeyboardEvent, MouseEvent, NodeRef, Properties,
+    html, prelude::Context, AttrValue, Callback, Component, ContextHandle, Html, KeyboardEvent,
+    MouseEvent, NodeRef, Properties,
 };
 
 use crate::{
     commands::{Command, CommandId, CommandRef, Commands, CommandsContext},
     infobars::topbar::OmnibarMessage,
     results::svg_result::RenderingState,
-    utils::lookup::{StringLookupCommands},
+    utils::lookup::StringLookupCommands,
     CallbackRef, GlobalCallbacksContext, LoadingState, SIZE_NAMES,
 };
 

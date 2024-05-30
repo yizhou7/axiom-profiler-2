@@ -376,7 +376,7 @@ impl Z3LogParser for Z3Parser {
                     Self::expect_completed(kind_dependent_info)?;
                     let to =
                         self.parse_existing_enode(l.next().ok_or(Error::UnexpectedNewline)?)?;
-                    
+
                     // self.equalities.push(eq_expl.clone());
                     EqualityExpl::Literal { from, eq, to }
                 }

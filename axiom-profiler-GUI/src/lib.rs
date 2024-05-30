@@ -284,7 +284,9 @@ impl Component for FileDataComponent {
         let hide_sidebar_cmd = Command {
             name: "Toggle left sidebar".to_string(),
             execute: Callback::from(move |_| {
-                if let Some(b) = sidebar_button_ref.cast::<HtmlElement>() { b.click() }
+                if let Some(b) = sidebar_button_ref.cast::<HtmlElement>() {
+                    b.click()
+                }
             }),
             keyboard_shortcut: vec!["Cmd", "b"],
             disabled: false,

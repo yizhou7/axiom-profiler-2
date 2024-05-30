@@ -1,5 +1,5 @@
 use crate::{
-    configuration::{ConfigurationContext},
+    configuration::ConfigurationContext,
     filters,
     results::{
         filters::FilterOutput,

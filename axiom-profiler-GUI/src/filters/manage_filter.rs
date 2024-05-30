@@ -331,7 +331,9 @@ pub fn ExistingFilter(props: &ExistingFilterProps) -> Html {
     let onclick = Some(props.onclick.clone()).filter(|_| !props.editing);
     let onclick = Callback::from(move |e: web_sys::MouseEvent| {
         e.prevent_default();
-        if let Some(oc) = onclick.as_ref() { oc.emit(()) }
+        if let Some(oc) = onclick.as_ref() {
+            oc.emit(())
+        }
     });
     let overlay = props.selected.then(|| {
         let edit = props.filter.is_editable().then(|| {
