@@ -1,6 +1,6 @@
 use crate::NonMaxU32;
 
-use super::{ConstSplit, Matcher, Formatter};
+use super::{ConstSplit, Formatter, Matcher};
 
 #[derive(Debug, Clone)]
 pub enum TdcError {
@@ -51,7 +51,10 @@ pub struct ParseError<T> {
 
 impl<T> From<ParseErrorConst<'_, T>> for ParseError<T> {
     fn from(err: ParseErrorConst<'_, T>) -> Self {
-        Self { s: err.s.to_owned(), kind: err.kind }
+        Self {
+            s: err.s.to_owned(),
+            kind: err.kind,
+        }
     }
 }
 
@@ -97,28 +100,52 @@ impl FormatterError {
 
 impl<'a> ParseErrorConst<'a, FormatterError> {
     pub(super) const fn missing_hash(s: &'a str) -> Self {
-        Self { s, kind: FormatterError::MissingHash }
+        Self {
+            s,
+            kind: FormatterError::MissingHash,
+        }
     }
     pub(super) const fn invalid_number(s: &'a str) -> Self {
-        Self { s, kind: FormatterError::InvalidNumber }
+        Self {
+            s,
+            kind: FormatterError::InvalidNumber,
+        }
     }
     pub(super) const fn missing_range(s: &'a str) -> Self {
-        Self { s, kind: FormatterError::MissingRange }
+        Self {
+            s,
+            kind: FormatterError::MissingRange,
+        }
     }
     pub(super) const fn missing_control(s: &'a str, expected: &'static str) -> Self {
-        Self { s, kind: FormatterError::MissingControl(expected) }
+        Self {
+            s,
+            kind: FormatterError::MissingControl(expected),
+        }
     }
     pub(super) const fn too_many_control(split: ConstSplit<'a, 1>) -> Self {
-        Self { s: split.remainder(), kind: FormatterError::TooManyControl(split.control()) }
+        Self {
+            s: split.remainder(),
+            kind: FormatterError::TooManyControl(split.control()),
+        }
     }
     pub(super) const fn unexpected_pair(s: &'a str) -> Self {
-        Self { s, kind: FormatterError::UnexpectedPair }
+        Self {
+            s,
+            kind: FormatterError::UnexpectedPair,
+        }
     }
     pub(super) const fn incorrect_control(s: &'a str) -> Self {
-        Self { s, kind: FormatterError::IncorrectControl }
+        Self {
+            s,
+            kind: FormatterError::IncorrectControl,
+        }
     }
     pub(super) const fn capture_overflow(s: &'a str) -> Self {
-        Self { s, kind: FormatterError::CaptureOverflow }
+        Self {
+            s,
+            kind: FormatterError::CaptureOverflow,
+        }
     }
 }
 
@@ -140,7 +167,10 @@ impl MatcherError {
 
 impl<'a> ParseErrorConst<'a, MatcherError> {
     pub(super) const fn invalid_children_spec(s: &'a str) -> Self {
-        Self { s, kind: MatcherError::InvalidChildrenSpec }
+        Self {
+            s,
+            kind: MatcherError::InvalidChildrenSpec,
+        }
     }
 }
 
@@ -165,13 +195,22 @@ impl EitherError {
 
 impl<'a> ParseErrorConst<'a, EitherError> {
     pub(super) const fn formatter(err: ParseErrorConst<'a, FormatterError>) -> Self {
-        Self { s: err.s, kind: EitherError::Formatter(err.kind) }
+        Self {
+            s: err.s,
+            kind: EitherError::Formatter(err.kind),
+        }
     }
     pub(super) const fn matcher(err: ParseErrorConst<'a, MatcherError>) -> Self {
-        Self { s: err.s, kind: EitherError::Matcher(err.kind) }
+        Self {
+            s: err.s,
+            kind: EitherError::Matcher(err.kind),
+        }
     }
 
     pub(super) const fn invalid_capture(s: &'a str) -> Self {
-        Self { s, kind: EitherError::InvalidCapture }
+        Self {
+            s,
+            kind: EitherError::InvalidCapture,
+        }
     }
 }

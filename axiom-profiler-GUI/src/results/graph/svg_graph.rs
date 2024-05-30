@@ -1,4 +1,3 @@
-
 use fxhash::FxHashSet;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use smt_log_parser::parsers::z3::graph::{RawNodeIndex, VisibleEdgeIndex};
@@ -8,8 +7,8 @@ use web_sys::{Element, SvgsvgElement};
 use yew::prelude::*;
 use yew::{function_component, html};
 
-use crate::{mouse_position, PrecisePosition};
 use crate::results::svg_result::RenderedGraph;
+use crate::{mouse_position, PrecisePosition};
 
 #[derive(Properties, PartialEq, Default)]
 pub struct GraphProps {
@@ -56,16 +55,32 @@ pub fn Graph(props: &GraphProps) -> Html {
                 let svg_element = div.get_elements_by_tag_name("svg").item(0);
                 if let Some(el) = svg_element {
                     let svg_el = el.dyn_into::<SvgsvgElement>().ok().unwrap();
-                    let view_box: Vec<f64> = svg_el.get_attribute("viewBox").unwrap().split_ascii_whitespace().map(|s| s.parse().unwrap()).collect();
-                    let (svg_width, svg_height) = (view_box[2] + 2.0 * view_box[0], view_box[3] + 2.0 * view_box[1]);
+                    let view_box: Vec<f64> = svg_el
+                        .get_attribute("viewBox")
+                        .unwrap()
+                        .split_ascii_whitespace()
+                        .map(|s| s.parse().unwrap())
+                        .collect();
+                    let (svg_width, svg_height) = (
+                        view_box[2] + 2.0 * view_box[0],
+                        view_box[3] + 2.0 * view_box[1],
+                    );
 
                     let scroll_window = scroll_window.cast::<Element>().unwrap();
                     let rect = scroll_window.get_bounding_client_rect();
-                    let (sw_x, sw_y, sw_w, sw_h) = (rect.x(), rect.y(), rect.width(), rect.height());
+                    let (sw_x, sw_y, sw_w, sw_h) =
+                        (rect.x(), rect.y(), rect.width(), rect.height());
 
                     const MARGIN: f64 = 128.0;
-                    let (svg_width, svg_height) = (svg_width + 2.0 * MARGIN, svg_height + 2.0 * MARGIN);
-                    svg_el.set_attribute("viewBox", format!("{} {} {} {}", -MARGIN, -MARGIN, svg_width, svg_height).as_str()).unwrap();
+                    let (svg_width, svg_height) =
+                        (svg_width + 2.0 * MARGIN, svg_height + 2.0 * MARGIN);
+                    svg_el
+                        .set_attribute(
+                            "viewBox",
+                            format!("{} {} {} {}", -MARGIN, -MARGIN, svg_width, svg_height)
+                                .as_str(),
+                        )
+                        .unwrap();
 
                     let new_scroll = {
                         let (x, y) = if zoom_with_mouse {
@@ -73,8 +88,10 @@ pub fn Graph(props: &GraphProps) -> Html {
                             let (x, y) = (mouse.x as f64 - sw_x, mouse.y as f64 - sw_y);
                             // How much of the edge should go to zooming in there
                             const EDGE_ZOOM_BOUNDARY: f64 = 0.15;
-                            let (lower_x, upper_x) = (sw_w * EDGE_ZOOM_BOUNDARY, sw_w * (1.0 - EDGE_ZOOM_BOUNDARY));
-                            let (lower_y, upper_y) = (sw_h * EDGE_ZOOM_BOUNDARY, sw_h * (1.0 - EDGE_ZOOM_BOUNDARY));
+                            let (lower_x, upper_x) =
+                                (sw_w * EDGE_ZOOM_BOUNDARY, sw_w * (1.0 - EDGE_ZOOM_BOUNDARY));
+                            let (lower_y, upper_y) =
+                                (sw_h * EDGE_ZOOM_BOUNDARY, sw_h * (1.0 - EDGE_ZOOM_BOUNDARY));
                             match (x < lower_x, x > upper_x, y < lower_y, y > upper_y) {
                                 (true, false, true, false) => (0.0, 0.0),
                                 (false, true, true, false) => (sw_w, 0.0),
@@ -89,19 +106,27 @@ pub fn Graph(props: &GraphProps) -> Html {
                         if !*centered {
                             // On first render, we want to center the graph
                             centered.set(true);
-                            scroll_position = PrecisePosition { x: MARGIN - 10.0, y: MARGIN - 10.0 };
+                            scroll_position = PrecisePosition {
+                                x: MARGIN - 10.0,
+                                y: MARGIN - 10.0,
+                            };
                         }
                         let zoom_factor_delta_chg = 1.0 - (1.0 / zoom_factor_delta as f64);
-                        let (width, height) = (x * zoom_factor_delta_chg, y * zoom_factor_delta_chg);
+                        let (width, height) =
+                            (x * zoom_factor_delta_chg, y * zoom_factor_delta_chg);
                         let left = (scroll_position.x + width) * zoom_factor_delta as f64;
                         let top = (scroll_position.y + height) * zoom_factor_delta as f64;
                         PrecisePosition { x: left, y: top }
                     };
 
-                    let (scaled_width, scaled_height) = (svg_width * zoom_factor, svg_height * zoom_factor);
+                    let (scaled_width, scaled_height) =
+                        (svg_width * zoom_factor, svg_height * zoom_factor);
                     let _ = svg_el.set_attribute("width", scaled_width.to_string().as_str());
                     let _ = svg_el.set_attribute("height", scaled_height.to_string().as_str());
-                    let graph_dims = PrecisePosition { x: scaled_width, y: scaled_height };
+                    let graph_dims = PrecisePosition {
+                        x: scaled_width,
+                        y: scaled_height,
+                    };
                     set_scroll.emit((new_scroll, graph_dims));
                 }
             },
@@ -190,11 +215,17 @@ pub fn Graph(props: &GraphProps) -> Html {
                             // Create a duplicate of the node which is transparent
                             // to make it more clickable, especially when it gets
                             // gets selected and the original node becomes larger.
-                            let node_shape = node.get_elements_by_tag_name("polygon").item(0)
+                            let node_shape = node
+                                .get_elements_by_tag_name("polygon")
+                                .item(0)
                                 .or_else(|| node.get_elements_by_tag_name("ellipse").item(0));
                             if let Some(node_shape) = node_shape {
                                 if let Some(parent) = node_shape.parent_node() {
-                                    if let Some(duplicate) = node_shape.clone_node().ok().and_then(|e| e.dyn_into::<Element>().ok()) {
+                                    if let Some(duplicate) = node_shape
+                                        .clone_node()
+                                        .ok()
+                                        .and_then(|e| e.dyn_into::<Element>().ok())
+                                    {
                                         let _ = parent.append_child(&duplicate);
                                         duplicate.set_attribute("stroke-width", "5").unwrap();
                                         duplicate.set_attribute("stroke", "transparent").unwrap();
@@ -206,24 +237,31 @@ pub fn Graph(props: &GraphProps) -> Html {
                             let idx = RawNodeIndex(NodeIndex::new(idx.unwrap()));
                             // attach event listener to node
                             let callback = nodes_callback.clone();
-                            let mousedown: Closure<dyn Fn(Event)> = Closure::new(move |e: Event| {
-                                e.cancel_bubble(); e.stop_propagation();
-                                callback.emit(idx);
-                            });
+                            let mousedown: Closure<dyn Fn(Event)> =
+                                Closure::new(move |e: Event| {
+                                    e.cancel_bubble();
+                                    e.stop_propagation();
+                                    callback.emit(idx);
+                                });
                             node.add_event_listener_with_callback(
                                 "mousedown",
                                 mousedown.as_ref().unchecked_ref(),
-                            ).unwrap();
+                            )
+                            .unwrap();
                             let callback = nodes_callback.clone();
-                            let mouseover: Closure<dyn Fn(Event)> = Closure::new(move |e: Event| {
-                                if e.dyn_into::<web_sys::MouseEvent>().is_ok_and(|e| e.buttons() == 1 && e.shift_key()) {
-                                    callback.emit(idx)
-                                }
-                            });
+                            let mouseover: Closure<dyn Fn(Event)> =
+                                Closure::new(move |e: Event| {
+                                    if e.dyn_into::<web_sys::MouseEvent>()
+                                        .is_ok_and(|e| e.buttons() == 1 && e.shift_key())
+                                    {
+                                        callback.emit(idx)
+                                    }
+                                });
                             node.add_event_listener_with_callback(
                                 "mouseover",
                                 mouseover.as_ref().unchecked_ref(),
-                            ).unwrap();
+                            )
+                            .unwrap();
                             (mousedown, mouseover)
                         })
                         .collect();
@@ -237,7 +275,11 @@ pub fn Graph(props: &GraphProps) -> Html {
                             let mut edge_hover_select = edge.clone();
                             if let Some(edge_path) = edge.get_elements_by_tag_name("path").item(0) {
                                 if let Some(parent) = edge_path.parent_node() {
-                                    if let Some(duplicate) = edge_path.clone_node().ok().and_then(|e| e.dyn_into::<Element>().ok()) {
+                                    if let Some(duplicate) = edge_path
+                                        .clone_node()
+                                        .ok()
+                                        .and_then(|e| e.dyn_into::<Element>().ok())
+                                    {
                                         let _ = parent.append_child(&duplicate);
                                         duplicate.set_attribute("stroke-width", "15").unwrap();
                                         duplicate.set_attribute("stroke", "transparent").unwrap();
@@ -250,31 +292,42 @@ pub fn Graph(props: &GraphProps) -> Html {
                             let idx = VisibleEdgeIndex(EdgeIndex::new(idx.unwrap()));
                             // attach event listener to edge
                             let callback = edges_callback.clone();
-                            let mousedown: Closure<dyn Fn(Event)> = Closure::new(move |e: Event| {
-                                e.cancel_bubble(); e.stop_propagation();
-                                callback.emit(idx);
-                            });
+                            let mousedown: Closure<dyn Fn(Event)> =
+                                Closure::new(move |e: Event| {
+                                    e.cancel_bubble();
+                                    e.stop_propagation();
+                                    callback.emit(idx);
+                                });
                             edge.add_event_listener_with_callback(
                                 "mousedown",
                                 mousedown.as_ref().unchecked_ref(),
-                            ).unwrap();
+                            )
+                            .unwrap();
                             let callback = edges_callback.clone();
-                            let mouseover: Closure<dyn Fn(Event)> = Closure::new(move |e: Event|
-                                if e.dyn_into::<web_sys::MouseEvent>().is_ok_and(|e| e.buttons() == 1 && e.shift_key()) {
-                                    callback.emit(idx)
-                                }
-                            );
+                            let mouseover: Closure<dyn Fn(Event)> =
+                                Closure::new(move |e: Event| {
+                                    if e.dyn_into::<web_sys::MouseEvent>()
+                                        .is_ok_and(|e| e.buttons() == 1 && e.shift_key())
+                                    {
+                                        callback.emit(idx)
+                                    }
+                                });
                             // Attach this event only to the edge and not the whole
-                            // `edge` (including the arrowhead) because then we get 
+                            // `edge` (including the arrowhead) because then we get
                             // two mousover events when moving from path to arrowhead.
-                            edge_hover_select.add_event_listener_with_callback(
-                                "mouseover",
-                                mouseover.as_ref().unchecked_ref(),
-                            ).unwrap();
+                            edge_hover_select
+                                .add_event_listener_with_callback(
+                                    "mouseover",
+                                    mouseover.as_ref().unchecked_ref(),
+                                )
+                                .unwrap();
                             (mousedown, mouseover, edge_hover_select)
                         })
                         .collect();
-                    (Some((descendant_nodes, node_closures)), Some((direct_edges, edge_closures)))
+                    (
+                        Some((descendant_nodes, node_closures)),
+                        Some((direct_edges, edge_closures)),
+                    )
                 } else {
                     (None, None)
                 };
@@ -286,11 +339,13 @@ pub fn Graph(props: &GraphProps) -> Html {
                                 node.remove_event_listener_with_callback(
                                     "mousedown",
                                     mousedown.as_ref().unchecked_ref(),
-                                ).unwrap();
+                                )
+                                .unwrap();
                                 node.remove_event_listener_with_callback(
                                     "mouseover",
                                     mouseover.as_ref().unchecked_ref(),
-                                ).unwrap();
+                                )
+                                .unwrap();
                             }
                         }
                     }
@@ -301,11 +356,14 @@ pub fn Graph(props: &GraphProps) -> Html {
                                 edge.remove_event_listener_with_callback(
                                     "mousedown",
                                     mousedown.as_ref().unchecked_ref(),
-                                ).unwrap();
-                                edge_hover_select.remove_event_listener_with_callback(
-                                    "mouseover",
-                                    mouseover.as_ref().unchecked_ref(),
-                                ).unwrap();
+                                )
+                                .unwrap();
+                                edge_hover_select
+                                    .remove_event_listener_with_callback(
+                                        "mouseover",
+                                        mouseover.as_ref().unchecked_ref(),
+                                    )
+                                    .unwrap();
                             }
                         }
                     }
@@ -315,11 +373,15 @@ pub fn Graph(props: &GraphProps) -> Html {
         );
     }
 
-    generation.map(|_| html! {
-            <div ref={div_ref}>
-                {props.children.clone()}
-            </div>
-    }).unwrap_or_default()
+    generation
+        .map(|_| {
+            html! {
+                    <div ref={div_ref}>
+                        {props.children.clone()}
+                    </div>
+            }
+        })
+        .unwrap_or_default()
 }
 
 #[derive(Properties)]
@@ -334,5 +396,9 @@ impl PartialEq for SvgProps {
 
 #[function_component]
 pub fn Svg(props: &SvgProps) -> Html {
-    props.svg.as_ref().map(|(g, _)| g.clone()).unwrap_or_default()
+    props
+        .svg
+        .as_ref()
+        .map(|(g, _)| g.clone())
+        .unwrap_or_default()
 }

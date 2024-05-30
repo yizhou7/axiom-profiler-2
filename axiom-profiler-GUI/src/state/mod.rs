@@ -1,9 +1,15 @@
 use std::rc::Rc;
 
 use smt_log_parser::formatter::TermDisplayContext;
-use yew::{html, Callback, Children, Component, Context, ContextHandle, ContextProvider, Html, Properties};
+use yew::{
+    html, Callback, Children, Component, Context, ContextHandle, ContextProvider, Html, Properties,
+};
 
-use crate::{configuration::{ConfigurationContext, ConfigurationProvider, TermDisplayContextFiles}, utils::updater::{Update, Updater}, RcParser};
+use crate::{
+    configuration::{ConfigurationContext, ConfigurationProvider, TermDisplayContextFiles},
+    utils::updater::{Update, Updater},
+    RcParser,
+};
 
 // Public
 
@@ -17,7 +23,9 @@ pub struct State {
     pub overlay_visible: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct FileInfo {
     pub name: String,
     pub size: u64,
@@ -31,30 +39,39 @@ pub struct StateProvider {
 
 impl StateProvider {
     pub fn update_file_info(&self, f: impl FnOnce(&mut Option<FileInfo>) -> bool + 'static) {
-        self.update.update(|state| f(&mut state.file_info).then(|| StateUpdateKind::FileInfo));
+        self.update
+            .update(|state| f(&mut state.file_info).then(|| StateUpdateKind::FileInfo));
     }
     pub fn update_parser(&self, f: impl FnOnce(&mut Option<RcParser>) -> bool + 'static) {
-        self.update.update(|state| f(&mut state.parser).then(|| StateUpdateKind::Parser));
+        self.update
+            .update(|state| f(&mut state.parser).then(|| StateUpdateKind::Parser));
     }
     pub fn update_graph(&self, f: impl FnOnce(&mut RcParser) -> bool + 'static) {
-        self.update.update(|state| state.parser.as_mut().map(f).unwrap_or_default().then(|| StateUpdateKind::Parser));
+        self.update.update(|state| {
+            state
+                .parser
+                .as_mut()
+                .map(f)
+                .unwrap_or_default()
+                .then(|| StateUpdateKind::Parser)
+        });
     }
 
     pub fn set_ml_viewer_mode(&self, ml_viewer_mode: bool) {
-        self.update.update(move |state|
+        self.update.update(move |state| {
             (state.ml_viewer_mode != ml_viewer_mode).then(|| {
                 state.ml_viewer_mode = ml_viewer_mode;
                 StateUpdateKind::Other
             })
-        );
+        });
     }
     pub fn set_overlay_visible(&self, overlay_visible: bool) {
-        self.update.update(move |state|
+        self.update.update(move |state| {
             (state.overlay_visible != overlay_visible).then(|| {
                 state.overlay_visible = overlay_visible;
                 StateUpdateKind::Other
             })
-        );
+        });
     }
 }
 
@@ -72,7 +89,10 @@ impl<T: Component> StateContext for html::Scope<T> {
 impl State {
     pub fn recalculate_term_display(&mut self, term_display: &TermDisplayContextFiles) {
         let mut general = term_display.general.clone();
-        let per_file = self.file_info.as_ref().and_then(|info| term_display.per_file.get(&info.name));
+        let per_file = self
+            .file_info
+            .as_ref()
+            .and_then(|info| term_display.per_file.get(&info.name));
         if let Some(per_file) = per_file {
             general.extend(per_file);
         }
@@ -110,7 +130,10 @@ impl Component for StateProviderContext {
 
     fn create(ctx: &Context<Self>) -> Self {
         let mut state = State::default();
-        let (cfg, _handle) = ctx.link().context(ctx.link().callback(Msg::ConfigChanged)).unwrap();
+        let (cfg, _handle) = ctx
+            .link()
+            .context(ctx.link().callback(Msg::ConfigChanged))
+            .unwrap();
         state.recalculate_term_display(&cfg.config.term_display);
         Self {
             state: StateProvider {
@@ -127,12 +150,16 @@ impl Component for StateProviderContext {
                 let update = update.apply(&mut self.state.state);
                 if let Some(StateUpdateKind::FileInfo) = update {
                     let cfg = ctx.link().get_configuration().unwrap();
-                    self.state.state.recalculate_term_display(&cfg.config.term_display);
+                    self.state
+                        .state
+                        .recalculate_term_display(&cfg.config.term_display);
                 }
                 update.is_some()
             }
             Msg::ConfigChanged(cfg) => {
-                self.state.state.recalculate_term_display(&cfg.config.term_display);
+                self.state
+                    .state
+                    .recalculate_term_display(&cfg.config.term_display);
                 true
             }
         }

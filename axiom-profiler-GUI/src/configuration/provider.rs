@@ -1,7 +1,11 @@
 use std::rc::Rc;
 
 use gloo::storage::Storage;
-use yew::{html, prelude::{Context, Html}, Callback, Children, Component, ContextProvider, Properties};
+use yew::{
+    html,
+    prelude::{Context, Html},
+    Callback, Children, Component, ContextProvider, Properties,
+};
 
 use crate::utils::updater::{Update, Updater};
 

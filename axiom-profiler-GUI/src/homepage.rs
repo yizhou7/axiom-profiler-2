@@ -24,19 +24,29 @@ impl Component for Homepage {
     fn create(ctx: &Context<Self>) -> Self {
         let curr_time = Utc::now();
         let cached = gloo::storage::LocalStorage::get::<VersionStorage>("versions");
-        let cached = cached.ok().filter(|v| curr_time - v.date < chrono::Duration::minutes(30));
+        let cached = cached
+            .ok()
+            .filter(|v| curr_time - v.date < chrono::Duration::minutes(30));
         let versions = if let Some(cached) = cached {
             cached.versions
         } else {
             let link = ctx.link().clone();
             wasm_bindgen_futures::spawn_local(async move {
-                let Ok(response) = gloo::net::http::Request::get("https://api.github.com/repos/viperproject/axiom-profiler-2/git/refs/tags/v").send().await else {
+                let Ok(response) = gloo::net::http::Request::get(
+                    "https://api.github.com/repos/viperproject/axiom-profiler-2/git/refs/tags/v",
+                )
+                .send()
+                .await
+                else {
                     return;
                 };
                 let Ok(versions) = response.json::<Vec<VersionEntry>>().await else {
                     return;
                 };
-                let storage = VersionStorage { versions, date: curr_time };
+                let storage = VersionStorage {
+                    versions,
+                    date: curr_time,
+                };
                 gloo::storage::LocalStorage::set::<&VersionStorage>("versions", &storage).ok();
                 link.send_message(HomepageMessage::Versions(storage.versions));
             });
@@ -55,7 +65,8 @@ impl Component for Homepage {
                 true
             }
             HomepageMessage::FieldsetHover(mut fieldset_hover) => {
-                fieldset_hover = fieldset_hover && (!self.versions.is_empty() || crate::version().is_some());
+                fieldset_hover =
+                    fieldset_hover && (!self.versions.is_empty() || crate::version().is_some());
                 let changed = self.fieldset_hover != fieldset_hover;
                 self.fieldset_hover = fieldset_hover;
                 changed
@@ -67,12 +78,18 @@ impl Component for Homepage {
         let is_canary = ctx.props().is_canary;
         let stable = Callback::from(move |_| {
             if is_canary {
-                gloo::utils::window().location().set_href("/axiom-profiler-2/").unwrap();
+                gloo::utils::window()
+                    .location()
+                    .set_href("/axiom-profiler-2/")
+                    .unwrap();
             }
         });
         let canary = Callback::from(move |_| {
             if !is_canary {
-                gloo::utils::window().location().set_href("/axiom-profiler-2/canary/").unwrap();
+                gloo::utils::window()
+                    .location()
+                    .set_href("/axiom-profiler-2/canary/")
+                    .unwrap();
             }
         });
         let switch_text = if is_canary {
@@ -137,7 +154,9 @@ impl Component for Homepage {
                 </fieldset>
             }
         });
-        let set_hover = ctx.link().callback(|_| HomepageMessage::FieldsetHover(true));
+        let set_hover = ctx
+            .link()
+            .callback(|_| HomepageMessage::FieldsetHover(true));
         html! {
             <><div class="home-page-center">
                 <div class="home-page-title">

@@ -1,9 +1,9 @@
-mod provider;
-mod page;
 mod data;
+mod page;
+mod provider;
 mod term_display;
 
-pub use provider::*;
-pub use page::*;
 pub use data::*;
+pub use page::*;
+pub use provider::*;
 pub use term_display::*;

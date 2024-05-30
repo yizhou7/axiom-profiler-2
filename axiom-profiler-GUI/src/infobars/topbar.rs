@@ -2,7 +2,13 @@ use material_yew::linear_progress::MatLinearProgress;
 use smt_log_parser::parsers::z3::graph::RawNodeIndex;
 use yew::{function_component, html, use_context, Callback, Html, NodeRef, Properties};
 
-use crate::{configuration::ConfigurationProvider, infobars::{ml_omnibox::MlOmnibox, Omnibox, SearchActionResult}, state::StateProvider, utils::lookup::Kind, LoadingState};
+use crate::{
+    configuration::ConfigurationProvider,
+    infobars::{ml_omnibox::MlOmnibox, Omnibox, SearchActionResult},
+    state::StateProvider,
+    utils::lookup::Kind,
+    LoadingState,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct OmnibarMessage {
@@ -32,10 +38,8 @@ pub fn Topbar(props: &TopbarProps) -> Html {
         LoadingState::NoFileSelected => {
             closed = true;
         }
-        LoadingState::ReadingToString =>
-            indeterminate = true,
-        LoadingState::StartParsing =>
-            indeterminate = true,
+        LoadingState::ReadingToString => indeterminate = true,
+        LoadingState::StartParsing => indeterminate = true,
         LoadingState::Parsing(parsing, _) => {
             progress = (parsing.reader.bytes_read as f64 / parsing.file_size as f64) as f32;
             buffer = 1.0;
@@ -47,10 +51,8 @@ pub fn Topbar(props: &TopbarProps) -> Html {
             progress = 1.0;
             buffer = 1.0;
         }
-        LoadingState::Rendering(..) =>
-            indeterminate = true,
-        LoadingState::FileDisplayed =>
-            closed = true,
+        LoadingState::Rendering(..) => indeterminate = true,
+        LoadingState::FileDisplayed => closed = true,
     };
     if props.message.as_ref().is_some_and(|m| m.is_error) {
         class = "progress progress-anim loading-bar-failed";

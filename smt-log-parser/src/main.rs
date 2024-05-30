@@ -29,7 +29,12 @@ fn main() {
         let elapsed_time = time.elapsed();
         println!(
             "{} parsing after {} seconds (timeout {timeout:?})",
-            if timeout.is_timeout() { "Timeout" } else { "Finished" }, elapsed_time.as_secs_f32()
+            if timeout.is_timeout() {
+                "Timeout"
+            } else {
+                "Finished"
+            },
+            elapsed_time.as_secs_f32()
         );
         let inst_graph = InstGraph::new(&result).unwrap();
         let _displayed = inst_graph.to_visible();

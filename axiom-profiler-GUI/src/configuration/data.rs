@@ -1,5 +1,8 @@
 use fxhash::FxHashMap;
-use smt_log_parser::{display_with::{DisplayConfiguration, SymbolReplacement}, formatter::TermDisplayContext};
+use smt_log_parser::{
+    display_with::{DisplayConfiguration, SymbolReplacement},
+    formatter::TermDisplayContext,
+};
 
 use crate::state::FileInfo;
 
@@ -18,7 +21,11 @@ impl ConfigurationProvider {
                 if new.is_empty() {
                     cfg.term_display.per_file.remove(&file.name).is_some()
                 } else {
-                    let is_same = cfg.term_display.per_file.get(&file.name).is_some_and(|old| old == &new);
+                    let is_same = cfg
+                        .term_display
+                        .per_file
+                        .get(&file.name)
+                        .is_some_and(|old| old == &new);
                     if !is_same {
                         cfg.term_display.per_file.insert(file.name, new);
                     }

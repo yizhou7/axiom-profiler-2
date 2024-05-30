@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
-use yew::prelude::*;
 use material_yew::MatIcon;
+use yew::prelude::*;
 
 pub type SetVisibleCallback = Rc<RefCell<Callback<Option<bool>>>>;
 
@@ -26,9 +26,7 @@ impl Component for Overlay {
 
     fn create(ctx: &Context<Self>) -> Self {
         *ctx.props().set_visible.borrow_mut() = ctx.link().callback(Msg::SetVisible);
-        Self {
-            visible: false,
-        }
+        Self { visible: false }
     }
     fn changed(&mut self, ctx: &Context<Self>, old_props: &Self::Properties) -> bool {
         debug_assert!(ctx.props() != old_props);
@@ -55,7 +53,11 @@ impl Component for Overlay {
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {
-        let class = if self.visible { "overlay" } else { "overlay hidden" };
+        let class = if self.visible {
+            "overlay"
+        } else {
+            "overlay hidden"
+        };
         let onclick = ctx.link().callback(|_| Msg::SetVisible(Some(false)));
         html! {
             <div {class}>

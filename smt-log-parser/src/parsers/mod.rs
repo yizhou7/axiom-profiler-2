@@ -264,14 +264,21 @@ mod wrapper {
             mut predicate: impl FnMut(&Parser, ReaderState) -> Option<T>,
         ) -> ParseState<T> {
             let Some(reader) = self.reader.as_mut() else {
-                return ParseState::Completed { end_of_stream: true };
+                return ParseState::Completed {
+                    end_of_stream: true,
+                };
             };
             let mut buf = String::new();
             loop {
                 if let Some(t) = predicate(&self.parser, self.reader_state) {
                     return ParseState::Paused(t, self.reader_state);
                 }
-                let state = match add_await([Self::process_line(reader, &mut self.reader_state, &mut self.parser, &mut buf)]) {
+                let state = match add_await([Self::process_line(
+                    reader,
+                    &mut self.reader_state,
+                    &mut self.parser,
+                    &mut buf,
+                )]) {
                     Ok(None) => continue,
                     Ok(Some(end_of_stream)) => ParseState::Completed { end_of_stream },
                     Err(err) => ParseState::Error(err),
@@ -396,10 +403,7 @@ mod wrapper {
         /// Parsing cannot be resumed if the timeout is reached. If you need
         /// support for resuming, use [`process_check_every`] or
         /// [`process_until`] instead.
-        pub async fn process_all_timeout(
-            mut self,
-            timeout: Duration,
-        ) -> (ParseState<()>, Parser) {
+        pub async fn process_all_timeout(mut self, timeout: Duration) -> (ParseState<()>, Parser) {
             let result = add_await([self.process_check_every(timeout, |_, _| Some(()))]);
             (result, self.parser)
         }
@@ -410,10 +414,7 @@ mod wrapper {
         ///
         /// Parsing cannot be resumed if the limit is reached. If you need
         /// support for resuming, use [`process_until`] instead.
-        pub async fn process_all_byte_limit(
-            mut self,
-            limit: usize,
-        ) -> (ParseState<()>, Parser) {
+        pub async fn process_all_byte_limit(mut self, limit: usize) -> (ParseState<()>, Parser) {
             let result = add_await([self.process_until(|_, s| (s.bytes_read < limit).then(|| ()))]);
             (result, self.parser)
         }

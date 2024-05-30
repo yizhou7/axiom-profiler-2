@@ -1,6 +1,13 @@
 use std::{borrow::Cow, fmt};
 
-use crate::{formatter::{BindPowerPair, ChildIndex, MatchResult, SubFormatter, TermDisplayContext, QUANT_BIND}, items::*, parsers::z3::z3parser::Z3Parser, NonMaxU32, StringTable};
+use crate::{
+    formatter::{
+        BindPowerPair, ChildIndex, MatchResult, SubFormatter, TermDisplayContext, QUANT_BIND,
+    },
+    items::*,
+    parsers::z3::z3parser::Z3Parser,
+    NonMaxU32, StringTable,
+};
 
 ////////////
 // General
@@ -180,11 +187,7 @@ mod private {
             self.bind_power = old;
             result
         }
-        pub(super) fn with_term<T>(
-            &mut self,
-            term: TermIdx,
-            f: impl FnOnce(&mut Self) -> T,
-        ) -> T {
+        pub(super) fn with_term<T>(&mut self, term: TermIdx, f: impl FnOnce(&mut Self) -> T) -> T {
             let term = std::mem::replace(&mut self.term, term);
             let result = f(self);
             self.term = term;
@@ -206,7 +209,11 @@ mod private {
                 })
                 .copied()
         }
-        pub(super) fn incr_ast_depth_with_limit<T>(&mut self, limit: Option<NonMaxU32>, f: impl FnOnce(&mut Self) -> T) -> Option<T> {
+        pub(super) fn incr_ast_depth_with_limit<T>(
+            &mut self,
+            limit: Option<NonMaxU32>,
+            f: impl FnOnce(&mut Self) -> T,
+        ) -> Option<T> {
             if limit.is_some_and(|limit| self.ast_depth >= limit.get()) {
                 return None;
             }
@@ -250,7 +257,10 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for ENodeIdx {
         _data: &mut (),
     ) -> fmt::Result {
         if let Some(enode_char_limit) = ctxt.config.enode_char_limit {
-            let owner = ctxt.parser[self].owner.with_data(ctxt, &mut None).to_string();
+            let owner = ctxt.parser[self]
+                .owner
+                .with_data(ctxt, &mut None)
+                .to_string();
             if owner.len() <= enode_char_limit.get() as usize {
                 write!(f, "{owner}")
             } else {
@@ -328,11 +338,7 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for &MatchKind {
                 quant.fmt_with(f, ctxt, data)
             }
             MatchKind::TheorySolving { axiom_id, .. } => {
-                write!(
-                    f,
-                    "[TheorySolving] {}#",
-                    &ctxt.parser[axiom_id.namespace],
-                )?;
+                write!(f, "[TheorySolving] {}#", &ctxt.parser[axiom_id.namespace],)?;
                 if let Some(id) = axiom_id.id {
                     write!(f, "{id}")?;
                 }
@@ -356,13 +362,15 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for &QuantKind {
     ) -> fmt::Result {
         match *self {
             QuantKind::Other(kind) => write!(f, "{}", &ctxt.parser[kind]),
-            QuantKind::Lambda => if matches!(ctxt.config.replace_symbols, SymbolReplacement::Math) {
-                write!(f, "λ")
-            } else if ctxt.config.html {
-                write!(f, "&lt;null&gt;")
-            } else {
-                write!(f, "<null>")
-            },
+            QuantKind::Lambda => {
+                if matches!(ctxt.config.replace_symbols, SymbolReplacement::Math) {
+                    write!(f, "λ")
+                } else if ctxt.config.html {
+                    write!(f, "&lt;null&gt;")
+                } else {
+                    write!(f, "<null>")
+                }
+            }
             QuantKind::NamedQuant(name) => write!(f, "{}", &ctxt.parser[name]),
             QuantKind::UnnamedQuant { name, id } => {
                 write!(f, "{}!{id}", &ctxt.parser[name])
@@ -392,7 +400,6 @@ impl<'a: 'b, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a Term 
                         write!(f, "[{namespace}#{id}]")?
                     }
                 }
-
             }
             if let Some(meaning) = ctxt.parser.meaning(data.term) {
                 if ctxt.config.html {
@@ -410,19 +417,27 @@ impl<'a: 'b, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a Term 
     }
 }
 
-
 impl VarNames {
-    pub fn get_name<'a>(strings: &'a StringTable, this: Option<&Self>, idx: usize, config: &DisplayConfiguration) -> Cow<'a, str> {
+    pub fn get_name<'a>(
+        strings: &'a StringTable,
+        this: Option<&Self>,
+        idx: usize,
+        config: &DisplayConfiguration,
+    ) -> Cow<'a, str> {
         let name = match this {
             Some(Self::NameAndType(names)) => Cow::Borrowed(&strings[*names[idx].0]),
-            None | Some(Self::TypeOnly(_)) => Cow::Owned(if matches!(config.replace_symbols, SymbolReplacement::Math) {
-                format!("•{idx}")
-            } else {
-                format!("qvar_{idx}")
-            }),
+            None | Some(Self::TypeOnly(_)) => Cow::Owned(
+                if matches!(config.replace_symbols, SymbolReplacement::Math) {
+                    format!("•{idx}")
+                } else {
+                    format!("qvar_{idx}")
+                },
+            ),
         };
         if config.html {
-            const COLORS: [&str; 9] = ["blue", "green", "olive", "maroon", "teal", "purple", "red", "fuchsia", "navy"];
+            const COLORS: [&str; 9] = [
+                "blue", "green", "olive", "maroon", "teal", "purple", "red", "fuchsia", "navy",
+            ];
             let color = COLORS[idx % COLORS.len()];
             let name = format!("<span style=\"color:{color}\">{name}</span>");
             Cow::Owned(name)
@@ -452,12 +467,18 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a TermKind 
     }
 }
 
-fn display_child<'a, 'b, 'c, 'd>(f: &mut fmt::Formatter<'_>, child: TermIdx, ctxt: &'a DisplayCtxt<'b>, data: &'c mut DisplayData<'b>) -> fmt::Result {
+fn display_child<'a, 'b, 'c, 'd>(
+    f: &mut fmt::Formatter<'_>,
+    child: TermIdx,
+    ctxt: &'a DisplayCtxt<'b>,
+    data: &'c mut DisplayData<'b>,
+) -> fmt::Result {
     data.incr_ast_depth_with_limit(ctxt.config.ast_depth_limit, |data| {
-        data.with_term(child, |data| write!(f, "{}", ctxt.parser[child].with_data(ctxt, data)))
-    }).unwrap_or_else(|| {
-        write!(f, "...")
+        data.with_term(child, |data| {
+            write!(f, "{}", ctxt.parser[child].with_data(ctxt, data))
+        })
     })
+    .unwrap_or_else(|| write!(f, "..."))
 }
 
 impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a ProofOrApp {
@@ -474,28 +495,42 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a ProofOrAp
     }
 }
 impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a MatchResult<'a, 'a> {
-    fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'b>, data: &mut DisplayData<'b>) -> fmt::Result {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'b>,
+        data: &mut DisplayData<'b>,
+    ) -> fmt::Result {
         data.with_outer_bind_power(f, self.formatter.bind_power, |data, f| {
             let get_capture = |idx: NonMaxU32| {
                 if idx == NonMaxU32::ZERO {
                     Some(self.haystack)
                 } else {
-                    self.captures.as_ref().and_then(|c| c.get(idx.get() as usize).map(|c| c.as_str()))
+                    self.captures
+                        .as_ref()
+                        .and_then(|c| c.get(idx.get() as usize).map(|c| c.as_str()))
                 }
             };
             fn get_child(index: ChildIndex, data: &DisplayData) -> Option<usize> {
                 if index.0.is_negative() {
-                    data.children().len().checked_sub(index.0.wrapping_abs() as u32 as usize)
+                    data.children()
+                        .len()
+                        .checked_sub(index.0.wrapping_abs() as u32 as usize)
                 } else {
                     let index = index.0 as usize;
                     (index < data.children().len()).then(|| index)
                 }
             }
-            fn write_formatter<'b, 's>(formatter_outputs: &[SubFormatter], f: &mut fmt::Formatter<'_>, ctxt: &DisplayCtxt<'b>, data: &mut DisplayData<'b>, get_capture: &impl Fn(NonMaxU32) -> Option<&'s str>) -> fmt::Result {
+            fn write_formatter<'b, 's>(
+                formatter_outputs: &[SubFormatter],
+                f: &mut fmt::Formatter<'_>,
+                ctxt: &DisplayCtxt<'b>,
+                data: &mut DisplayData<'b>,
+                get_capture: &impl Fn(NonMaxU32) -> Option<&'s str>,
+            ) -> fmt::Result {
                 for output in formatter_outputs {
                     match output {
-                        SubFormatter::String(s) =>
-                            write!(f, "{s}")?,
+                        SubFormatter::String(s) => write!(f, "{s}")?,
                         SubFormatter::Capture(idx) => {
                             let Some(capture) = get_capture(*idx) else {
                                 continue;
@@ -526,7 +561,9 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a MatchResu
                             })?;
                         }
                         SubFormatter::Repeat(r) => {
-                            let (Some(from), Some(to)) = (get_child(r.from, data), get_child(r.to, data)) else {
+                            let (Some(from), Some(to)) =
+                                (get_child(r.from, data), get_child(r.to, data))
+                            else {
                                 continue;
                             };
                             if !r.from.0.is_negative() && r.to.0.is_negative() && from > to {
@@ -537,12 +574,20 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a MatchResu
                             }
                             let forwards = from <= to;
                             // The range is inclusive on both ends
-                            let mut curr = if forwards { from.wrapping_sub(1) } else { from.wrapping_add(1) };
+                            let mut curr = if forwards {
+                                from.wrapping_sub(1)
+                            } else {
+                                from.wrapping_add(1)
+                            };
                             let iter = std::iter::from_fn(move || {
                                 if curr == to {
                                     None
                                 } else {
-                                    curr = if forwards { curr.wrapping_add(1) } else { curr.wrapping_sub(1) };
+                                    curr = if forwards {
+                                        curr.wrapping_add(1)
+                                    } else {
+                                        curr.wrapping_sub(1)
+                                    };
                                     Some(curr)
                                 }
                             });
@@ -558,7 +603,13 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a MatchResu
                                     display_child(f, child, ctxt, data)
                                 })?;
                                 if !is_final {
-                                    write_formatter(&r.middle_sep.outputs, f, ctxt, data, get_capture)?;
+                                    write_formatter(
+                                        &r.middle_sep.outputs,
+                                        f,
+                                        ctxt,
+                                        data,
+                                        get_capture,
+                                    )?;
                                     bind_power.left = r.middle.right;
                                 }
                             }
@@ -611,7 +662,12 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
                     write!(f, "\"{}\" ", self.kind.with(ctxt))?;
                 }
                 for idx in 0..self.num_vars {
-                    let name = VarNames::get_name(&ctxt.parser.strings, self.vars.as_ref(), idx, &ctxt.config);
+                    let name = VarNames::get_name(
+                        &ctxt.parser.strings,
+                        self.vars.as_ref(),
+                        idx,
+                        &ctxt.config,
+                    );
                     let ty = VarNames::get_type(&ctxt.parser.strings, self.vars.as_ref(), idx);
                     if idx != 0 {
                         write!(f, ", ")?;

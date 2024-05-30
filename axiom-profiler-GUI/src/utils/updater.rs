@@ -20,7 +20,11 @@ impl<T: 'static, O> Updater<T, O> {
         self.0.emit(Update::new(f));
     }
 
-    pub fn reset(&self) where T: Default + PartialEq, O: From<bool> {
+    pub fn reset(&self)
+    where
+        T: Default + PartialEq,
+        O: From<bool>,
+    {
         self.update(|data| {
             let new = Default::default();
             if *data != new {
@@ -37,7 +41,6 @@ impl<T, O> Clone for Updater<T, O> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
-
 }
 impl<T, O> PartialEq for Updater<T, O> {
     fn eq(&self, other: &Self) -> bool {
@@ -50,9 +53,7 @@ pub struct Update<T: 'static, O = bool>(Callback<&'static mut T, O>);
 impl<T: 'static, O> Update<T, O> {
     fn new(f: impl for<'a> FnOnce(&'a mut T) -> O + 'static) -> Self {
         let f = RefCell::new(Some(f));
-        let f = Callback::from(move |data|
-            f.borrow_mut().take().unwrap()(data)
-        );
+        let f = Callback::from(move |data| f.borrow_mut().take().unwrap()(data));
         Self(f)
     }
 
