@@ -24,9 +24,9 @@ use yew::html::Scope;
 use yew::prelude::*;
 
 use crate::commands::CommandsProvider;
-use crate::configuration::{ConfigurationContext, ConfigurationProvider, Flags};
+use crate::configuration::{ConfigurationProvider, Flags};
 use crate::filters::FiltersState;
-use crate::filters::Msg::AddFilter;
+
 use crate::infobars::{OmnibarMessage, SearchActionResult, SidebarSectionHeader, Topbar};
 use crate::results::filters::Filter;
 use crate::results::svg_result::GraphState;
@@ -53,18 +53,18 @@ mod utils;
 
 pub const GIT_DESCRIBE: &str = env!("VERGEN_GIT_DESCRIBE");
 pub fn version() -> Option<semver::Version> {
-    let version = GIT_DESCRIBE.strip_prefix("v")?;
+    let version = GIT_DESCRIBE.strip_prefix('v')?;
     semver::Version::parse(version)
         .ok()
         .filter(|v| v.pre.is_empty())
 }
 
-const SIZE_NAMES: [&'static str; 5] = ["B", "KB", "MB", "GB", "TB"];
+const SIZE_NAMES: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
 const ALLOW_HIDE_SIDEBAR_NO_FILE: bool = true;
 
 pub static MOUSE_POSITION: OnceLock<RwLock<PagePosition>> = OnceLock::new();
 pub fn mouse_position() -> &'static RwLock<PagePosition> {
-    MOUSE_POSITION.get_or_init(|| RwLock::default())
+    MOUSE_POSITION.get_or_init(RwLock::default)
 }
 pub static PREVENT_DEFAULT_DRAG_OVER: OnceLock<Mutex<bool>> = OnceLock::new();
 
@@ -235,7 +235,7 @@ impl Component for FileDataComponent {
             (registerer.register_mouse_move)(Callback::from(|event: MouseEvent| {
                 *mouse_position().write().unwrap() = PagePosition::from(&event);
             }));
-        let pd = PREVENT_DEFAULT_DRAG_OVER.get_or_init(|| Mutex::default());
+        let pd = PREVENT_DEFAULT_DRAG_OVER.get_or_init(Mutex::default);
         let drag_over_ref = (registerer.register_drag_over)(Callback::from(|event: DragEvent| {
             *mouse_position().write().unwrap() = PagePosition::from(&event);
             let pd = *pd.lock().unwrap();
@@ -284,7 +284,7 @@ impl Component for FileDataComponent {
         let hide_sidebar_cmd = Command {
             name: "Toggle left sidebar".to_string(),
             execute: Callback::from(move |_| {
-                sidebar_button_ref.cast::<HtmlElement>().map(|b| b.click());
+                if let Some(b) = sidebar_button_ref.cast::<HtmlElement>() { b.click() }
             }),
             keyboard_shortcut: vec!["Cmd", "b"],
             disabled: false,
@@ -371,7 +371,7 @@ impl Component for FileDataComponent {
                                     .graph
                                     .edge_weight(e.0)
                                     .is_some_and(|edge| edge == old_edge);
-                                different.then(|| (old_edge, e))
+                                different.then_some((old_edge, e))
                             })
                             .collect();
                         if !to_update.is_empty() {
@@ -385,7 +385,7 @@ impl Component for FileDataComponent {
                             }
                             if !to_update.is_empty() {
                                 let to_remove: FxHashSet<_> =
-                                    to_update.into_iter().map(|(_, v)| *v).collect();
+                                    to_update.into_values().map(|v| *v).collect();
                                 file.selected_edges.retain(|e| !to_remove.contains(e));
                             }
                         }
@@ -506,13 +506,13 @@ impl Component for FileDataComponent {
             },
             Msg::SearchMatchingLoops => {
                 log::info!("Searching matching loops");
-                if let Some(file) = &mut self.file {
+                if let Some(_file) = &mut self.file {
                     let state = ctx.link().get_state().unwrap();
                     let parser = state.state.parser.as_ref().unwrap();
                     if let Some(g) = &parser.graph {
                         let found_mls = Some(
-                            (&mut *g.borrow_mut())
-                                .search_matching_loops(&mut *parser.parser.borrow_mut()),
+                            g.borrow_mut()
+                                .search_matching_loops(&mut parser.parser.borrow_mut()),
                         );
                         state.update_parser(move |p| {
                             p.as_mut().unwrap().found_mls = found_mls;
@@ -584,7 +584,7 @@ impl Component for FileDataComponent {
         let pick = Callback::from(move |(name, kind): (String, _)| {
             let parser = parser.as_ref()?;
             let entry = parser.lookup.get_exact(&name)?.get(&kind)?;
-            Some(entry.get_visible(&*parser.graph.as_ref()?.borrow(), visible.as_deref()?))
+            Some(entry.get_visible(&parser.graph.as_ref()?.borrow(), visible.as_deref()?))
         });
         let insts_info_link = self.insts_info_link.clone();
         let select = Callback::from(move |idx: RawNodeIndex| {
@@ -597,7 +597,7 @@ impl Component for FileDataComponent {
         });
         let filters_state_link = self.filters_state_link.clone();
         let pick_nth_ml = Callback::from({
-            let file = self.file.clone();
+            let _file = self.file.clone();
             move |n: usize| {
                 let Some(filters_state_link) = &*filters_state_link.borrow() else {
                     return;

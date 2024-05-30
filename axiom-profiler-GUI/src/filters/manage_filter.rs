@@ -221,11 +221,7 @@ impl Component for DraggableList {
                     .filter(|_| changed)
                     .and_then(|p| p.lock().ok())
                 {
-                    if drag.start_idx == drag.idx && !drag.delete {
-                        *pd = false;
-                    } else {
-                        *pd = true;
-                    }
+                    *pd = !(drag.start_idx == drag.idx && !drag.delete);
                 }
                 changed
             }
@@ -335,7 +331,7 @@ pub fn ExistingFilter(props: &ExistingFilterProps) -> Html {
     let onclick = Some(props.onclick.clone()).filter(|_| !props.editing);
     let onclick = Callback::from(move |e: web_sys::MouseEvent| {
         e.prevent_default();
-        onclick.as_ref().map(|oc| oc.emit(()));
+        if let Some(oc) = onclick.as_ref() { oc.emit(()) }
     });
     let overlay = props.selected.then(|| {
         let edit = props.filter.is_editable().then(|| {
@@ -494,7 +490,7 @@ impl Component for ExistingFilterText {
                             input
                                 .value()
                                 .chars()
-                                .filter(|c| c.is_digit(10))
+                                .filter(|c| c.is_ascii_digit())
                                 .collect::<String>()
                                 .parse::<usize>()
                                 .ok()
@@ -544,7 +540,7 @@ impl Component for ExistingFilterText {
                             let value = input.value();
                             input.set_size(value.len().max(1) as u32);
                         } else {
-                            let value = prefix.into_iter().chain(input.value().chars().filter(|c| c.is_digit(10))).collect::<String>();
+                            let value = prefix.into_iter().chain(input.value().chars().filter(|c| c.is_ascii_digit())).collect::<String>();
                             input.set_value(&value);
                             input.set_size((value.len().max(1 + INPUT_SHRINK) - INPUT_SHRINK) as u32);
                         };
@@ -566,7 +562,7 @@ impl Component for ExistingFilterText {
                         value = text;
                         size = Some(value.len().max(1).to_string());
                     } else {
-                        value = prefix.into_iter().chain(text.chars().filter(|c| c.is_digit(10))).collect::<String>();
+                        value = prefix.into_iter().chain(text.chars().filter(|c| c.is_ascii_digit())).collect::<String>();
                         size = Some((value.len().max(1 + INPUT_SHRINK) - INPUT_SHRINK).to_string());
                     };
                     html! {

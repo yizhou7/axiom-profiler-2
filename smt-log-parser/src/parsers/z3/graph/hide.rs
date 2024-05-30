@@ -83,12 +83,12 @@ impl RawInstGraph {
     /// A graph with edges that aren't part of any `longest/shortest` path to a
     /// root filtered out. The edges are also reversed, so the graph can be
     /// walked from any node to find the longest/shortest path to a root.
-    pub fn path_to_root_graph<'a>(
-        &'a self,
+    pub fn path_to_root_graph(
+        &self,
         longest: bool,
     ) -> EdgeFiltered<
-        Reversed<&'a DiGraph<Node, EdgeKind, RawIx>>,
-        impl Fn(ReversedEdgeReference<EdgeReference<EdgeKind, RawIx>>) -> bool + 'a,
+        Reversed<&DiGraph<Node, EdgeKind, RawIx>>,
+        impl Fn(ReversedEdgeReference<EdgeReference<EdgeKind, RawIx>>) -> bool + '_,
     > {
         let f = move |depth: &Node| {
             if longest {
@@ -105,12 +105,12 @@ impl RawInstGraph {
     /// A graph with edges that aren't part of any `longest/shortest` path to a
     /// leaf filtered out. The graph can be walked from any node to find the
     /// longest/shortest path to a leaf.
-    pub fn path_to_leaf_graph<'a>(
-        &'a self,
+    pub fn path_to_leaf_graph(
+        &self,
         longest: bool,
     ) -> EdgeFiltered<
-        &'a DiGraph<Node, EdgeKind, RawIx>,
-        impl Fn(EdgeReference<EdgeKind, RawIx>) -> bool + 'a,
+        &DiGraph<Node, EdgeKind, RawIx>,
+        impl Fn(EdgeReference<EdgeKind, RawIx>) -> bool + '_,
     > {
         let f = move |depth: &Node| {
             if longest {

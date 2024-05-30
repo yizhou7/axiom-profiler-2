@@ -1,5 +1,5 @@
 use crate::{
-    configuration::{Configuration, ConfigurationContext},
+    configuration::{ConfigurationContext},
     filters,
     results::{
         filters::FilterOutput,
@@ -7,7 +7,7 @@ use crate::{
         node_info::{EdgeInfo, NodeInfo},
     },
     state::StateContext,
-    OpenedFileInfo, RcParser,
+    OpenedFileInfo,
 };
 
 use super::{
@@ -186,7 +186,7 @@ impl Component for SVGResult {
         match msg {
             Msg::ConstructedGraph(parser) => {
                 self.constructed_graph = Some(parser);
-                let queue = std::mem::replace(&mut self.queue, Vec::new());
+                let queue = std::mem::take(&mut self.queue);
                 ctx.props()
                     .progress
                     .emit(GraphState::Rendering(RenderingState::ConstructedGraph));
@@ -292,7 +292,7 @@ impl Component for SVGResult {
                 let calculated = self
                     .calculated
                     .take()
-                    .filter(|c| inst_graph.visible_unchanged(&c));
+                    .filter(|c| inst_graph.visible_unchanged(c));
                 let calculated = calculated.unwrap_or_else(|| inst_graph.to_visible());
                 let (node_count, edge_count) =
                     (calculated.graph.node_count(), calculated.graph.edge_count());
@@ -545,13 +545,13 @@ impl Component for SVGResult {
                                     MLGraphNode::QI(quant) => {
                                         let hue = rc_parser
                                             .colour_map
-                                            .get_graphviz_hue_for_quant_idx(&quant);
+                                            .get_graphviz_hue_for_quant_idx(quant);
                                         format!(
                                             "{hue} {NODE_COLOUR_SATURATION} {NODE_COLOUR_VALUE}"
                                         )
                                     }
-                                    MLGraphNode::ENode => format!("lightgrey"),
-                                    MLGraphNode::Equality => format!("white"),
+                                    MLGraphNode::ENode => "lightgrey".to_string(),
+                                    MLGraphNode::Equality => "white".to_string(),
                                 }
                             )
                         },

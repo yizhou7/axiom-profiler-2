@@ -8,7 +8,7 @@ use gloo_console::log;
 use petgraph::{
     graph::NodeIndex,
     visit::Dfs,
-    Direction::{Incoming, Outgoing},
+    Direction::{Outgoing},
 };
 
 use super::RawNodeIndex;
@@ -164,7 +164,7 @@ impl AbstractInst {
             .generalise_pattern(&mut parser.strings, self.id.1);
         // TODO: this should be passed from the outside
         let ctxt = DisplayCtxt {
-            parser: &parser,
+            parser,
             term_display: &TermDisplayContext::default(),
             config: DisplayConfiguration {
                 display_term_ids: false,
@@ -226,9 +226,9 @@ pub enum MLGraphNode {
 impl InstGraph {
     pub fn search_matching_loops(&mut self, parser: &mut Z3Parser) -> usize {
         let currently_disabled_nodes = self.disabled_nodes();
-        self.initialise_inst_succs_and_preds(&parser);
+        self.initialise_inst_succs_and_preds(parser);
         // disable all nodes that do not correspond to QIs
-        self.reset_disabled_to(&parser, |nx, g| {
+        self.reset_disabled_to(parser, |nx, g| {
             !matches!(g[nx].kind(), NodeKind::Instantiation(_))
         });
         let quants: FxHashSet<_> = self
@@ -321,13 +321,13 @@ impl InstGraph {
 
         // compute the ML graphs for all the potential matching loops
         // first enable all of them
-        self.reset_disabled_to(&parser, |_, _| false);
+        self.reset_disabled_to(parser, |_, _| false);
         self.analysis.matching_loop_graphs = (0..nr_matching_loop_end_nodes)
             .map(|n| self.compute_nth_matching_loop_graph(n, parser))
             .collect();
 
         // make sure the enabled and disabled nodes stay the same as before calling the ML search
-        self.reset_disabled_to(&parser, |nx, _| currently_disabled_nodes.contains(&nx));
+        self.reset_disabled_to(parser, |nx, _| currently_disabled_nodes.contains(&nx));
         nr_matching_loop_end_nodes
     }
 
@@ -353,13 +353,13 @@ impl InstGraph {
         let kind = edge.kind(self);
         let node = &self.raw[self.raw.index(kind.blame(self))];
         match node.kind() {
-            NodeKind::ENode(enode) => return Some(parser[*enode].owner),
+            NodeKind::ENode(enode) => Some(parser[*enode].owner),
             NodeKind::GivenEquality(eq, _) => match parser[*eq] {
-                crate::items::EqualityExpl::Literal { eq, .. } => return Some(parser[eq].owner),
-                _ => return None,
+                crate::items::EqualityExpl::Literal { eq, .. } => Some(parser[eq].owner),
+                _ => None,
             },
-            _ => return None,
-        };
+            _ => None,
+        }
     }
 
     pub fn compute_nth_matching_loop_graph(
@@ -441,7 +441,7 @@ impl InstGraph {
                                 }
                             })
                             .collect();
-                        if creator_insts.len() > 0 {
+                        if !creator_insts.is_empty() {
                             let from = parser.egraph.equalities.from(*eq);
                             let from_term = parser[from].owner;
                             let to = parser[*eq].to;
@@ -488,7 +488,7 @@ impl InstGraph {
             };
             for matched_term in abstract_inst.matched_terms.values() {
                 let ctxt = DisplayCtxt {
-                    parser: &parser,
+                    parser,
                     term_display: &TermDisplayContext::default(),
                     config: DisplayConfiguration {
                         display_term_ids: false,
@@ -514,33 +514,31 @@ impl InstGraph {
                     nx_of_abstract_inst.get(&matched_term.creator)
                 {
                     *nx
+                } else if let Some(creator_abstract_inst) = abstract_insts.get(&matched_term.creator) {
+                    let abstract_inst_label = creator_abstract_inst.to_string(true, parser);
+                    let nx = ml_graph.add_node((
+                        abstract_inst_label,
+                        MLGraphNode::QI(creator_abstract_inst.id.0),
+                    ));
+                    nx_of_abstract_inst
+                        .insert((creator_abstract_inst.id.0, creator_abstract_inst.id.1), nx);
+                    nx
                 } else {
-                    if let Some(creator_abstract_inst) = abstract_insts.get(&matched_term.creator) {
-                        let abstract_inst_label = creator_abstract_inst.to_string(true, parser);
-                        let nx = ml_graph.add_node((
-                            abstract_inst_label,
-                            MLGraphNode::QI(creator_abstract_inst.id.0),
-                        ));
-                        nx_of_abstract_inst
-                            .insert((creator_abstract_inst.id.0, creator_abstract_inst.id.1), nx);
-                        nx
-                    } else {
-                        let creator_abstract_inst = AbstractInst::from(matched_term.creator);
-                        let abstract_inst_label = creator_abstract_inst.to_string(true, parser);
-                        let nx = ml_graph.add_node((
-                            abstract_inst_label,
-                            MLGraphNode::QI(creator_abstract_inst.id.0),
-                        ));
-                        nx_of_abstract_inst
-                            .insert((creator_abstract_inst.id.0, creator_abstract_inst.id.1), nx);
-                        nx
-                    }
+                    let creator_abstract_inst = AbstractInst::from(matched_term.creator);
+                    let abstract_inst_label = creator_abstract_inst.to_string(true, parser);
+                    let nx = ml_graph.add_node((
+                        abstract_inst_label,
+                        MLGraphNode::QI(creator_abstract_inst.id.0),
+                    ));
+                    nx_of_abstract_inst
+                        .insert((creator_abstract_inst.id.0, creator_abstract_inst.id.1), nx);
+                    nx
                 };
                 ml_graph.update_edge(matched_term_creator_nx, matched_term_nx, ());
             }
             for eq in abstract_inst.equalities.values() {
                 let ctxt = DisplayCtxt {
-                    parser: &parser,
+                    parser,
                     term_display: &TermDisplayContext::default(),
                     config: DisplayConfiguration {
                         display_term_ids: false,
@@ -562,42 +560,40 @@ impl InstGraph {
                     };
                     ml_graph.update_edge(eq_nx, abstract_inst_nx, ());
                     for eq_creator in &eq.creators {
-                        let eq_creator_nx = if let Some(nx) = nx_of_abstract_inst.get(&eq_creator) {
+                        let eq_creator_nx = if let Some(nx) = nx_of_abstract_inst.get(eq_creator) {
                             *nx
+                        } else if let Some(creator_abstract_inst) = abstract_insts.get(eq_creator) {
+                            let abstract_inst_label =
+                                creator_abstract_inst.to_string(true, parser);
+                            let nx = ml_graph.add_node((
+                                abstract_inst_label,
+                                MLGraphNode::QI(creator_abstract_inst.id.0),
+                            ));
+                            nx_of_abstract_inst.insert(
+                                (creator_abstract_inst.id.0, creator_abstract_inst.id.1),
+                                nx,
+                            );
+                            nx
                         } else {
-                            if let Some(creator_abstract_inst) = abstract_insts.get(&eq_creator) {
-                                let abstract_inst_label =
-                                    creator_abstract_inst.to_string(true, parser);
-                                let nx = ml_graph.add_node((
-                                    abstract_inst_label,
-                                    MLGraphNode::QI(creator_abstract_inst.id.0),
-                                ));
-                                nx_of_abstract_inst.insert(
-                                    (creator_abstract_inst.id.0, creator_abstract_inst.id.1),
-                                    nx,
-                                );
-                                nx
-                            } else {
-                                let creator_abstract_inst = AbstractInst::from(*eq_creator);
-                                let abstract_inst_label =
-                                    creator_abstract_inst.to_string(true, parser);
-                                let nx = ml_graph.add_node((
-                                    abstract_inst_label,
-                                    MLGraphNode::QI(creator_abstract_inst.id.0),
-                                ));
-                                nx_of_abstract_inst.insert(
-                                    (creator_abstract_inst.id.0, creator_abstract_inst.id.1),
-                                    nx,
-                                );
-                                nx
-                            }
+                            let creator_abstract_inst = AbstractInst::from(*eq_creator);
+                            let abstract_inst_label =
+                                creator_abstract_inst.to_string(true, parser);
+                            let nx = ml_graph.add_node((
+                                abstract_inst_label,
+                                MLGraphNode::QI(creator_abstract_inst.id.0),
+                            ));
+                            nx_of_abstract_inst.insert(
+                                (creator_abstract_inst.id.0, creator_abstract_inst.id.1),
+                                nx,
+                            );
+                            nx
                         };
                         ml_graph.update_edge(eq_creator_nx, eq_nx, ());
                     }
                 }
             }
         }
-        return ml_graph;
+        ml_graph
     }
 
     fn _get_pattern(&self, iidx: InstIdx, parser: &Z3Parser) -> Option<TermIdx> {

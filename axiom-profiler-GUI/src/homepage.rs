@@ -137,7 +137,7 @@ impl Component for Homepage {
                 let onmouseleave = Callback::from(move |_| {
                     noderef_clone.cast::<web_sys::Element>().unwrap().class_list().remove_1("hover").unwrap();
                 });
-                let class = (!is_canary && this_version_index == i).then(|| "current").unwrap_or_default();
+                let class = (!is_canary && this_version_index == i).then_some("current").unwrap_or_default();
                 html! {
                     <><input type="radio" name="chan" id={id.clone()} /><label ref={noderef} {class} for={id} {onclick} {onmousemove} {onmouseleave}>{version}</label></>
                 }
@@ -203,7 +203,7 @@ impl VersionEntry {
         self.r#ref.strip_prefix("refs/tags/")
     }
     pub fn version(&self) -> Option<semver::Version> {
-        let version = self.version_text()?.strip_prefix("v")?;
+        let version = self.version_text()?.strip_prefix('v')?;
         semver::Version::parse(version).ok()
     }
 }

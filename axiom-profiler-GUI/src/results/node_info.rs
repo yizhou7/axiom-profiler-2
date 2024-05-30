@@ -168,7 +168,7 @@ impl<'a, 'b> NodeInfo<'a, 'b> {
         };
         let resulting_term = self.ctxt.parser[inst].get_resulting_term()?;
         // The resulting term is of the form `quant-inst(¬(quant) ∨ (inst))`.
-        let resulting_term_or = *self.ctxt.parser[resulting_term].child_ids.get(0)?;
+        let resulting_term_or = *self.ctxt.parser[resulting_term].child_ids.first()?;
         let resulting_term = *self.ctxt.parser[resulting_term_or].child_ids.get(1)?;
         Some(resulting_term.with(self.ctxt).to_string())
     }
@@ -332,11 +332,11 @@ impl<'a, 'b> EdgeInfo<'a, 'b> {
             }
             VisibleEdgeKind::Direct(_, EdgeKind::TEqualitySimple { forward }) => format!(
                 "Simple {}Equality",
-                (!forward).then(|| "Reverse ").unwrap_or_default()
+                (!forward).then_some("Reverse ").unwrap_or_default()
             ),
             VisibleEdgeKind::Direct(_, EdgeKind::TEqualityTransitive { forward }) => format!(
                 "Transitive {}Equality",
-                (!forward).then(|| "Reverse ").unwrap_or_default()
+                (!forward).then_some("Reverse ").unwrap_or_default()
             ),
             VisibleEdgeKind::YieldBlame { trigger_term, .. } => {
                 format!("Yield/Blame trigger #{trigger_term}")
@@ -416,7 +416,7 @@ pub fn SelectedEdgesInfo(
             kind,
             from,
             to,
-            graph: &*graph,
+            graph: &graph,
             ctxt,
         };
 

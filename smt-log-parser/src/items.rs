@@ -13,10 +13,10 @@ macro_rules! idx {
         #[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
-        pub struct $struct(crate::NonMaxUsize);
+        pub struct $struct($crate::NonMaxUsize);
         impl From<usize> for $struct {
             fn from(value: usize) -> Self {
-                Self(crate::NonMaxUsize::new(value).unwrap())
+                Self($crate::NonMaxUsize::new(value).unwrap())
             }
         }
         impl From<$struct> for usize {

@@ -3,7 +3,7 @@ use petgraph::{
     Direction, Graph,
 };
 use smt_log_parser::{
-    display_with::{DisplayConfiguration, DisplayCtxt, DisplayWithCtxt},
+    display_with::{DisplayCtxt, DisplayWithCtxt},
     items::QuantIdx,
     parsers::z3::graph::{
         analysis::matching_loop::MLGraphNode,
@@ -183,7 +183,7 @@ impl Filter {
                 graph
                     .raw
                     .set_visibility_when(false, |_: RawNodeIndex, node: &Node| {
-                        node.kind().inst().is_some() && node.part_of_ml.len() > 0
+                        node.kind().inst().is_some() && !node.part_of_ml.is_empty()
                     });
                 graph
                     .raw

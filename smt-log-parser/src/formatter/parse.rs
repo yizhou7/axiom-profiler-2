@@ -49,7 +49,7 @@ macro_rules! map_res {
 // Const parsing
 
 impl ChildIndex {
-    pub const fn parse<'a>(s: &'a str, hash_prefix: bool) -> ResultFormatterConst<'a, Self> {
+    pub const fn parse(s: &str, hash_prefix: bool) -> ResultFormatterConst<'_, Self> {
         let s = if hash_prefix {
             let tail = ConstOperations::strip_prefix(s, '#');
             map_opt!(tail, Err(ParseErrorConst::missing_hash(s)))
@@ -62,7 +62,7 @@ impl ChildIndex {
 }
 
 impl ChildRange {
-    pub const fn parse<'a>(s: &'a str) -> ResultFormatterConst<'a, Self> {
+    pub const fn parse(s: &str) -> ResultFormatterConst<'_, Self> {
         let split = ConstOperations::split_first(s, ':');
         let (from, to) = map_opt!(split, Err(ParseErrorConst::missing_range(s)));
         let from = map_res!(ChildIndex::parse(from, true));
@@ -72,7 +72,7 @@ impl ChildRange {
 }
 
 impl BindPowerPair {
-    pub const fn parse<'a>(s: &'a str) -> ResultFormatterConst<'a, (bool, Self)> {
+    pub const fn parse(s: &str) -> ResultFormatterConst<'_, (bool, Self)> {
         let split = ConstOperations::split(s, ',');
         let (_, first, split) = split.next::<false>();
         let first = map_res!(ConstOperations::parse_u32(first));
@@ -87,7 +87,7 @@ impl BindPowerPair {
 }
 
 impl SubFormatterSingle {
-    pub const fn parse<'a>(s: &'a str) -> ResultFormatterConst<'a, Self> {
+    pub const fn parse(s: &str) -> ResultFormatterConst<'_, Self> {
         let split = ConstOperations::split(s, SEPARATOR_CHARACTER);
         let (_, index, split) = split.next::<false>();
         let index = map_res!(ChildIndex::parse(index, true));
@@ -372,7 +372,7 @@ impl FromStr for SubFormatterSingle {
 
 impl FromStr for SubFormatterRepeat {
     type Err = FormatterParseError;
-    fn from_str<'a>(s: &'a str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         let self_ = SubFormatterRepeatConst::parse(s)?;
         self_.try_into()
     }
@@ -416,7 +416,7 @@ impl<const SKIP_DOUBLE: bool, const N: usize> Check<SKIP_DOUBLE, N> {
 
 impl<'a, const N: usize> ConstSplit<'a, N> {
     const fn next<const SKIP_DOUBLE: bool>(self) -> (bool, &'a str, Option<Self>) {
-        let _ = Check::<SKIP_DOUBLE, N>::CHECK_N_SIZE;
+        Check::<SKIP_DOUBLE, N>::CHECK_N_SIZE;
 
         let full = self.0.as_bytes();
         let mut s = full;
@@ -463,7 +463,7 @@ impl<'a, const N: usize> ConstSplit<'a, N> {
         }
     }
     const fn prev<const SKIP_DOUBLE: bool>(self) -> (bool, &'a str, Option<Self>) {
-        let _ = Check::<SKIP_DOUBLE, N>::CHECK_N_SIZE;
+        Check::<SKIP_DOUBLE, N>::CHECK_N_SIZE;
 
         let full = self.0.as_bytes();
         let mut s = full;
@@ -541,19 +541,19 @@ impl ConstOperations {
         }
     }
 
-    const fn split<'a>(s: &'a str, sep: char) -> ConstSplit<'a, 1> {
+    const fn split(s: &str, sep: char) -> ConstSplit<'_, 1> {
         let sep = Self::char_as_ascii(sep);
         ConstSplit(s, [sep])
     }
-    const fn split_2<'a>(s: &'a str, sep1: char, sep2: char) -> ConstSplit<'a, 2> {
+    const fn split_2(s: &str, sep1: char, sep2: char) -> ConstSplit<'_, 2> {
         let sep1 = Self::char_as_ascii(sep1);
         let sep2 = Self::char_as_ascii(sep2);
         ConstSplit(s, [sep1, sep2])
     }
 
-    const fn split_more<'a, const N: usize>(
-        s: Option<ConstSplit<'a, N>>,
-    ) -> (Option<&'a str>, Option<ConstSplit<'a, N>>) {
+    const fn split_more<const N: usize>(
+        s: Option<ConstSplit<'_, N>>,
+    ) -> (Option<&str>, Option<ConstSplit<'_, N>>) {
         map_opt!(s => {
             let (_, part, split) = s.next::<false>();
             (Some(part), split)
@@ -570,7 +570,7 @@ impl ConstOperations {
         map_opt!(split => (last, split.remainder()))
     }
 
-    const fn parse_i32<'a>(full: &'a str) -> ResultFormatterConst<'a, i32> {
+    const fn parse_i32(full: &str) -> ResultFormatterConst<'_, i32> {
         let neg = Self::strip_prefix(full, '-');
         let is_neg = neg.is_some();
         let s = map_opt!(neg => neg, full);
@@ -591,7 +591,7 @@ impl ConstOperations {
         while !s.is_empty() {
             match s {
                 [b @ b'0'..=b'9', r @ ..] => {
-                    num = num * 10;
+                    num *= 10;
                     let delta = (*b - b'0') as i32;
                     if is_neg {
                         num -= delta;
@@ -608,7 +608,7 @@ impl ConstOperations {
         }
         Ok(num)
     }
-    const fn parse_u32<'a>(full: &'a str) -> ResultFormatterConst<'a, u32> {
+    const fn parse_u32(full: &str) -> ResultFormatterConst<'_, u32> {
         let data = map_res!(Self::parse_i32(full));
         Ok(data as u32)
     }

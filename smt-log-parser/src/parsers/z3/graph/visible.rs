@@ -56,7 +56,7 @@ impl InstGraph {
                 max_depth: 0,
             })
         };
-        for (i, node) in self.raw.graph.node_weights().into_iter().enumerate() {
+        for (i, node) in self.raw.graph.node_weights().enumerate() {
             if let Some(nw) = node_map(RawNodeIndex(NodeIndex::new(i)), node) {
                 node_index_map[i] = graph.add_node(nw);
             }
@@ -116,14 +116,14 @@ impl InstGraph {
                 max_depth: 0,
             })
         };
-        for (i, node) in self.raw.graph.node_weights().into_iter().enumerate() {
+        for (i, node) in self.raw.graph.node_weights().enumerate() {
             if let Some(nw) = node_map(RawNodeIndex(NodeIndex::new(i)), node) {
                 node_index_map[i] = graph.add_node(nw);
             }
         }
         // assumes that inst-nodes in self.raw.graph are ordered in topological order
         let mut edge_idx = 0;
-        for (i, node) in self.raw.graph.node_weights().into_iter().enumerate() {
+        for (i, node) in self.raw.graph.node_weights().enumerate() {
             let from = node_index_map[i];
             if from != NodeIndex::end() {
                 for next_inst in node.inst_children.nodes.clone() {

@@ -53,6 +53,6 @@ impl serde::Serialize for defns::RegexMatcher {
 impl<'de> serde::Deserialize<'de> for defns::RegexMatcher {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let RegexMatcher(s) = serde::Deserialize::deserialize(deserializer)?;
-        Ok(defns::RegexMatcher::new(s.into_owned()).map_err(serde::de::Error::custom)?)
+        defns::RegexMatcher::new(s.into_owned()).map_err(serde::de::Error::custom)
     }
 }

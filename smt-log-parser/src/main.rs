@@ -7,7 +7,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let filenames = &args[1..];
 
-    for path in &*filenames {
+    for path in filenames {
         let path = std::path::Path::new(path);
         let filename = path
             .file_name()

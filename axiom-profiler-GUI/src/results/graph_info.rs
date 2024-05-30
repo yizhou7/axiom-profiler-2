@@ -1,10 +1,8 @@
 use std::rc::Rc;
 
 use crate::{
-    configuration::{Configuration, ConfigurationContext, ConfigurationProvider},
     state::StateProvider,
     utils::split_div::SplitDiv,
-    RcParser,
 };
 use indexmap::map::{Entry, IndexMap};
 use material_yew::WeakComponentLink;

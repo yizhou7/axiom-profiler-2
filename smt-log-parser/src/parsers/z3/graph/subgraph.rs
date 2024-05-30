@@ -63,7 +63,7 @@ impl Subgraph {
             start_nodes: &start_nodes,
             graph,
         }) {
-            f(&mut graph[node], count as u32);
+            f(&mut graph[node], count);
             count += 1;
             nodes.try_reserve(1)?;
             nodes.push(RawNodeIndex(node));
@@ -266,7 +266,7 @@ impl<'a, N, E, Ix: IndexType> Visitable for &'a SubgraphStartNodes<'_, N, E, Ix>
     fn visit_map(&self) -> Self::Map {
         FxHashSet::default()
     }
-    fn reset_map(self: &Self, map: &mut Self::Map) {
+    fn reset_map(&self, map: &mut Self::Map) {
         map.clear()
     }
 }

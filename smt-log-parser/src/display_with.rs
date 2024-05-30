@@ -15,7 +15,7 @@ use crate::{
 
 pub trait DisplayWithCtxt<Ctxt, Data>: Sized {
     fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &Ctxt, data: &mut Data) -> fmt::Result;
-    fn with<'a>(self, ctxt: &'a Ctxt) -> DisplayWrapperEmpty<'a, Ctxt, Data, Self>
+    fn with(self, ctxt: &Ctxt) -> DisplayWrapperEmpty<'_, Ctxt, Data, Self>
     where
         Self: Copy,
         Data: Default,
@@ -467,11 +467,11 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a TermKind 
     }
 }
 
-fn display_child<'a, 'b, 'c, 'd>(
+fn display_child<'b, 'd>(
     f: &mut fmt::Formatter<'_>,
     child: TermIdx,
-    ctxt: &'a DisplayCtxt<'b>,
-    data: &'c mut DisplayData<'b>,
+    ctxt: &DisplayCtxt<'b>,
+    data: &mut DisplayData<'b>,
 ) -> fmt::Result {
     data.incr_ast_depth_with_limit(ctxt.config.ast_depth_limit, |data| {
         data.with_term(child, |data| {
@@ -518,7 +518,7 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a MatchResu
                         .checked_sub(index.0.wrapping_abs() as u32 as usize)
                 } else {
                     let index = index.0 as usize;
-                    (index < data.children().len()).then(|| index)
+                    (index < data.children().len()).then_some(index)
                 }
             }
             fn write_formatter<'b, 's>(

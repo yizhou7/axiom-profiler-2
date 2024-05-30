@@ -35,7 +35,7 @@ pub fn Graph(props: &GraphProps) -> Html {
 
     {
         let div_ref = div_ref.clone();
-        let zoom_factor = props.zoom_factor as f64;
+        let zoom_factor = props.zoom_factor;
         let zoom_factor_delta = props.zoom_factor_delta;
         let zoom_with_mouse = props.zoom_with_mouse;
         let centered = use_state(|| false);
@@ -111,11 +111,11 @@ pub fn Graph(props: &GraphProps) -> Html {
                                 y: MARGIN - 10.0,
                             };
                         }
-                        let zoom_factor_delta_chg = 1.0 - (1.0 / zoom_factor_delta as f64);
+                        let zoom_factor_delta_chg = 1.0 - (1.0 / zoom_factor_delta);
                         let (width, height) =
                             (x * zoom_factor_delta_chg, y * zoom_factor_delta_chg);
-                        let left = (scroll_position.x + width) * zoom_factor_delta as f64;
-                        let top = (scroll_position.y + height) * zoom_factor_delta as f64;
+                        let left = (scroll_position.x + width) * zoom_factor_delta;
+                        let top = (scroll_position.y + height) * zoom_factor_delta;
                         PrecisePosition { x: left, y: top }
                     };
 

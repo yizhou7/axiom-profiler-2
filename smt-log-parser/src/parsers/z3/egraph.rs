@@ -472,10 +472,10 @@ impl Equalities {
             // happen.
             let (simple, fwd) = simple.next().ok_or(false)?;
             // Return `Ok` if equal, else `Err(true)`.
-            (simple == eq && fwd == eq_fwd).then(|| ()).ok_or(true)
+            (simple == eq && fwd == eq_fwd).then_some(()).ok_or(true)
         });
         // Map `Ok` -> `Ok(true)`, `Err(true)` -> `Ok(false)`, `Err(false)` -> `Err`.
-        res.map_or_else(|e| e.then(|| false).ok_or(()), |_| Ok(true))
+        res.map_or_else(|e| e.then_some(false).ok_or(()), |_| Ok(true))
     }
     pub fn walk_to(&self, mut from: ENodeIdx, eq: EqTransIdx) -> ENodeIdx {
         #[derive(Debug)]
@@ -595,7 +595,7 @@ impl Graph {
         egraph: &mut EGraph,
     ) -> Option<(bool, EqTransIdx)> {
         let nfrom = NodeIndex::new(idx);
-        let efrom = self.simple_path.node_at(idx as usize);
+        let efrom = self.simple_path.node_at(idx);
 
         for to in 0..self.simple_path.nodes_len() {
             let to = self.simple_path.node_at(to);
@@ -649,11 +649,8 @@ impl Graph {
                     Some((to, false))
                 }
             }
-        } else if {
-            let right = trans_node.given_len <= edges_len - idx
-                && trans_node.to == self.simple_path.node_at(idx + trans_node.given_len);
-            right
-        } {
+        } else if trans_node.given_len <= edges_len - idx
+        && trans_node.to == self.simple_path.node_at(idx + trans_node.given_len) {
             let post_simple_edges = (idx..edges_len).map(|idx| self.graph[EdgeIndex::new(idx)]);
             let mut post_simple_edges =
                 post_simple_edges.map(|seg| (seg.kind.given().unwrap(), seg.forward));

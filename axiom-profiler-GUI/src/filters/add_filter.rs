@@ -11,7 +11,6 @@ use yew::{function_component, html, use_context, Callback, Html, MouseEvent, Pro
 use crate::{
     results::{filters::Filter, svg_result::DEFAULT_NODE_COUNT},
     state::StateProvider,
-    RcParser,
 };
 
 #[derive(PartialEq, Properties)]

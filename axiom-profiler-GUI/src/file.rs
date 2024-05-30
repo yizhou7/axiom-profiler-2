@@ -66,10 +66,8 @@ impl FileDataComponent {
         }
         let drag_leave_ref =
             (registerer.register_drag_leave)(Callback::from(move |event: DragEvent| {
-                if file_drag(&event) {
-                    if *last_drag_target.borrow() == event.target() {
-                        drag_end();
-                    }
+                if file_drag(&event) && *last_drag_target.borrow() == event.target() {
+                    drag_end();
                 }
             }));
         let link = link.clone();
@@ -128,7 +126,7 @@ impl FileDataComponent {
                                 (pause
                                     || *cancel.borrow()
                                     || state.bytes_read >= 1024 * 1024 * 1024)
-                                    .then(|| pause)
+                                    .then_some(pause)
                             })
                             .await;
                         let ParseState::Paused(true, state) = finished else {
@@ -189,7 +187,7 @@ impl FileDataComponent {
                                 lines_to_read -= 1;
                                 let pause = lines_to_read == 0;
                                 (pause || *cancel.borrow() || state.bytes_read >= 512 * 1024 * 1024)
-                                    .then(|| pause)
+                                    .then_some(pause)
                             });
                             let ParseState::Paused(true, state) = finished else {
                                 break finished;

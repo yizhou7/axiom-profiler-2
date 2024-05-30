@@ -289,20 +289,18 @@ impl Component for GraphContainer {
             Msg::MouseMove(ev) => {
                 if ev.buttons() != 1 {
                     self.drag_start = None;
-                } else {
-                    if let Some((start, last, drag)) = &mut self.drag_start {
-                        let pos = PagePosition::from(&ev);
-                        if (start.x - pos.x).abs() > 5 || (start.y - pos.y).abs() > 5 {
-                            *drag = true;
-                            let last_last = *last;
-                            *last = pos;
-                            if !ev.shift_key() {
-                                let delta = PrecisePosition {
-                                    x: (last_last.x - last.x) as f64,
-                                    y: (last_last.y - last.y) as f64,
-                                };
-                                self.window.scroll_by(delta, None);
-                            }
+                } else if let Some((start, last, drag)) = &mut self.drag_start {
+                    let pos = PagePosition::from(&ev);
+                    if (start.x - pos.x).abs() > 5 || (start.y - pos.y).abs() > 5 {
+                        *drag = true;
+                        let last_last = *last;
+                        *last = pos;
+                        if !ev.shift_key() {
+                            let delta = PrecisePosition {
+                                x: (last_last.x - last.x) as f64,
+                                y: (last_last.y - last.y) as f64,
+                            };
+                            self.window.scroll_by(delta, None);
                         }
                     }
                 }
@@ -334,7 +332,7 @@ impl Component for GraphContainer {
                     "a" if ev.meta_key() => {
                         ev.prevent_default();
                         ctx.props().select_all.emit(());
-                        return false;
+                        false
                     }
                     "f" if plain => {
                         ctx.link().send_message(Msg::FocusSelection);
@@ -350,7 +348,7 @@ impl Component for GraphContainer {
                             .entry(key)
                             .or_insert_with(|| (Instant::now(), 0.0, None));
                         if let Some(released) = released.take() {
-                            *held = *held + released.elapsed();
+                            *held += released.elapsed();
                         }
                         self.timeout.get_or_insert_with(|| {
                             let hold = ctx.link().callback(Msg::KeyHold);
@@ -364,7 +362,7 @@ impl Component for GraphContainer {
             Msg::KeyUp(ev) => {
                 let key = ev.key();
                 if let Some((_, _, released)) = self.held_keys.get_mut(&key) {
-                    released.get_or_insert_with(|| Instant::now());
+                    released.get_or_insert_with(Instant::now);
                 }
                 false
             }
@@ -502,7 +500,7 @@ impl Component for GraphContainer {
                 zoom_with_mouse={self.zoom_with_mouse}
                 selected_nodes={ctx.props().selected_nodes.clone()}
                 selected_edges={ctx.props().selected_edges.clone()}
-                scroll_position={self.window.graph_position.clone()}
+                scroll_position={self.window.graph_position}
                 set_scroll={set_scroll}
                 scroll_window={self.window.scroll_window.clone()}
             ><Svg svg={self.graph.clone()}/></Graph>

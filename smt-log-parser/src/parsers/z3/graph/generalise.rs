@@ -32,7 +32,7 @@ impl Terms {
             let deref: Vec<&'static Term>;
             if check(next.iter(), |t1, t2| t1 == t2) {
                 // if terms are equal, no need to generalize
-                assert!(next.len() > 0, "generalise called with empty terms");
+                assert!(!next.is_empty(), "generalise called with empty terms");
                 let Some((_, _, children)) = stack.last_mut() else {
                     return Some(next[0]);
                 };
@@ -78,7 +78,7 @@ impl Terms {
 
     pub fn generalise_pattern(
         &mut self,
-        mut strings: &mut StringTable,
+        strings: &mut StringTable,
         pattern: TermIdx,
     ) -> TermIdx {
         match self[pattern].kind {
@@ -89,7 +89,7 @@ impl Terms {
             _ => {
                 let children = Vec::from(self[pattern].child_ids.clone())
                     .into_iter()
-                    .map(|c| self.generalise_pattern(&mut strings, c))
+                    .map(|c| self.generalise_pattern(strings, c))
                     .collect();
                 self.new_synthetic_term(
                     self[pattern].kind,

@@ -254,7 +254,7 @@ impl Component for TermDisplayComponent {
                 link.send_message(TdcMsg::OnBlur(idx, true));
             });
             let matcher_class = if td.matcher_err.is_some() { "td-matcher error" } else { "td-matcher" };
-            td.matcher_err.as_ref().map(AnyError::Matcher).map(|e| errors.push(e));
+            if let Some(e) = td.matcher_err.as_ref().map(AnyError::Matcher) { errors.push(e) }
 
             let link = ctx.link().clone();
             let formatter_change = Callback::from(move |e: Event| {
@@ -270,7 +270,7 @@ impl Component for TermDisplayComponent {
                 link.send_message(TdcMsg::OnBlur(idx, false));
             });
             let formatter_class = if td.formatter_err.is_some() { "td-formatter error" } else { "td-formatter" };
-            td.formatter_err.as_ref().map(AnyError::Formatter).map(|e| errors.push(e));
+            if let Some(e) = td.formatter_err.as_ref().map(AnyError::Formatter) { errors.push(e) }
 
             let error = td.parsed.as_ref().is_some_and(|p| p.is_err());
             let class = if error { "td-row error" } else { "td-row" };

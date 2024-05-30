@@ -3,7 +3,7 @@ mod manage_filter;
 
 use std::{borrow::Borrow, fmt::Display};
 
-use gloo::console::log;
+
 use material_yew::icon::MatIcon;
 use petgraph::Direction;
 use smt_log_parser::parsers::{
@@ -24,7 +24,7 @@ use crate::{
     },
     state::StateContext,
     utils::toggle_list::ToggleList,
-    OpenedFileInfo, RcParser, SIZE_NAMES,
+    OpenedFileInfo, SIZE_NAMES,
 };
 
 use self::manage_filter::DragState;
@@ -87,7 +87,7 @@ impl FiltersState {
         let msg = SVGMsg::SetDisabled(
             self.disabler_chain
                 .iter()
-                .filter_map(|(d, b)| b.then(|| *d))
+                .filter(|&(_d, b)| *b).map(|(d, _b)| *d)
                 .collect(),
         );
         let msgs = self.rerender_msgs();
@@ -212,7 +212,7 @@ impl Component for FiltersState {
                     }
                 }
                 self.prev_filter_chain.clone_from(&self.filter_chain);
-                self.edit_filter = edit.then(|| self.filter_chain.len());
+                self.edit_filter = edit.then_some(self.filter_chain.len());
                 self.filter_chain.push(filter);
                 if !edit {
                     self.send_updates(&ctx.props().file, true);
@@ -229,7 +229,7 @@ impl Component for FiltersState {
 
                 let state = ctx.link().get_state().unwrap();
                 let found_mls = &state.state.parser.as_ref().unwrap().found_mls;
-                if let None = found_mls {
+                if found_mls.is_none() {
                     search_matching_loops.emit(());
                 }
                 state.set_ml_viewer_mode(!state.state.ml_viewer_mode);
@@ -339,7 +339,7 @@ impl Component for FiltersState {
             html! { <li class={class}><a draggable="false" class="trace-file-name">{details}</a></li> }
         });
         // Disablers
-        let toggle = ctx.link().callback(|idx| Msg::ToggleDisabler(idx));
+        let toggle = ctx.link().callback(Msg::ToggleDisabler);
         let selected: Vec<_> = DEFAULT_DISABLER_CHAIN.iter().map(|(_, b)| *b).collect();
         let disablers = self.disabler_chain.iter().map(|(d, b)| {
             let onclick = Callback::from(move |e: MouseEvent| e.prevent_default());
@@ -417,15 +417,15 @@ impl Filter {
         match self {
             Self::MaxNodeIdx(node_idx) => format!("Hide all ≥ |{node_idx}|"),
             Self::MinNodeIdx(node_idx) => format!("Hide all < |{node_idx}|"),
-            Self::IgnoreTheorySolving => format!("Hide theory solving"),
+            Self::IgnoreTheorySolving => "Hide theory solving".to_string(),
             Self::IgnoreQuantifier(None) => {
-                format!("Hide no quant")
+                "Hide no quant".to_string()
             }
             Self::IgnoreQuantifier(Some(qidx)) => {
                 format!("Hide quant |{qidx}|")
             }
             Self::IgnoreAllButQuantifier(None) => {
-                format!("Hide all quant")
+                "Hide all quant".to_string()
             }
             Self::IgnoreAllButQuantifier(Some(qidx)) => {
                 format!("Hide all but quant ${qidx:?}$")
@@ -464,7 +464,7 @@ impl Filter {
                 format!("Show only |{}{ordinal}| matching loop", n + 1)
             }
             Self::ShowMatchingLoopSubgraph => {
-                format!("S only likely matching loops")
+                "S only likely matching loops".to_string()
             }
         }
     }

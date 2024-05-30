@@ -46,7 +46,7 @@ pub trait LogParser: Default {
     /// parsing. If you want the parser to take ownership of the string instead
     /// (i.e. you are running into lifetime issues), use
     /// [`from_string`](Self::from_string) instead.
-    fn from_str<'r>(s: &'r str) -> StreamParser<'r, Self> {
+    fn from_str(s: &str) -> StreamParser<'_, Self> {
         s.as_bytes().into_parser()
     }
     /// Creates a new parser from the contents of a log file. The parser takes
@@ -245,8 +245,8 @@ mod wrapper {
 
             // Parse line
             reader_state.bytes_read += bytes_read;
-            let stop_parsing = !parser.process_line(&buf, reader_state.lines_read)?;
-            Ok(stop_parsing.then(|| false))
+            let stop_parsing = !parser.process_line(buf, reader_state.lines_read)?;
+            Ok(stop_parsing.then_some(false))
         }
 
         /// Parse the the input while calling the `predicate` callback after
@@ -415,7 +415,7 @@ mod wrapper {
         /// Parsing cannot be resumed if the limit is reached. If you need
         /// support for resuming, use [`process_until`] instead.
         pub async fn process_all_byte_limit(mut self, limit: usize) -> (ParseState<()>, Parser) {
-            let result = add_await([self.process_until(|_, s| (s.bytes_read < limit).then(|| ()))]);
+            let result = add_await([self.process_until(|_, s| (s.bytes_read < limit).then_some(()))]);
             (result, self.parser)
         }
     }

@@ -65,7 +65,7 @@ impl TryFrom<FormatterConst<'_>> for Formatter {
             .outputs
             .into_iter()
             .map_while(|o| o)
-            .map(|o| SubFormatter::try_from(o))
+            .map(SubFormatter::try_from)
             .collect::<Result<_, _>>()?;
         let mut self_ = Self {
             bind_power: f.bind_power,
@@ -113,7 +113,7 @@ impl TryFrom<SubFormatterConst<'_>> for SubFormatter {
     fn try_from(sub: SubFormatterConst<'_>) -> Result<Self, Self::Error> {
         let sf = match sub {
             SubFormatterConst::String(s) => {
-                let c = s.control_deduplicate.then(|| CONTROL_CHARACTER);
+                let c = s.control_deduplicate.then_some(CONTROL_CHARACTER);
                 let data = deduplicate_character(s.data, c);
                 SubFormatter::String(data)
             }
@@ -185,7 +185,7 @@ pub struct SubFormatterRepeatSeparator<'a> {
 
 impl From<SubFormatterRepeatSeparator<'_>> for String {
     fn from(sep: SubFormatterRepeatSeparator<'_>) -> Self {
-        let c = sep.separator_deduplicate.then(|| SEPARATOR_CHARACTER);
+        let c = sep.separator_deduplicate.then_some(SEPARATOR_CHARACTER);
         deduplicate_character(sep.separator, c)
     }
 }

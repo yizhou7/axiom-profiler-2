@@ -2,8 +2,8 @@ use fxhash::FxHashMap;
 use smt_log_parser::parsers::z3::graph::RawNodeIndex;
 use web_sys::HtmlInputElement;
 use yew::{
-    function_component, html, use_effect_with_deps, use_mut_ref, AttrValue, Callback, FocusEvent,
-    Html, InputEvent, MouseEvent, NodeRef, Properties,
+    function_component, html, use_effect_with_deps, use_mut_ref, AttrValue, Callback,
+    Html, MouseEvent, NodeRef, Properties,
 };
 
 use crate::utils::lookup::Kind;

@@ -3,7 +3,6 @@ use smt_log_parser::parsers::z3::graph::RawNodeIndex;
 use yew::{function_component, html, use_context, Callback, Html, NodeRef, Properties};
 
 use crate::{
-    configuration::ConfigurationProvider,
     infobars::{ml_omnibox::MlOmnibox, Omnibox, SearchActionResult},
     state::StateProvider,
     utils::lookup::Kind,

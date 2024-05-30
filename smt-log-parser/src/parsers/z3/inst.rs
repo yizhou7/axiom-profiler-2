@@ -43,7 +43,7 @@ impl Insts {
         let (_, inst_idx) = self
             .fingerprint_to_match
             .get_mut(&fingerprint)
-            .expect(&format!("{:x}", fingerprint.0));
+            .unwrap_or_else(|| panic!("{:x}", fingerprint.0));
         self.insts.raw.try_reserve(1)?;
         let idx = self.insts.push_and_get_key(inst);
         debug_assert!(

@@ -49,7 +49,7 @@ impl InstGraph {
 macro_rules! graph_idx {
     ($mod_name:ident, $node:ident, $edge:ident, $inner:ident) => {
         mod $mod_name {
-            use crate::idx;
+            use $crate::idx;
             #[cfg(feature = "mem_dbg")]
             use mem_dbg::*;
             use petgraph::graph::IndexType;

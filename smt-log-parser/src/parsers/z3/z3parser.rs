@@ -81,7 +81,7 @@ impl Z3Parser {
         // TODO: if the list can be empty then remove the first `?` and
         // replace with default case.
         let (first, second) = t.next().ok_or(Error::UnexpectedEnd)??;
-        if first == "" {
+        if first.is_empty() {
             let first = Ok(IString(self.strings.get_or_intern(second)));
             let tuples = t.map(|t| match t? {
                 ("", second) => Ok(IString(self.strings.get_or_intern(second))),
@@ -250,7 +250,7 @@ impl Z3LogParser for Z3Parser {
             num_vars_str = l.next().ok_or(Error::UnexpectedNewline)?;
             num_vars = num_vars_str.parse::<usize>();
         }
-        let quant_name = QuantKind::parse(&mut self.strings, &*quant_name);
+        let quant_name = QuantKind::parse(&mut self.strings, &quant_name);
         let num_vars = num_vars.unwrap();
         let child_ids = self.gobble_children(l)?;
         assert!(!child_ids.is_empty());
@@ -376,9 +376,9 @@ impl Z3LogParser for Z3Parser {
                     Self::expect_completed(kind_dependent_info)?;
                     let to =
                         self.parse_existing_enode(l.next().ok_or(Error::UnexpectedNewline)?)?;
-                    let eq_expl = EqualityExpl::Literal { from, eq, to };
+                    
                     // self.equalities.push(eq_expl.clone());
-                    eq_expl
+                    EqualityExpl::Literal { from, eq, to }
                 }
                 "cg" => {
                     let mut arg_eqs = Vec::new();
@@ -517,7 +517,7 @@ impl Z3LogParser for Z3Parser {
 
                 let mut blamed = Vec::new();
                 let mut rewrite_of = None;
-                while let Some(word) = l.next() {
+                for word in l.by_ref() {
                     let term = self.terms.parse_existing_id(&mut self.strings, word)?;
                     if let Ok(enode) = self.egraph.get_enode(term, &self.stack) {
                         if let Some(rewrite_of) = rewrite_of {

@@ -290,7 +290,7 @@ impl Component for Omnibox {
                         self.commands_used += 1;
                         c.command.execute.emit(());
                     }
-                    return false;
+                    false
                 } else {
                     self.focused = false;
 
@@ -319,12 +319,10 @@ impl Component for Omnibox {
                             } else {
                                 i - 1
                             }
+                        } else if i + 1 == picked.nodes.len() {
+                            0
                         } else {
-                            if i + 1 == picked.nodes.len() {
-                                0
-                            } else {
-                                i + 1
-                            }
+                            i + 1
                         }
                     })
                     .unwrap_or_default();
@@ -351,7 +349,7 @@ impl Component for Omnibox {
             .message
             .as_ref()
             .is_some_and(|m| m.is_error)
-            .then(|| "error");
+            .then_some("error");
         let mut callback = None;
 
         match &ctx.props().progress {
@@ -402,7 +400,7 @@ impl Component for Omnibox {
             LoadingState::FileDisplayed => (),
         };
         let omnibox_disabled = omnibox_info.is_some();
-        let icon = icon.unwrap_or_else(|| {
+        let icon = icon.unwrap_or({
             if omnibox_disabled {
                 "info"
             } else if self.command_mode {
@@ -569,7 +567,7 @@ impl SearchActionResult {
                     .map(|(kind, entry)| {
                         let visible = if let (Some(graph), Some(visible)) = (&parser.graph, visible)
                         {
-                            entry.count_visible(&*graph.borrow(), visible)
+                            entry.count_visible(&graph.borrow(), visible)
                         } else {
                             0
                         };

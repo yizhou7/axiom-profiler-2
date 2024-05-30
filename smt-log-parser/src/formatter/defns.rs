@@ -94,7 +94,7 @@ impl TermDisplayContext {
         }
         let must_recalculate = !other.regex_matchers.is_empty();
         let mut regex_matchers = other.regex_matchers.clone();
-        regex_matchers.extend(self.regex_matchers.drain(..));
+        regex_matchers.append(&mut self.regex_matchers);
         self.regex_matchers = regex_matchers;
         if must_recalculate {
             self.calculate_regex_set();

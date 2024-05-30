@@ -40,11 +40,11 @@ pub struct StateProvider {
 impl StateProvider {
     pub fn update_file_info(&self, f: impl FnOnce(&mut Option<FileInfo>) -> bool + 'static) {
         self.update
-            .update(|state| f(&mut state.file_info).then(|| StateUpdateKind::FileInfo));
+            .update(|state| f(&mut state.file_info).then_some(StateUpdateKind::FileInfo));
     }
     pub fn update_parser(&self, f: impl FnOnce(&mut Option<RcParser>) -> bool + 'static) {
         self.update
-            .update(|state| f(&mut state.parser).then(|| StateUpdateKind::Parser));
+            .update(|state| f(&mut state.parser).then_some(StateUpdateKind::Parser));
     }
     pub fn update_graph(&self, f: impl FnOnce(&mut RcParser) -> bool + 'static) {
         self.update.update(|state| {
@@ -53,7 +53,7 @@ impl StateProvider {
                 .as_mut()
                 .map(f)
                 .unwrap_or_default()
-                .then(|| StateUpdateKind::Parser)
+                .then_some(StateUpdateKind::Parser)
         });
     }
 

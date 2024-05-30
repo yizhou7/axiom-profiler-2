@@ -1,24 +1,23 @@
 use std::{cmp::Ordering, rc::Rc};
 
-use fxhash::FxHashMap;
-use gloo::console::log;
-use smt_log_parser::parsers::z3::graph::{visible::VisibleInstGraph, RawNodeIndex};
-use web_sys::{HtmlElement, HtmlInputElement};
+
+
+
+use web_sys::{HtmlElement};
 use yew::{
-    html, prelude::Context, AttrValue, Callback, Component, ContextHandle, Html, InputEvent,
+    html, prelude::Context, AttrValue, Callback, Component, ContextHandle, Html,
     KeyboardEvent, MouseEvent, NodeRef, Properties,
 };
 
 use crate::{
     commands::{Command, CommandId, CommandRef, Commands, CommandsContext},
-    configuration::ConfigurationProvider,
     infobars::topbar::OmnibarMessage,
     results::svg_result::RenderingState,
-    utils::lookup::{CommandsWithName, Entry, Kind, Matches, StringLookupCommands},
-    CallbackRef, GlobalCallbacksContext, LoadingState, RcParser, SIZE_NAMES,
+    utils::lookup::{StringLookupCommands},
+    CallbackRef, GlobalCallbacksContext, LoadingState, SIZE_NAMES,
 };
 
-use self::input::{HighlightedString, MlOmniboxInput, PickedSuggestion, SuggestionResult};
+use self::input::{MlOmniboxInput, PickedSuggestion};
 
 pub mod input;
 
@@ -133,12 +132,10 @@ impl Component for MlOmnibox {
                             } else {
                                 i - 1
                             }
+                        } else if i + 1 == ctx.props().found_mls {
+                            0
                         } else {
-                            if i + 1 == ctx.props().found_mls {
-                                0
-                            } else {
-                                i + 1
-                            }
+                            i + 1
                         }
                     })
                     .unwrap_or_default();
@@ -165,7 +162,7 @@ impl Component for MlOmnibox {
             .message
             .as_ref()
             .is_some_and(|m| m.is_error)
-            .then(|| "error");
+            .then_some("error");
         let mut callback = None;
 
         match &ctx.props().progress {
@@ -216,7 +213,7 @@ impl Component for MlOmnibox {
             LoadingState::FileDisplayed => (),
         };
         let omnibox_disabled = omnibox_info.is_some();
-        let icon = icon.unwrap_or_else(|| {
+        let icon = icon.unwrap_or({
             if omnibox_disabled {
                 "info"
             } else if self.command_mode {
@@ -240,8 +237,8 @@ impl Component for MlOmnibox {
                 AttrValue::from("Filter commands...")
             } else {
                 match ctx.props().found_mls {
-                    0 => AttrValue::from(format!("No matching loops found")),
-                    1 => AttrValue::from(format!("Found 1 potential matching loop")),
+                    0 => AttrValue::from("No matching loops found".to_string()),
+                    1 => AttrValue::from("Found 1 potential matching loop".to_string()),
                     n => AttrValue::from(format!("Found {} potential matching loops", n)),
                 }
             }

@@ -93,7 +93,7 @@ impl DeParseTrait for &'_ SubFormatter {
 }
 
 fn duplicate_character(s: &str, c: char) -> String {
-    s.replace(c, &String::from_iter([c, c].into_iter()))
+    s.replace(c, &String::from_iter([c, c]))
 }
 
 impl DeParseTrait for &'_ BindPowerPair {
