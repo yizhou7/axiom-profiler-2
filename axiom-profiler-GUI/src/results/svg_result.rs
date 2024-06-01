@@ -27,8 +27,9 @@ use smt_log_parser::{
         analysis::matching_loop::MLGraphNode, raw::NodeKind, visible::VisibleInstGraph, InstGraph,
         RawNodeIndex, VisibleEdgeIndex,
     },
-    display_with::DisplayCtxt,
+    display_with::{DisplayCtxt, DisplayWithCtxt},
     items::QuantIdx,
+    NonMaxU32,
 };
 use std::{cell::RefCell, num::NonZeroUsize, rc::Rc};
 use viz_js::VizInstance;
@@ -40,6 +41,7 @@ pub const NODE_LIMIT: usize = 4000;
 pub const DEFAULT_NODE_COUNT: usize = 300;
 pub const NODE_COLOUR_SATURATION: f64 = 0.4;
 pub const NODE_COLOUR_VALUE: f64 = 0.95;
+pub const AST_DEPTH_LIMIT: NonMaxU32 = unsafe { NonMaxU32::new_unchecked(5) };
 
 #[derive(Clone)]
 pub struct RenderedGraph {
@@ -65,7 +67,7 @@ pub enum Msg {
     ResetGraph,
     UserPermission(WarningChoice),
     WorkerOutput(super::worker::WorkerOutput),
-    RenderMLGraph(Graph<(String, MLGraphNode), ()>),
+    RenderMLGraph(Graph<MLGraphNode, ()>),
     // UpdateSelectedNodes(Vec<RawNodeIndex>),
     // SearchMatchingLoops,
     // SelectNthMatchingLoop(usize),
@@ -506,7 +508,7 @@ impl Component for SVGResult {
             Msg::RenderMLGraph(graph) => {
                 let _filtered_graph = &graph;
                 let cfg = ctx.link().get_configuration().unwrap();
-                let _ctxt = &DisplayCtxt {
+                let ctxt = &DisplayCtxt {
                     parser: &parser.borrow(),
                     term_display: &data.state.term_display,
                     config: cfg.config.display.clone(),
@@ -539,10 +541,20 @@ impl Component for SVGResult {
                         &|_, (_, node_data)| {
                             format!(
                                 "label=\"{}\" shape=\"{}\" style=filled fillcolor=\"{}\"",
-                                node_data.0,
+                                match &node_data {
+                                    MLGraphNode::QI(quant, pattern) => format!(
+                                        "{}: {}",
+                                        rc_parser.parser.borrow()[*quant].kind.with(ctxt),
+                                        pattern.with(ctxt)
+                                    ),
+                                    MLGraphNode::ENode(matched_term) =>
+                                        format!("{}", matched_term.with(ctxt)),
+                                    MLGraphNode::Equality(from, to) =>
+                                        format!("{} = {}", from.with(ctxt), to.with(ctxt)),
+                                },
                                 "box",
-                                match &node_data.1 {
-                                    MLGraphNode::QI(quant) => {
+                                match &node_data {
+                                    MLGraphNode::QI(quant, _) => {
                                         let hue = rc_parser
                                             .colour_map
                                             .get_graphviz_hue_for_quant_idx(quant);
@@ -550,8 +562,8 @@ impl Component for SVGResult {
                                             "{hue} {NODE_COLOUR_SATURATION} {NODE_COLOUR_VALUE}"
                                         )
                                     }
-                                    MLGraphNode::ENode => "lightgrey".to_string(),
-                                    MLGraphNode::Equality => "white".to_string(),
+                                    MLGraphNode::ENode(_) => "lightgrey".to_string(),
+                                    MLGraphNode::Equality(_, _) => "white".to_string(),
                                 }
                             )
                         },

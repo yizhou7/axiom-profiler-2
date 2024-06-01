@@ -38,6 +38,7 @@ pub enum Msg {
     WillDelete(bool),
     Drag(Option<DragState>),
     ResetOperations,
+    ClearOperations,
     UndoOperation,
     SelectFilter(usize),
     Delete(usize),
@@ -148,6 +149,10 @@ impl Component for FiltersState {
             Msg::ResetOperations => {
                 self.filter_chain = DEFAULT_FILTER_CHAIN.to_vec();
                 self.send_updates(&ctx.props().file, true)
+            }
+            Msg::ClearOperations => {
+                self.filter_chain.clear();
+                false
             }
             Msg::UndoOperation => {
                 self.filter_chain.clone_from(&self.prev_filter_chain);
@@ -298,25 +303,26 @@ impl Component for FiltersState {
 
         // Selected nodes
         let selected_nodes = !ctx.props().file.selected_nodes.is_empty();
-        let selected_nodes = selected_nodes.then(|| {
-            let new_filter = ctx.link().callback(|f| Msg::AddFilter(false, f));
-            let nodes = ctx.props().file.selected_nodes.clone();
-            let header = format!(
-                "Selected {} Node{}",
-                nodes.len(),
-                if nodes.len() == 1 { "" } else { "s" }
-            );
-            let collapsed_text = format!(
-                "Actions on the {} selected node{}",
-                nodes.len(),
-                if nodes.len() == 1 { "" } else { "s" }
-            );
-            html! {
-                <SidebarSectionHeader header_text={header} collapsed_text={collapsed_text}><ul>
-                    <AddFilterSidebar {new_filter} {nodes} general_filters={false}/>
-                </ul></SidebarSectionHeader>
-            }
-        });
+        let selected_nodes =
+            (selected_nodes && !ctx.link().get_state().unwrap().state.ml_viewer_mode).then(|| {
+                let new_filter = ctx.link().callback(|f| Msg::AddFilter(false, f));
+                let nodes = ctx.props().file.selected_nodes.clone();
+                let header = format!(
+                    "Selected {} Node{}",
+                    nodes.len(),
+                    if nodes.len() == 1 { "" } else { "s" }
+                );
+                let collapsed_text = format!(
+                    "Actions on the {} selected node{}",
+                    nodes.len(),
+                    if nodes.len() == 1 { "" } else { "s" }
+                );
+                html! {
+                    <SidebarSectionHeader header_text={header} collapsed_text={collapsed_text}><ul>
+                        <AddFilterSidebar {new_filter} {nodes} general_filters={false}/>
+                    </ul></SidebarSectionHeader>
+                }
+            });
 
         // Operations
         let class = match (self.dragging, self.will_delete) {
@@ -347,14 +353,23 @@ impl Component for FiltersState {
                 <div class="material-icons"><MatIcon>{icon}</MatIcon></div>{action}{d.description()}
             </a> }
         });
+        let normal_mode = if ctx.link().get_state().unwrap().state.ml_viewer_mode {
+            html! {}
+        } else {
+            html! {
+                <>
+                <AddFilterSidebar new_filter={new_filter} found_mls={found_mls} nodes={Vec::new()} general_filters={true}/>
+                <li><a draggable="false" href="#" onclick={reset}><div class="material-icons"><MatIcon>{"restore"}</MatIcon></div>{"Reset operations"}</a></li>
+                {undo}
+                </>
+            }
+        };
         html! {
         <>
             <SidebarSectionHeader header_text="Current Trace" collapsed_text="Actions on the current trace"><ul>
                 <li><a draggable="false" class="trace-file-name">{details}</a></li>
-                <AddFilterSidebar new_filter={new_filter} found_mls={found_mls} nodes={Vec::new()} general_filters={true}/>
+                {normal_mode}
                 {ml_viewer_mode}
-                <li><a draggable="false" href="#" onclick={reset}><div class="material-icons"><MatIcon>{"restore"}</MatIcon></div>{"Reset operations"}</a></li>
-                {undo}
             </ul></SidebarSectionHeader>
             {selected_nodes}
             <SidebarSectionHeader header_text={"Graph Operations"} collapsed_text={"Operations applied to the graph"}><ul>
