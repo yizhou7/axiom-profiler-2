@@ -688,9 +688,7 @@ impl Component for FileDataComponent {
                     </div>
                 </div></div>
             </nav>
-            <div class="topbar">
-                <Topbar progress={self.progress.clone()} {message} omnibox={self.omnibox.clone()} {search} {pick} {select} {pick_nth_ml} />
-            </div>
+            <Topbar progress={self.progress.clone()} {message} omnibox={self.omnibox.clone()} {search} {pick} {select} {pick_nth_ml} />
             <div class="alerts"></div>
             <div class={page_class}>
                 {page}

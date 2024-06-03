@@ -228,12 +228,10 @@ impl Component for FiltersState {
                 false
             }
             Msg::ToggleMlViewerMode => {
-                let search_matching_loops = ctx.props().search_matching_loops.clone();
-
                 let state = ctx.link().get_state().unwrap();
                 let found_mls = &state.state.parser.as_ref().unwrap().found_mls;
                 if found_mls.is_none() {
-                    search_matching_loops.emit(());
+                    ctx.props().search_matching_loops.emit(());
                 }
                 state.set_ml_viewer_mode(!state.state.ml_viewer_mode);
                 true
@@ -280,7 +278,7 @@ impl Component for FiltersState {
             }
         } else {
             html! {
-                <li><a draggable="false" href="#" onclick={toggle_ml_viewer_mode}><div class="material-icons"><MatIcon>{"loop"}</MatIcon></div>{"View matching loops"}</a></li>
+                <li><a draggable="false" href="#" onclick={toggle_ml_viewer_mode}><div class="material-icons"><MatIcon>{"loop"}</MatIcon></div>{"View likely matching loops"}</a></li>
             }
         };
         let reset = ctx.link().callback(|e: MouseEvent| {

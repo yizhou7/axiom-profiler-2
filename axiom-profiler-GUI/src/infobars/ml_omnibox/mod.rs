@@ -202,7 +202,7 @@ impl Component for MlOmnibox {
             } else if self.command_mode {
                 "chevron_right"
             } else {
-                "search"
+                "loop"
             }
         });
         let icon = if let Some(callback) = callback {
