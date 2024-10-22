@@ -70,7 +70,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        z3version: ['4.8.7', '4.8.17', '4.11.2', '4.12.2', '4.12.4', '4.13.3']
+        z3version:
+          - version: '4.8.7'
+            old: true # required for versions up to `4.8.9`
+          - version: '4.8.17'
+          - version: '4.11.2'
+          - version: '4.12.2'
+          - version: '4.12.4'
+          - version: '4.13.3'
+            distribution: 'glibc-2.35'
 
     # for versions of Z3 at least 4.9.0 we need v1.3 of the GitHub action, for older versions of Z3, 1.2.2
     runs-on: ubuntu-latest
@@ -80,16 +88,16 @@ jobs:
 
       - name: Install Z3 for older version
         uses: pavpanchekha/setup-z3@1.2.2 # see GitHub Action "Install Z3"
-        if: ${{ matrix.z3version == '4.8.7' || matrix.z3version == '4.8.8' || matrix.z3version == '4.8.9' }}
+        if: ${{ matrix.z3version.old == true }}
         with:
-          version: ${{ matrix.z3version }}
+          version: ${{ matrix.z3version.version }}
 
       - name: Install Z3 for newer version
         uses: pavpanchekha/setup-z3@v1.3 # see GitHub Action "Install Z3"
-        if: ${{ !(matrix.z3version == '4.8.7' || matrix.z3version == '4.8.8' || matrix.z3version == '4.8.9') }}
+        if: ${{ !(matrix.z3version.old == true) }}
         with:
-          version: ${{ matrix.z3version }}
-          distribution: ${{ matrix.z3version <= '4.13.0' && 'glibc-2.31' || 'glibc-2.35' }}
+          version: ${{ matrix.z3version.version }}
+          distribution: ${{ matrix.z3version.distribution == '' && 'glibc-2.31' || matrix.z3version.distribution }}
 
       - name: Configure Z3 version environment variable
         id: configure-z3-id
