@@ -89,6 +89,7 @@ jobs:
         if: ${{ !(matrix.z3version == '4.8.7' || matrix.z3version == '4.8.8' || matrix.z3version == '4.8.9') }}
         with:
           version: ${{ matrix.z3version }}
+          distribution: ${{ matrix.z3version <= '4.13.0' && 'glibc-2.31' || 'glibc-2.35' }}
 
       - name: Configure Z3 version environment variable
         id: configure-z3-id
