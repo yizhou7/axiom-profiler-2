@@ -6,7 +6,7 @@ use smt_log_parser::analysis::InstGraph;
 use smt_log_parser::{LogParser, Z3Parser};
 
 #[global_allocator]
-static ALLOCATOR: Cap<std::alloc::System> = Cap::new(std::alloc::System, usize::max_value());
+static ALLOCATOR: Cap<std::alloc::System> = Cap::new(std::alloc::System, usize::MAX);
 
 #[test]
 fn parse_all_logs() {

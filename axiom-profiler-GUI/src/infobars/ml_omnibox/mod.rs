@@ -279,21 +279,6 @@ impl Component for MlOmnibox {
     }
 }
 
-#[derive(Debug)]
-pub struct SearchActionResult {
-    pub query: String,
-    pub indices: Vec<u32>,
-    pub groups: Vec<SearchActionGroup>,
-}
-
-#[derive(Debug)]
-pub struct SearchActionGroup {
-    pub score: u16,
-    pub idx: usize,
-    pub name: String,
-    pub actions: Vec<SearchAction>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SearchAction {
     pub count: usize,

@@ -102,7 +102,6 @@ impl<'a> FormatterConst<'a> {
 pub enum SubFormatterConst<'a> {
     /// A simple string output, will be printed literally.
     String(SubFormatterString<'a>),
-    ///
     Single(SubFormatterSingle),
     Repeat(SubFormatterRepeatConst<'a>),
     Capture(NonMaxU32),

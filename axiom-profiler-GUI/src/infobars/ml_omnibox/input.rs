@@ -1,4 +1,3 @@
-use smt_log_parser::analysis::RawNodeIndex;
 use web_sys::HtmlInputElement;
 use yew::{
     function_component, html, use_effect_with_deps, use_mut_ref, AttrValue, Html, NodeRef,
@@ -68,10 +67,10 @@ pub struct Suggestion {
 
 #[derive(Debug)]
 pub struct PickedSuggestion {
-    pub name: String,
-    pub suggestion_idx: usize,
-    pub nodes: Vec<RawNodeIndex>,
-    pub node_idx: Option<usize>,
+    // pub name: String,
+    // pub suggestion_idx: usize,
+    // pub nodes: Vec<RawNodeIndex>,
+    // pub node_idx: Option<usize>,
     pub ml_idx: Option<usize>,
 }
 
@@ -79,10 +78,10 @@ impl PickedSuggestion {
     pub fn default_simple(ml_idx: usize) -> Option<Self> {
         if ml_idx > 0 {
             Some(Self {
-                name: "".to_string(),
-                suggestion_idx: 0,
-                nodes: vec![],
-                node_idx: None,
+                // name: "".to_string(),
+                // suggestion_idx: 0,
+                // nodes: vec![],
+                // node_idx: None,
                 ml_idx: None,
             })
         } else {

@@ -53,7 +53,7 @@ pub type ResizeObserverPair = (ResizeObserver, Closure<dyn Fn(Vec<ResizeObserver
 
 impl GraphContainer {
     pub fn set_zoom(&mut self, zoom_factor: f64, with_mouse: bool) {
-        let zoom_factor = zoom_factor.min(5.0).max(0.005);
+        let zoom_factor = zoom_factor.clamp(0.005, 5.0);
         self.zoom_factor_delta = zoom_factor / self.zoom_factor;
         self.zoom_with_mouse = with_mouse;
         self.zoom_factor = zoom_factor;

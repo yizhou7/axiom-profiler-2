@@ -608,7 +608,7 @@ impl Iterator for TransitiveExplIter<'_> {
 
 impl TransitiveExpl {
     pub fn new(
-        i: impl Iterator<Item = TransitiveExplSegment> + ExactSizeIterator,
+        i: impl ExactSizeIterator<Item = TransitiveExplSegment>,
         given_len: usize,
         to: ENodeIdx,
     ) -> Result<Self> {

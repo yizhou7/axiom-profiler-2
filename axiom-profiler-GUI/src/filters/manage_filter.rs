@@ -31,6 +31,7 @@ pub struct DraggableList {
 
 #[derive(Debug, Clone, Copy)]
 pub struct DragState {
+    #[allow(dead_code)]
     pub orig_idx: usize,
     pub start_idx: usize,
     pub idx: usize,

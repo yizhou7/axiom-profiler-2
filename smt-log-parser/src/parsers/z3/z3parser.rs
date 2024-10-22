@@ -121,6 +121,7 @@ impl Z3Parser {
     ///  - `(A;B)`
     ///  - `(A B)`
     ///  - `(A ; B)`
+    ///
     /// The resulting iterator will contain `None` for any tuples which it failed to parse.
     /// If `FORMS_EQUAL` is true, then it will return `None` for any tuples which have a different
     /// form to the first tuple.
