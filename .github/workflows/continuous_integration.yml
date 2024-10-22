@@ -5,6 +5,9 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  # Run once a month to regenerate the cached log files for PRs to use
+  schedule:
+    - cron: "0 0 1 * *"
 
 jobs:
   format:
