@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        z3version: ['4.8.7', '4.8.17', '4.11.2', '4.12.2', '4.12.4']
+        z3version: ['4.8.7', '4.8.17', '4.11.2', '4.12.2', '4.12.4', '4.13.3']
     # Linux, Processor (CPU): 4, Memory (RAM): 16 GB, Storage (SSD): 14 GB
     # https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#supported-runners-and-hardware-resources
     runs-on: ubuntu-latest
