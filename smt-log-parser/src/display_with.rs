@@ -8,7 +8,7 @@ use crate::{
         BindPowerPair, ChildIndex, MatchResult, SubFormatter, TermDisplayContext, QUANT_BIND,
     },
     items::*,
-    parsers::z3::z3parser::Z3Parser,
+    parsers::z3::{stm2::Event, z3parser::Z3Parser},
     NonMaxU32, StringTable,
 };
 
@@ -92,6 +92,8 @@ pub struct DisplayCtxt<'a> {
 pub enum SymbolReplacement {
     Math,
     Code,
+    /// Display quantifiers and symbols in the smt2 format, using the
+    /// [`TermDisplayContext::s_expression`] formatter is recommended.
     None,
 }
 
@@ -102,6 +104,10 @@ impl SymbolReplacement {
             SymbolReplacement::Code => Some(false),
             SymbolReplacement::None => None,
         }
+    }
+
+    pub fn is_none(self) -> bool {
+        matches!(self, SymbolReplacement::None)
     }
 }
 
@@ -293,14 +299,7 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for QuantIdx {
         _data: &mut (),
     ) -> fmt::Result {
         let quant = &ctxt.parser[self];
-        if let Some(term) = quant.term {
-            term.fmt_with(f, ctxt, &mut None)
-        } else {
-            let QuantKind::Other(name) = quant.kind else {
-                panic!()
-            };
-            write!(f, "{}", &ctxt.parser[name])
-        }
+        quant.term.fmt_with(f, ctxt, &mut None)
     }
 }
 
@@ -374,8 +373,7 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for &QuantKind {
         _data: &mut (),
     ) -> fmt::Result {
         match *self {
-            QuantKind::Other(kind) => write!(f, "{}", &ctxt.parser[kind]),
-            QuantKind::Lambda => {
+            QuantKind::Lambda(_) => {
                 if matches!(ctxt.config.replace_symbols, SymbolReplacement::Math) {
                     write!(f, "λ")
                 } else if ctxt.config.html() {
@@ -385,7 +383,7 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for &QuantKind {
                 }
             }
             QuantKind::NamedQuant(name) => write!(f, "{}", &ctxt.parser[name]),
-            QuantKind::UnnamedQuant { name, id } => {
+            QuantKind::UnnamedQuant { name, id, .. } => {
                 write!(f, "{}!{id}", &ctxt.parser[name])
             }
         }
@@ -468,14 +466,19 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a TermKind 
         ctxt: &DisplayCtxt<'b>,
         data: &mut DisplayData<'b>,
     ) -> fmt::Result {
-        match self {
-            &TermKind::Var(mut idx) => {
+        match *self {
+            TermKind::Var(mut idx) => {
                 let vars = data.find_quant(&mut idx).and_then(|q| q.vars.as_ref());
                 let name = VarNames::get_name(&ctxt.parser.strings, vars, idx, &ctxt.config);
                 write!(f, "{name}")
             }
-            TermKind::ProofOrApp(poa) => write!(f, "{}", poa.with_data(ctxt, data)),
-            TermKind::Quant(idx) => write!(f, "{}", ctxt.parser[*idx].with_data(ctxt, data)),
+            TermKind::App(name) => {
+                let name = &ctxt.parser[name];
+                let children = NonMaxU32::new(data.children().len() as u32).unwrap();
+                let match_ = ctxt.term_display.match_str(name, children);
+                match_.fmt_with(f, ctxt, data)
+            }
+            TermKind::Quant(idx) => write!(f, "{}", ctxt.parser[idx].with_data(ctxt, data)),
             // TODO: it would be nice to display some extra information here
             TermKind::Generalised => write!(f, "_"),
         }
@@ -496,19 +499,6 @@ fn display_child<'b>(
     .unwrap_or_else(|| write!(f, "..."))
 }
 
-impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a ProofOrApp {
-    fn fmt_with(
-        self,
-        f: &mut fmt::Formatter<'_>,
-        ctxt: &DisplayCtxt<'b>,
-        data: &mut DisplayData<'b>,
-    ) -> fmt::Result {
-        let name = &ctxt.parser[self.name];
-        let children = NonMaxU32::new(data.children().len() as u32).unwrap();
-        let match_ = ctxt.term_display.match_str(name, children);
-        match_.fmt_with(f, ctxt, data)
-    }
-}
 impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a MatchResult<'a, 'a> {
     fn fmt_with(
         self,
@@ -676,15 +666,7 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
         // for this, we need to store the quantifier in the context
         data.with_quant(self, |data| {
             data.with_outer_bind_power(f, QUANT_BIND, |data, f| {
-                if matches!(ctxt.config.replace_symbols, SymbolReplacement::Math) {
-                    write!(f, "∀ ")?;
-                } else {
-                    write!(f, "FORALL ")?;
-                }
-                if ctxt.config.display_quantifier_name {
-                    write!(f, "\"{}\" ", self.kind.with(ctxt))?;
-                }
-                for idx in 0..self.num_vars {
+                let vars = (0..self.num_vars).map(|idx| {
                     let name = VarNames::get_name(
                         &ctxt.parser.strings,
                         self.vars.as_ref(),
@@ -692,24 +674,93 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
                         &ctxt.config,
                     );
                     let ty = VarNames::get_type(&ctxt.parser.strings, self.vars.as_ref(), idx);
-                    if idx != 0 {
-                        write!(f, ", ")?;
+                    (idx != 0, name, ty)
+                });
+                let (body, patterns) = data.children().split_last().unwrap();
+                if ctxt.config.replace_symbols.is_none() {
+                    write!(f, "(forall (")?;
+                    for (not_first, name, ty) in vars {
+                        if not_first {
+                            write!(f, " ")?;
+                        }
+                        write!(f, "({name} {})", ty.unwrap_or("?"))?;
                     }
-                    write!(f, "{name}{ty}")?;
-                }
-                let sep = if matches!(ctxt.config.replace_symbols, SymbolReplacement::Math) {
-                    "."
+                    write!(f, ") (!\n  ")?;
+                    display_child(f, *body, ctxt, data)?;
+                    for &pattern in patterns {
+                        write!(f, "\n  ")?;
+                        display_child(f, pattern, ctxt, data)?;
+                    }
+                    if let Some(name) = self.kind.user_name() {
+                        write!(f, "\n  :qid {}", &ctxt.parser[name])?;
+                    }
+                    write!(f, "\n))")?;
                 } else {
-                    " ::"
-                };
-                write!(f, "{sep}")?;
-                for child in data.children() {
-                    write!(f, " ")?;
+                    let (start, sep) = match ctxt.config.replace_symbols {
+                        SymbolReplacement::Math => ("∀", "."),
+                        SymbolReplacement::Code => ("FORALL", " ::"),
+                        SymbolReplacement::None => unreachable!(),
+                    };
+                    write!(f, "{} ", start)?;
+                    if ctxt.config.display_quantifier_name {
+                        write!(f, "\"{}\" ", self.kind.with(ctxt))?;
+                    }
+                    for (not_first, name, ty) in vars {
+                        if not_first {
+                            write!(f, ", ")?;
+                        }
+                        if let Some(ty) = ty {
+                            write!(f, "{name}: {ty}")?;
+                        } else {
+                            write!(f, "{name}")?;
+                        }
+                    }
+                    write!(f, "{sep} ")?;
+                    for &pattern in patterns {
+                        display_child(f, pattern, ctxt, data)?;
+                        write!(f, " ")?;
+                    }
                     // TODO: binding power!
-                    display_child(f, *child, ctxt, data)?;
+                    display_child(f, *body, ctxt, data)?;
                 }
                 Ok(())
             })
         })
+    }
+}
+
+impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, ()> for &'a Event {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'a>,
+        _data: &mut (),
+    ) -> fmt::Result {
+        match *self {
+            Event::NewConst(term_idx) => {
+                let term = &ctxt.parser[term_idx];
+                let name = &ctxt.parser[term.kind.app_name().unwrap()];
+                if term.child_ids.is_empty() {
+                    write!(f, "(declare-const {name} ?)")
+                } else {
+                    write!(f, "(declare-fun {name} (?")?;
+                    for _ in 0..term.child_ids.len() - 1 {
+                        write!(f, " ?")?;
+                    }
+                    write!(f, ") ?)")
+                }
+            }
+            Event::Assert(proof_idx) => {
+                let proof = &ctxt.parser[proof_idx];
+                let display = proof.result.with(ctxt);
+                write!(f, "(assert {display})")
+            }
+            Event::Push => write!(f, "(push)"),
+            Event::Pop(num) => match num {
+                Some(num) => write!(f, "(pop {})", num.get()),
+                None => write!(f, "(pop)"),
+            },
+            Event::BeginCheck => write!(f, "(check-sat)"),
+        }
     }
 }
