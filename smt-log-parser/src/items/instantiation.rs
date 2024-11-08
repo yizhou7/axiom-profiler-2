@@ -1,30 +1,11 @@
 #[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
 
-use crate::error::Either;
-use crate::{Error, Result};
+use crate::{error::Either, BoxSlice, Error, NonMaxU32, Result};
 use std::fmt;
 use std::ops::Index;
 
-use super::{ENodeIdx, EqTransIdx, MatchIdx, QuantIdx, TermId, TermIdx};
-
-/// A Z3 instantiation.
-#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone)]
-pub struct Instantiation {
-    pub match_: MatchIdx,
-    pub fingerprint: Fingerprint,
-    pub proof_id: Option<Either<TermIdx, TermId>>,
-    pub z3_generation: Option<u32>,
-    pub yields_terms: Box<[ENodeIdx]>,
-}
-
-impl Instantiation {
-    pub fn get_resulting_term(&self) -> Option<TermIdx> {
-        self.proof_id.as_ref()?.as_result().ok().copied()
-    }
-}
+use super::{ENodeIdx, EqTransIdx, MatchIdx, QuantIdx, StackIdx, TermId, TermIdx};
 
 #[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -62,22 +43,22 @@ impl Match {
 pub enum MatchKind {
     MBQI {
         quant: QuantIdx,
-        bound_terms: Box<[ENodeIdx]>,
+        bound_terms: BoxSlice<ENodeIdx>,
     },
     TheorySolving {
         axiom_id: TermId,
-        bound_terms: Box<[TermIdx]>,
+        bound_terms: BoxSlice<TermIdx>,
         rewrite_of: Option<TermIdx>,
     },
     Axiom {
         axiom: QuantIdx,
         pattern: TermIdx,
-        bound_terms: Box<[TermIdx]>,
+        bound_terms: BoxSlice<TermIdx>,
     },
     Quantifier {
         quant: QuantIdx,
         pattern: TermIdx,
-        bound_terms: Box<[ENodeIdx]>,
+        bound_terms: BoxSlice<ENodeIdx>,
     },
 }
 impl MatchKind {
@@ -200,5 +181,27 @@ impl std::ops::Deref for Fingerprint {
 impl fmt::Display for Fingerprint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:x}", self.0)
+    }
+}
+
+/// A Z3 instantiation.
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone)]
+pub struct Instantiation {
+    pub match_: MatchIdx,
+    pub fingerprint: Fingerprint,
+    pub proof_id: Option<Either<TermIdx, TermId>>,
+    pub z3_generation: Option<NonMaxU32>,
+    pub frame: Option<StackIdx>,
+    /// The enodes that were yielded by the instantiation along with the
+    /// generalised terms for them (`MaybeSynthIdx::Parsed` if the yielded term
+    /// doesn't contain any quantified variables)
+    pub yields_terms: BoxSlice<ENodeIdx>,
+}
+
+impl Instantiation {
+    pub fn get_resulting_term(&self) -> Option<TermIdx> {
+        self.proof_id.as_ref()?.as_result().ok().copied()
     }
 }
