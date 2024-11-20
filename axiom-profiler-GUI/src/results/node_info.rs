@@ -16,7 +16,10 @@ use yew::{
 
 use crate::{configuration::ConfigurationProvider, state::StateProvider};
 
-use super::svg_result::RenderedGraph;
+use super::{
+    graphviz::{DotEdgeProperties, DotNodeProperties},
+    svg_result::RenderedGraph,
+};
 
 #[derive(Properties, PartialEq)]
 pub struct InfoLineProps {
@@ -46,7 +49,7 @@ pub struct NodeInfo<'a, 'b> {
 
 impl<'a, 'b> NodeInfo<'a, 'b> {
     pub fn index(&self) -> String {
-        self.node.kind().to_string()
+        self.node.kind().label(())
     }
     pub fn kind(&self) -> &'static str {
         match *self.node.kind() {
@@ -64,42 +67,9 @@ impl<'a, 'b> NodeInfo<'a, 'b> {
         }
     }
     pub fn description(&self, char_limit: Option<NonMaxU32>) -> Html {
-        let description = self.tooltip(true, char_limit);
+        let description = self.node.kind().tooltip((*self.ctxt, true, char_limit));
         let description = format!("<code>{description}</code>");
         Html::from_html_unchecked(AttrValue::from(description))
-    }
-    // TODO: rename
-    pub fn tooltip(&self, html: bool, char_limit: Option<NonMaxU32>) -> String {
-        let mut ctxt = DisplayCtxt {
-            parser: self.ctxt.parser,
-            term_display: self.ctxt.term_display,
-            config: self.ctxt.config.clone(),
-        };
-        ctxt.config.html = html;
-        ctxt.config.enode_char_limit = char_limit;
-        match *self.node.kind() {
-            NodeKind::ENode(enode) => {
-                ctxt.config.enode_char_limit = ctxt
-                    .config
-                    .enode_char_limit
-                    .and_then(|limit| NonMaxU32::new(limit.get() * 2));
-                enode.with(&ctxt).to_string()
-            }
-            NodeKind::GivenEquality(eq, _) => eq.with(&ctxt).to_string(),
-            NodeKind::TransEquality(eq) => eq.with(&ctxt).to_string(),
-            NodeKind::Instantiation(inst) => match &ctxt.parser[ctxt.parser[inst].match_].kind {
-                MatchKind::MBQI { quant, .. } => ctxt.parser[*quant].kind.with(&ctxt).to_string(),
-                MatchKind::TheorySolving { axiom_id, .. } => {
-                    let namespace = &ctxt.parser[axiom_id.namespace];
-                    let id = axiom_id.id.map(|id| id.to_string()).unwrap_or_default();
-                    format!("{namespace}[{id}]")
-                }
-                MatchKind::Axiom { axiom, .. } => ctxt.parser[*axiom].kind.with(&ctxt).to_string(),
-                MatchKind::Quantifier { quant, .. } => {
-                    ctxt.parser[*quant].kind.with(&ctxt).to_string()
-                }
-            },
-        }
     }
 
     pub fn quantifier_body(&self) -> Option<String> {
@@ -156,7 +126,7 @@ impl<'a, 'b> NodeInfo<'a, 'b> {
                 .enumerate()
                 .map(|(idx, bound)| {
                     let name =
-                        VarNames::get_name(&self.ctxt.parser.strings, vars, idx, &self.ctxt.config);
+                        VarNames::get_name(&self.ctxt.parser.strings, vars, idx, self.ctxt.config);
                     format!("{name} ↦ {bound}")
                 })
                 .collect(),
@@ -166,10 +136,7 @@ impl<'a, 'b> NodeInfo<'a, 'b> {
         let NodeKind::Instantiation(inst) = *self.node.kind() else {
             return None;
         };
-        let resulting_term = self.ctxt.parser[inst].get_resulting_term()?;
-        // The resulting term is of the form `quant-inst(¬(quant) ∨ (inst))`.
-        let resulting_term_or = *self.ctxt.parser[resulting_term].child_ids.first()?;
-        let resulting_term = *self.ctxt.parser[resulting_term_or].child_ids.get(1)?;
+        let resulting_term = self.ctxt.parser.get_instantiation_body(inst)?;
         Some(resulting_term.with(self.ctxt).to_string())
     }
     pub fn yield_terms(&self) -> Option<Vec<String>> {
@@ -182,6 +149,22 @@ impl<'a, 'b> NodeInfo<'a, 'b> {
                 .map(|term| term.with(self.ctxt).to_string())
                 .collect(),
         )
+    }
+    pub fn extra_info(&self) -> Option<Vec<(&'static str, String)>> {
+        let mut extra_info = Vec::new();
+        if let Some(z3gen) = self
+            .node
+            .kind()
+            .inst()
+            .and_then(|i| self.ctxt.parser[i].z3_generation)
+        {
+            extra_info.push(("z3 gen", z3gen.to_string()));
+        }
+        if let Some(frame) = self.node.frame(self.ctxt.parser) {
+            let frame = &self.ctxt.parser[frame];
+            extra_info.push(("Frame", frame.active.to_string()));
+        }
+        (!extra_info.is_empty()).then_some(extra_info)
     }
 }
 
@@ -211,7 +194,7 @@ pub fn SelectedNodesInfo(
     let ctxt = &DisplayCtxt {
         parser: &parser.borrow(),
         term_display: &data.state.term_display,
-        config: cfg.config.display.clone(),
+        config: cfg.config.display,
     };
 
     let infos = selected_nodes
@@ -229,7 +212,6 @@ pub fn SelectedNodesInfo(
             let header_text = info.kind();
             let summary = format!("[{index}] {header_text}: ");
             let description = info.description((!open).then(|| NonMaxU32::new(10).unwrap()));
-            let z3_gen = info.node.kind().inst().and_then(|i| (& *parser.borrow())[i].z3_generation).map(|g| format!(" (z3 gen {g})"));
 
             let quantifier_body = info.quantifier_body().map(|body| html! {
                 <><InfoLine header="Body" text={body} code=true /><hr/></>
@@ -261,6 +243,12 @@ pub fn SelectedNodesInfo(
                 }).collect();
                 html! { <>{yields}<hr/></> }
             });
+            let extra_info = info.extra_info().map(|extra_info| {
+                let extra_info: Html = extra_info.into_iter().map(|(header, info)| html! {
+                    <InfoLine {header} text={info} code=true />
+                }).collect();
+                html! { <>{extra_info}<hr/></> }
+            });
             html! {
                 <details {open}>
                 <summary {onclick}>{summary}{description}</summary>
@@ -270,13 +258,14 @@ pub fn SelectedNodesInfo(
                     {bound_terms}
                     {resulting_term}
                     {yield_terms}
-                    <InfoLine header="Cost" text={format!("{:.1}{}", info.node.cost, z3_gen.unwrap_or_default())} code=false />
-                    <InfoLine header="To Root" text={format!("short {}, long {}", info.node.fwd_depth.min, info.node.fwd_depth.max)} code=false />
-                    <InfoLine header="To Leaf" text={format!("short {}, long {}", info.node.bwd_depth.min, info.node.bwd_depth.max)} code=false />
-                    <InfoLine header="Degree" text={
+                    {extra_info}
+                    <InfoLine header="Cost"     text={format!("{:.1}", info.node.cost)} code=false />
+                    <InfoLine header="To Root"  text={format!("short {}, long {}", info.node.fwd_depth.min, info.node.fwd_depth.max)} code=false />
+                    <InfoLine header="To Leaf"  text={format!("short {}, long {}", info.node.bwd_depth.min, info.node.bwd_depth.max)} code=false />
+                    <InfoLine header="Degree"   text={
                         format!("parents {}, children {}",
-                            graph.raw.neighbors_directed_count(node, petgraph::Direction::Incoming),
-                            graph.raw.neighbors_directed_count(node, petgraph::Direction::Outgoing),
+                            graph.raw.neighbors_directed(node, petgraph::Direction::Incoming).count(),
+                            graph.raw.neighbors_directed(node, petgraph::Direction::Outgoing).count(),
                         )
                     } code=false />
                 </ul>
@@ -304,20 +293,7 @@ pub struct EdgeInfo<'a, 'b> {
 
 impl<'a, 'b> EdgeInfo<'a, 'b> {
     pub fn index(&self) -> String {
-        let is_indirect = self.edge.is_indirect(self.graph);
-        let arrow = match is_indirect {
-            true => "↝",
-            false => "→",
-        };
-        let from = NodeInfo {
-            node: &self.graph.raw[self.from],
-            ctxt: self.ctxt,
-        };
-        let to = NodeInfo {
-            node: &self.graph.raw[self.to],
-            ctxt: self.ctxt,
-        };
-        format!("{} {arrow} {}", from.index(), to.index())
+        self.tooltip()
     }
     pub fn kind(&self) -> String {
         match self.kind {
@@ -364,7 +340,10 @@ impl<'a, 'b> EdgeInfo<'a, 'b> {
         }
     }
     pub fn tooltip(&self) -> String {
-        self.index()
+        let is_indirect = self.edge.is_indirect(self.graph);
+        let from = self.graph.raw[self.from].kind();
+        let to = self.graph.raw[self.to].kind();
+        self.edge.tooltip((is_indirect, *from, *to))
     }
 }
 
@@ -399,7 +378,7 @@ pub fn SelectedEdgesInfo(
     let ctxt = &DisplayCtxt {
         parser: &parser.borrow(),
         term_display: &data.state.term_display,
-        config: cfg.config.display.clone(),
+        config: cfg.config.display,
     };
 
     let infos = selected_edges.iter().map(|&(edge, open)| {
@@ -423,11 +402,7 @@ pub fn SelectedEdgesInfo(
         let summary = format!("[{}] {}", info.index(), info.kind());
         // Get info about blamed node
         let blame = graph.raw.index(info.kind.blame(&graph));
-        let blame = NodeInfo {
-            node: &graph.raw[blame],
-            ctxt,
-        };
-        let blame = blame.tooltip(true, None);
+        let blame = graph.raw[blame].kind().tooltip((*ctxt, true, None));
         html! {
             <details {open} {onclick}>
                 <summary>{summary}</summary>

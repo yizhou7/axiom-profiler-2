@@ -66,7 +66,7 @@ fn parse_all_logs() {
                 (parse_limit <= s.bytes_read as u64).then_some(())
             });
             let elapsed = now.elapsed();
-            let parser = parser.take_parser();
+            let mut parser = parser.take_parser();
 
             max_parse_ovhd = f64::max(
                 max_parse_ovhd,
@@ -101,12 +101,17 @@ fn parse_all_logs() {
             ALLOCATOR.set_limit(mem_limit as usize).unwrap();
 
             let now = Instant::now();
-            let inst_graph = InstGraph::new(&parser).unwrap();
-            let elapsed = now.elapsed();
+            let mut inst_graph = InstGraph::new(&parser).unwrap();
+            let elapsed_ig = now.elapsed();
             assert!(
-                elapsed < timeout,
+                elapsed_ig < timeout,
                 "Constructing inst graph took longer than timeout"
             );
+
+            let now = Instant::now();
+            inst_graph.search_matching_loops(&mut parser);
+            let elapsed_ml = now.elapsed();
+            let elapsed = elapsed_ig + elapsed_ml;
 
             max_analysis_ovhd = f64::max(
                 max_analysis_ovhd,
@@ -114,9 +119,10 @@ fn parse_all_logs() {
             );
             let mem_size = inst_graph.mem_size(SizeFlags::default());
             println!(
-                "Finished analysis in {elapsed:?} ({} kB/ms). {} nodes. Memory use {} MB / {} MB:",
+                "Finished analysis in {elapsed:?} ({} kB/ms). {} nodes, {} mls. Memory use {} MB / {} MB:",
                 (parse_bytes_kb as u128 * 1000) / elapsed.as_micros(),
                 inst_graph.raw.graph.node_count(),
+                inst_graph.found_matching_loops().unwrap(),
                 ALLOCATOR.allocated() / mb as usize,
                 ALLOCATOR.limit() / mb as usize,
             );
@@ -125,9 +131,10 @@ fn parse_all_logs() {
             println!("===");
 
             // TODO: decrease this
+            assert!(elapsed_ml < timeout, "ML search took longer than timeout");
             assert!(
-                mem_size as u64 <= parse_bytes * 5 / 2,
-                "Analysis takes up more memory than 5/2 * file size!"
+                mem_size as u64 <= parse_bytes * 3,
+                "Analysis takes up more memory than 3 * file size!"
             );
 
             drop(inst_graph);

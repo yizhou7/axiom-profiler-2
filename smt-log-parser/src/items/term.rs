@@ -10,7 +10,7 @@ use super::{ProofIdx, QuantIdx, TermIdx};
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Term {
-    pub id: Option<TermId>,
+    pub id: TermId,
     pub kind: TermKind,
     /// Takes up `2 * size_of::<usize>()` space and avoids heap allocation for
     /// lens <= 1.
@@ -18,6 +18,7 @@ pub struct Term {
 }
 
 #[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "mem_dbg", copy_type)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -25,7 +26,6 @@ pub enum TermKind {
     Var(u32),
     App(IString),
     Quant(QuantIdx),
-    Generalised,
 }
 
 impl TermKind {
@@ -47,24 +47,9 @@ impl TermKind {
             _ => None,
         }
     }
-}
-
-#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub struct Meaning {
-    /// The theory in which the value should be interpreted (e.g. `bv`)
-    pub theory: IString,
-    /// The value of the term (e.g. `#x0000000000000001` or `#b1`)
-    pub value: IString,
-}
-
-/// Returned when indexing with `TermIdx`
-#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub struct TermAndMeaning<'a> {
-    pub term: &'a Term,
-    pub meaning: Option<&'a Meaning>,
+    pub fn is_var(&self) -> bool {
+        matches!(self, Self::Var(_))
+    }
 }
 
 /// A Z3 quantifier and associated data.
@@ -151,6 +136,7 @@ impl VarNames {
 
 /// Represents an ID string of the form `name#id` or `name#`.
 #[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "mem_dbg", copy_type)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq)]
 pub struct TermId {

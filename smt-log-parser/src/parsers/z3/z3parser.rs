@@ -5,10 +5,18 @@ use typed_index_collections::TiSlice;
 use crate::{
     items::*,
     parsers::z3::{VersionInfo, Z3LogParser},
-    BoxSlice, Error, IString, NonMaxU32, Result, StringTable, TiVec,
+    BigRational, BoxSlice, Error, IString, NonMaxU32, Result, StringTable, TiVec,
 };
 
-use super::{egraph::EGraph, inst::Insts, stack::Stack, stm2::EventLog, terms::Terms};
+use super::{
+    egraph::EGraph,
+    inst::Insts,
+    inter_line::{InterLine, LineKind},
+    stack::Stack,
+    stm2::EventLog,
+    synthetic::{AnyTerm, SynthIdx, SynthTerms},
+    terms::Terms,
+};
 
 /// A parser for Z3 log files. Use one of the various `Z3Parser::from_*` methods
 /// to construct this parser.
@@ -17,6 +25,7 @@ use super::{egraph::EGraph, inst::Insts, stack::Stack, stm2::EventLog, terms::Te
 pub struct Z3Parser {
     pub(crate) version_info: VersionInfo,
     pub(crate) terms: Terms,
+    pub(crate) synth_terms: SynthTerms,
 
     pub(crate) quantifiers: TiVec<QuantIdx, Quantifier>,
 
@@ -28,6 +37,7 @@ pub struct Z3Parser {
 
     pub strings: StringTable,
     pub events: EventLog,
+    comm: InterLine,
 }
 
 impl Default for Z3Parser {
@@ -36,12 +46,14 @@ impl Default for Z3Parser {
         Self {
             version_info: VersionInfo::default(),
             terms: Terms::new(&mut strings),
+            synth_terms: Default::default(),
             quantifiers: Default::default(),
             insts: Default::default(),
             inst_stack: Default::default(),
             egraph: Default::default(),
             stack: Default::default(),
             events: EventLog::new(&mut strings),
+            comm: Default::default(),
             strings,
         }
     }
@@ -62,6 +74,7 @@ impl Z3Parser {
             // Very rarely in version 4.12.2, an `[attach-enode]` is not emitted. Create it here.
             // TODO: log somewhere when this happens.
             self.egraph.new_enode(None, idx, None, &self.stack)?;
+            self.events.new_enode();
             return self.egraph.get_enode(idx, &self.stack);
         }
         enode
@@ -268,7 +281,7 @@ impl Z3Parser {
     ) -> Result<()> {
         let qidx = self.quantifiers.next_key();
         let term = Term {
-            id: Some(full_id),
+            id: full_id,
             kind: TermKind::Quant(qidx),
             child_ids,
         };
@@ -284,9 +297,58 @@ impl Z3Parser {
         debug_assert_eq!(qidx, qidx2);
         Ok(())
     }
+
+    fn parse_arith(meaning: &str) -> Result<BigRational> {
+        let (rest, num) = Self::parse_arith_inner(meaning)?;
+        assert!(rest.is_empty());
+        Ok(num.into())
+    }
+    fn parse_arith_inner(meaning: &str) -> Result<(&str, num::BigRational)> {
+        let Some(meaning) = meaning.strip_prefix('(') else {
+            // Find position of not a digit
+            let end = meaning
+                .bytes()
+                .position(|b| !b.is_ascii_digit())
+                .unwrap_or(meaning.len());
+            assert_ne!(end, 0);
+            let value = meaning[..end]
+                .parse::<num::BigUint>()
+                .map_err(Error::ParseBigUintError)?;
+            let value = num::BigRational::from(num::BigInt::from(value));
+            return Ok((&meaning[end..], value));
+        };
+        let error = || Error::ParseError(meaning.to_owned());
+        let space = meaning.bytes().position(|b| b == b' ').ok_or_else(error)?;
+        let (op, mut rest) = (&meaning[..space], &meaning[space..]);
+        let mut arguments = Vec::new();
+        while let Some(r) = rest.strip_prefix(' ') {
+            let (r, num) = Self::parse_arith_inner(r)?;
+            arguments.push(num);
+            rest = r;
+        }
+        rest = rest.strip_prefix(')').ok_or_else(error)?;
+        match op {
+            "+" => Ok((rest, arguments.into_iter().sum())),
+            "-" if arguments.len() == 1 => Ok((rest, -arguments.into_iter().next().unwrap())),
+            "-" if arguments.len() == 2 => {
+                let mut args = arguments.into_iter();
+                Ok((rest, args.next().unwrap() - args.next().unwrap()))
+            }
+            "*" => Ok((rest, arguments.into_iter().product())),
+            "/" if arguments.len() == 2 => {
+                let mut args = arguments.into_iter();
+                Ok((rest, args.next().unwrap() / args.next().unwrap()))
+            }
+            _ => Err(error()),
+        }
+    }
 }
 
 impl Z3LogParser for Z3Parser {
+    fn newline(&mut self) {
+        self.comm.newline();
+    }
+
     fn version_info<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
         let solver = l.next().ok_or(Error::UnexpectedNewline)?.to_string();
         let version = l.next().ok_or(Error::UnexpectedNewline)?;
@@ -313,6 +375,16 @@ impl Z3LogParser for Z3Parser {
         let num_vars = num_vars.unwrap();
         let child_ids = self.gobble_term_children(l)?;
         assert!(!child_ids.is_empty());
+        let child_id_names = || {
+            child_ids[..child_ids.len() - 1]
+                .iter()
+                .map(|&id| self[id].kind.app_name().map(|name| &self[name]))
+        };
+        assert!(
+            child_id_names().all(|name| name.is_some_and(|name| name == "pattern")),
+            "Expected all but last child to be \"pattern\" but found {:?}",
+            child_id_names().collect::<Vec<_>>()
+        );
         self.quant_or_lamda(full_id, child_ids, num_vars, quant_name)
     }
 
@@ -336,7 +408,7 @@ impl Z3LogParser for Z3Parser {
         // Return if there is unexpectedly more data
         Self::expect_completed(l)?;
         let term = Term {
-            id: Some(full_id),
+            id: full_id,
             kind,
             child_ids: Default::default(),
         };
@@ -350,7 +422,7 @@ impl Z3LogParser for Z3Parser {
         let name = self.mk_string(name)?;
         let child_ids = self.gobble_term_children(l)?;
         let term = Term {
-            id: Some(full_id),
+            id: full_id,
             kind: TermKind::App(name),
             child_ids,
         };
@@ -406,14 +478,23 @@ impl Z3LogParser for Z3Parser {
     fn attach_meaning<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
         let id = l.next().ok_or(Error::UnexpectedNewline)?;
         let theory = l.next().ok_or(Error::UnexpectedNewline)?;
-        let theory = self.mk_string(theory)?;
-        let value = self.mk_string(&l.collect::<Vec<_>>().join(" "))?;
-        let meaning = Meaning { theory, value };
+        let value = l.collect::<Vec<_>>().join(" ");
+        let meaning = match theory {
+            "arith" => {
+                let num = Self::parse_arith(&value)?;
+                Meaning::Arith(Box::new(num))
+            }
+            theory => {
+                let theory = self.mk_string(theory)?;
+                let value = self.mk_string(&value)?;
+                Meaning::Unknown { theory, value }
+            }
+        };
         let idx = self
             .terms
             .app_terms
             .parse_existing_id(&mut self.strings, id)?;
-        self.terms.new_meaning(idx, meaning)?;
+        let meaning = self.terms.new_meaning(idx, meaning)?;
         self.events.new_meaning(idx, meaning, &self.strings)?;
         Ok(())
     }
@@ -455,6 +536,7 @@ impl Z3LogParser for Z3Parser {
         let enode = self
             .egraph
             .new_enode(iidx, idx, z3_generation, &self.stack)?;
+        self.events.new_enode();
         if let Some((_, yields_terms)) = created_by {
             // If `None` then this is a ground term not created by an instantiation.
             yields_terms.try_reserve(1)?;
@@ -681,9 +763,29 @@ impl Z3LogParser for Z3Parser {
         let fingerprint = Fingerprint::parse(fingerprint)?;
         let mut proof = Self::iter_until_eq(&mut l, ";");
         let proof_id = if let Some(proof) = proof.next() {
-            Some(self.terms.app_terms.parse_id(&mut self.strings, proof)?)
+            // It seems that for `0x0` fingerprints the proof term points to an
+            // app term (usually an equality), while for "real" fingerprints it
+            // points to a proof term.
+            if fingerprint.is_zero() {
+                let axiom_body = self
+                    .terms
+                    .app_terms
+                    .parse_existing_id(&mut self.strings, proof)?;
+                InstProofLink::IsAxiom(axiom_body)
+            } else {
+                let proof = self
+                    .terms
+                    .proof_terms
+                    .parse_existing_id(&mut self.strings, proof)?;
+                InstProofLink::HasProof(proof)
+            }
         } else {
-            None
+            assert!(
+                !fingerprint.is_zero(),
+                "Axiom instantiations should have an associated term"
+            );
+            let last_term = self.terms.last_term_from_instance(&self.strings);
+            InstProofLink::ProofsDisabled(last_term)
         };
         Self::expect_completed(proof)?;
         let z3_generation = Self::parse_z3_generation(&mut l)?;
@@ -706,6 +808,7 @@ impl Z3LogParser for Z3Parser {
         // in the future.
         let can_duplicate = self.version_info.is_version_minor(4, 12);
         let iidx = self.insts.new_inst(fingerprint, inst, can_duplicate)?;
+        self.events.new_inst();
         self.inst_stack.try_reserve(1)?;
         self.inst_stack.push((iidx, Vec::new()));
         Ok(())
@@ -718,8 +821,18 @@ impl Z3LogParser for Z3Parser {
     }
 
     fn eof(&mut self) {
-        self.terms.end_of_file();
+        self.synth_terms.eof(self.terms().next_key());
         self.events.new_eof();
+    }
+
+    fn decide_and_or<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Result<()> {
+        self.comm.curr().last_line_kind = LineKind::DecideAndOr;
+        Ok(())
+    }
+
+    fn conflict<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Result<()> {
+        self.comm.curr().last_line_kind = LineKind::Conflict;
+        Ok(())
     }
 
     fn push<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
@@ -727,7 +840,8 @@ impl Z3LogParser for Z3Parser {
         let scope = scope.parse::<usize>().map_err(Error::InvalidFrameInteger)?;
         // Return if there is unexpectedly more data
         Self::expect_completed(l)?;
-        self.stack.new_frame(scope)?;
+        let from_cdcl = matches!(self.comm.prev().last_line_kind, LineKind::DecideAndOr);
+        self.stack.new_frame(scope, from_cdcl)?;
         self.events.new_push()?;
         Ok(())
     }
@@ -741,15 +855,16 @@ impl Z3LogParser for Z3Parser {
         let scope = scope.parse::<usize>().map_err(Error::InvalidFrameInteger)?;
         // Return if there is unexpectedly more data
         Self::expect_completed(l)?;
-        self.stack.pop_frames(num, scope)?;
-        self.events.new_pop(num)?;
+        let from_cdcl = matches!(self.comm.prev().last_line_kind, LineKind::Conflict);
+        let from_cdcl = self.stack.pop_frames(num, scope, from_cdcl)?;
+        self.events.new_pop(num, from_cdcl)?;
         Ok(())
     }
 
     fn begin_check<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
         let scope = l.next().ok_or(Error::UnexpectedNewline)?;
         let scope = scope.parse::<usize>().map_err(Error::InvalidFrameInteger)?;
-        self.stack.ensure_height(scope)?;
+        self.stack.ensure_height(scope, false)?;
         self.events.new_begin_check()?;
         Ok(())
     }
@@ -776,12 +891,64 @@ impl Z3Parser {
     pub fn proofs(&self) -> &TiSlice<ProofIdx, ProofStep> {
         self.terms.proof_terms.terms()
     }
+
+    pub fn patterns(&self, q: QuantIdx) -> &[TermIdx] {
+        let child_ids = &self[self[q].term].child_ids;
+        &child_ids[..child_ids.len() - 1]
+    }
+
+    pub fn get_instantiation_body(&self, inst: InstIdx) -> Option<TermIdx> {
+        self.terms.get_instantiation_body(&self[inst])
+    }
+
+    pub fn as_tidx(&self, sidx: SynthIdx) -> Option<TermIdx> {
+        self.synth_terms.as_tidx(sidx)
+    }
+
+    /// Returns the size in AST nodes of the term `tidx`. Note that z3 eagerly
+    /// reduces terms such as `1 + 1` to `2` meaning that a matching loop can be
+    /// constant in this size metric!
+    pub fn ast_size(&self, tidx: TermIdx) -> Option<u32> {
+        let mut size = 0;
+        let mut todo = vec![tidx];
+        while let Some(next) = todo.pop() {
+            size += 1;
+            let term = &self[next];
+            match term.kind {
+                TermKind::Var(_) => return None,
+                TermKind::App(_) => {
+                    todo.extend_from_slice(&term.child_ids);
+                }
+                // TODO: decide if we want to return a size for quantifiers
+                TermKind::Quant(_) => {
+                    todo.push(*term.child_ids.last().unwrap());
+                }
+            }
+        }
+        Some(size)
+    }
+
+    pub fn inst_ast_size(&self, iidx: InstIdx) -> u32 {
+        let bound_terms = self[self[iidx].match_]
+            .kind
+            .bound_terms(|e| self[e].owner, |t| t);
+        bound_terms
+            .iter()
+            .map(|&tidx| self.ast_size(tidx).unwrap())
+            .sum()
+    }
 }
 
 impl std::ops::Index<TermIdx> for Z3Parser {
     type Output = Term;
     fn index(&self, idx: TermIdx) -> &Self::Output {
         &self.terms[idx]
+    }
+}
+impl std::ops::Index<SynthIdx> for Z3Parser {
+    type Output = AnyTerm;
+    fn index(&self, idx: SynthIdx) -> &Self::Output {
+        self.synth_terms.index(&self.terms, idx)
     }
 }
 impl std::ops::Index<ProofIdx> for Z3Parser {
@@ -824,6 +991,12 @@ impl std::ops::Index<EqTransIdx> for Z3Parser {
     type Output = TransitiveExpl;
     fn index(&self, idx: EqTransIdx) -> &Self::Output {
         &self.egraph.equalities.transitive[idx]
+    }
+}
+impl std::ops::Index<StackIdx> for Z3Parser {
+    type Output = StackFrame;
+    fn index(&self, idx: StackIdx) -> &Self::Output {
+        &self.stack.stack_frames[idx]
     }
 }
 impl std::ops::Index<IString> for Z3Parser {

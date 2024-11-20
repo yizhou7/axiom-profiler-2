@@ -2,17 +2,19 @@ pub mod cost;
 pub mod depth;
 pub mod matching_loop;
 pub mod next_insts;
+pub mod reconnect;
+
+use std::mem::MaybeUninit;
 
 #[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
+
+use matching_loop::MlData;
 use petgraph::Direction;
 
-use crate::{Graph, Result, Z3Parser};
+use crate::{Result, TiVec, Z3Parser};
 
-use self::{
-    cost::DefaultCost, depth::DefaultDepth, matching_loop::MLGraphNode,
-    next_insts::DefaultNextInsts,
-};
+use self::{cost::DefaultCost, depth::DefaultDepth, next_insts::DefaultNextInsts};
 
 use super::{raw::Node, InstGraph, RawNodeIndex};
 
@@ -27,35 +29,113 @@ pub struct Analysis {
     pub fwd_depth_min: Vec<RawNodeIndex>,
     // // Most to least
     // pub(super) max_depth: Vec<RawNodeIndex>,
-    pub matching_loop_end_nodes: Option<Vec<RawNodeIndex>>,
-    pub matching_loop_graphs: Vec<Graph<MLGraphNode, ()>>,
+    pub ml_data: Option<MlData>,
 }
 
 impl Analysis {
-    pub fn new(nodes: impl ExactSizeIterator<Item = RawNodeIndex> + Clone) -> Result<Self> {
+    pub fn new(nodes: impl Iterator<Item = RawNodeIndex>) -> Result<Self> {
         // Alloc `children` vector
         let mut cost = Vec::new();
-        cost.try_reserve_exact(nodes.len())?;
-        cost.extend(nodes.clone());
+        for node in nodes {
+            cost.try_reserve(1)?;
+            cost.push(node);
+        }
         // Alloc `children` vector
         let mut children = Vec::new();
-        children.try_reserve_exact(nodes.len())?;
-        children.extend(nodes.clone());
+        children.try_reserve_exact(cost.len())?;
+        children.extend(cost.iter().copied());
         // Alloc `fwd_depth_min` vector
         let mut fwd_depth_min = Vec::new();
-        fwd_depth_min.try_reserve_exact(nodes.len())?;
-        fwd_depth_min.extend(nodes.clone());
+        fwd_depth_min.try_reserve_exact(cost.len())?;
+        fwd_depth_min.extend(cost.iter().copied());
         Ok(Self {
             cost,
             children,
             fwd_depth_min,
-            matching_loop_end_nodes: None,
-            matching_loop_graphs: vec![],
+            ml_data: None,
         })
     }
 }
 
 impl InstGraph {
+    pub fn topo_analysis<
+        I: TopoAnalysis<FORWARD, SKIP_DISABLED>,
+        const FORWARD: bool,
+        const SKIP_DISABLED: bool,
+    >(
+        &self,
+        analysis: &mut I,
+    ) -> TiVec<RawNodeIndex, I::Value> {
+        let mut data =
+            typed_index_collections::TiVec::<RawNodeIndex, MaybeUninit<I::Value>>::with_capacity(
+                self.raw.graph.node_count(),
+            );
+        // Safety: The vector has the required capacity and the values are
+        // `MaybeUninit` so it's fine that they are not initialised.
+        unsafe {
+            data.set_len(self.raw.graph.node_count());
+        }
+        let mut data = TiVec::from(data);
+
+        for subgraph in self.subgraphs.iter() {
+            analysis.reset();
+
+            let dir = if FORWARD {
+                Direction::Incoming
+            } else {
+                Direction::Outgoing
+            };
+            let for_each = |curr: RawNodeIndex| {
+                let node = &self.raw[curr];
+                let value = if node.disabled() && SKIP_DISABLED {
+                    analysis.collect(self, curr, node, core::iter::empty)
+                } else {
+                    let from_all = || {
+                        let ix_map = |i: RawNodeIndex| {
+                            let data = &data[i];
+                            // Safety: The data is initialised as the graph is a DAG
+                            // and we are traversing in a topological order.
+                            let data = unsafe { data.assume_init_ref() };
+                            (i, data)
+                        };
+                        let iter = if SKIP_DISABLED {
+                            either::Either::Left(self.raw.neighbors_directed(curr, dir))
+                        } else {
+                            either::Either::Right(
+                                self.raw
+                                    .graph
+                                    .neighbors_directed(curr.0, dir)
+                                    .map(RawNodeIndex),
+                            )
+                        };
+                        iter.map(ix_map)
+                    };
+                    analysis.collect(self, curr, node, from_all)
+                };
+                data[curr] = MaybeUninit::new(value);
+            };
+            let iter = subgraph.nodes.iter().copied();
+            if FORWARD {
+                iter.for_each(for_each);
+            } else {
+                iter.rev().for_each(for_each);
+            }
+        }
+
+        for &singleton in &self.subgraphs.singletons {
+            let node = &self.raw[singleton];
+            let value = analysis.collect(self, singleton, node, core::iter::empty);
+            data[singleton] = MaybeUninit::new(value);
+        }
+
+        unsafe {
+            core::mem::transmute::<
+                TiVec<RawNodeIndex, MaybeUninit<I::Value>>,
+                TiVec<RawNodeIndex, I::Value>,
+            >(data)
+        }
+    }
+
     pub fn initialise_collect<
         I: CollectInitialiser<FORWARD, ID>,
         const FORWARD: bool,
@@ -76,9 +156,8 @@ impl InstGraph {
             let for_each = |idx: RawNodeIndex| {
                 let from_all = || {
                     self.raw
-                        .graph
-                        .neighbors_directed(idx.0, I::direction())
-                        .map(|i| &self.raw.graph[i])
+                        .neighbors_directed(idx, I::direction())
+                        .map(|i| &self.raw[i])
                 };
                 let value = initialiser.collect(&self.raw.graph[idx.0], from_all);
                 initialiser.assign(&mut self.raw.graph[idx.0], value);
@@ -111,24 +190,14 @@ impl InstGraph {
             let for_each = |idx: RawNodeIndex| {
                 let incoming: Vec<_> = self
                     .raw
-                    .graph
-                    .neighbors_directed(idx.0, I::direction())
-                    .map(|i| initialiser.observe(&self.raw.graph[i], parser))
+                    .neighbors_directed(idx, I::direction())
+                    .map(|i| initialiser.observe(&self.raw[i], parser))
                     .collect();
-                let mut neighbors = self
-                    .raw
-                    .graph
-                    .neighbors_directed(idx.0, I::direction())
-                    .detach();
                 let mut i = 0;
-                while let Some((_, neighbor)) = neighbors.next(&self.raw.graph) {
-                    let transfer = initialiser.transfer(
-                        &self.raw.graph[idx.0],
-                        RawNodeIndex(idx.0),
-                        i,
-                        &incoming,
-                    );
-                    initialiser.add(&mut self.raw.graph[neighbor], transfer);
+                let mut neighbors = self.raw.neighbors_directed(idx, I::direction()).detach();
+                while let Some(neighbor) = neighbors.next(&self.raw) {
+                    let transfer = initialiser.transfer(&self.raw.graph[idx.0], idx, i, &incoming);
+                    initialiser.add(&mut self.raw[neighbor], transfer);
                     i += 1;
                 }
             };
@@ -160,7 +229,7 @@ impl InstGraph {
                 .then_with(|| a.cmp(&b))
         });
         self.analysis.children.sort_by_cached_key(|&a| {
-            let ac = self.raw.neighbors_directed_count(a, Direction::Outgoing);
+            let ac = self.raw.neighbors(a).count();
             (usize::MAX - ac, a)
         });
         self.analysis.fwd_depth_min.sort_by(|&a, &b| {
@@ -212,4 +281,25 @@ pub trait CollectInitialiser<const FORWARD: bool, const ID: u8>: Initialiser<FOR
         _node: &Node,
         from_all: impl Fn() -> T,
     ) -> Self::Value;
+}
+
+/// FORWARD: Do a forward or reverse topological walk? If `true` then we will be
+/// collecting from parents, otherwise from children.
+pub trait TopoAnalysis<const FORWARD: bool, const SKIP_DISABLED: bool> {
+    /// The resulting analysis per node.
+    type Value: std::fmt::Debug;
+
+    /// The starting value for a node.
+    fn collect<'a, 'n, T: Iterator<Item = (RawNodeIndex, &'n Self::Value)>>(
+        &mut self,
+        graph: &'a InstGraph,
+        idx: RawNodeIndex,
+        node: &'a Node,
+        from_all: impl Fn() -> T,
+    ) -> Self::Value
+    where
+        Self::Value: 'n;
+
+    /// Called between initialisations of different subgraphs.
+    fn reset(&mut self) {}
 }

@@ -4,7 +4,7 @@ use crate::{
     results::{
         filters::FilterOutput,
         graph_info::{GraphInfo, Msg as GraphInfoMsg},
-        node_info::{EdgeInfo, NodeInfo},
+        graphviz::{DotEdgeProperties, DotNodeProperties},
     },
     state::StateContext,
     OpenedFileInfo,
@@ -20,14 +20,13 @@ use palette::{encoding::Srgb, white_point::D65, FromColor, Hsluv, Hsv, LuvHue};
 use petgraph::{
     dot::{Config, Dot},
     visit::EdgeRef,
-    Graph,
 };
 use smt_log_parser::{
     analysis::{
-        analysis::matching_loop::MLGraphNode, raw::NodeKind, visible::VisibleInstGraph, InstGraph,
-        RawNodeIndex, VisibleEdgeIndex,
+        analysis::matching_loop::MatchingLoop, visible::VisibleInstGraph, InstGraph, RawNodeIndex,
+        VisibleEdgeIndex,
     },
-    display_with::{DisplayCtxt, DisplayWithCtxt},
+    display_with::DisplayCtxt,
     items::QuantIdx,
     NonMaxU32,
 };
@@ -39,8 +38,6 @@ use yew::prelude::*;
 pub const EDGE_LIMIT: usize = 2000;
 pub const NODE_LIMIT: usize = 4000;
 pub const DEFAULT_NODE_COUNT: usize = 300;
-pub const NODE_COLOUR_SATURATION: f64 = 0.4;
-pub const NODE_COLOUR_VALUE: f64 = 0.95;
 pub const AST_DEPTH_LIMIT: NonMaxU32 = unsafe { NonMaxU32::new_unchecked(5) };
 
 #[derive(Clone)]
@@ -62,16 +59,12 @@ pub enum Msg {
     UpdateSvgText(AttrValue, VisibleInstGraph),
     SetPermission(GraphDimensions),
     SetDisabled(Vec<Disabler>),
-    RenderGraph,
+    RenderGraph(bool),
     ApplyFilter(Filter),
     ResetGraph,
     UserPermission(WarningChoice),
     WorkerOutput(super::worker::WorkerOutput),
-    RenderMLGraph(Graph<MLGraphNode, ()>),
-    // UpdateSelectedNodes(Vec<RawNodeIndex>),
-    // SearchMatchingLoops,
-    // SelectNthMatchingLoop(usize),
-    // ShowMatchingLoopSubgraph,
+    RenderMLGraph(usize, MatchingLoop),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -221,7 +214,7 @@ impl Component for SVGResult {
                     DisplayCtxt {
                         parser,
                         term_display: &data.state.term_display,
-                        config: cfg.config.display.clone(),
+                        config: cfg.config.display,
                     }
                 };
                 match filter.apply(inst_graph, &parser.borrow(), config) {
@@ -243,34 +236,13 @@ impl Component for SVGResult {
                             .send_message(GraphInfoMsg::ShowGeneralizedTerms(gen_terms));
                         false
                     }
-                    FilterOutput::MatchingLoopGraph(graph) => {
-                        ctx.link().send_message(Msg::RenderMLGraph(graph));
+                    FilterOutput::MatchingLoopGraph(ml_idx, graph) => {
+                        ctx.link().send_message(Msg::RenderMLGraph(ml_idx, graph));
                         false
                     }
                     FilterOutput::None => false,
                 }
             }
-            // Msg::SearchMatchingLoops => {
-            //     inst_graph.search_matching_loops();
-            //     ctx.link().send_message(Msg::SelectNthMatchingLoop(0));
-            //     true
-            // }
-            // Msg::SelectNthMatchingLoop(n) => {
-            //     self.filter_chain_link
-            //         .borrow()
-            //         .clone()
-            //         .unwrap()
-            //         .send_message(FilterChainMsg::AddFilters(vec![Filter::SelectNthMatchingLoop(n)]));
-            //     false
-            // }
-            // Msg::ShowMatchingLoopSubgraph => {
-            //     self.filter_chain_link
-            //         .borrow()
-            //         .clone()
-            //         .unwrap()
-            //         .send_message(FilterChainMsg::AddFilters(vec![Filter::ShowMatchingLoopSubgraph]));
-            //     false
-            // }
             Msg::ResetGraph => {
                 inst_graph.raw.reset_visibility_to(false);
                 false
@@ -283,7 +255,7 @@ impl Component for SVGResult {
                 Disabler::apply(disablers.iter().copied(), inst_graph, &parser.borrow());
                 false
             }
-            Msg::RenderGraph => {
+            Msg::RenderGraph(first) => {
                 if self
                     .rendered
                     .as_ref()
@@ -317,10 +289,10 @@ impl Component for SVGResult {
                         .emit(GraphState::Rendering(RenderingState::GraphToDot));
                     let filtered_graph = &calculated.graph;
                     let cfg = ctx.link().get_configuration().unwrap();
-                    let ctxt = &DisplayCtxt {
+                    let ctxt = DisplayCtxt {
                         parser: &parser.borrow(),
                         term_display: &data.state.term_display,
-                        config: cfg.config.display.clone(),
+                        config: cfg.config.display,
                     };
 
                     // Performance observations (default value is in [])
@@ -341,8 +313,8 @@ impl Component for SVGResult {
                         // "packMode=\"graph\";",
                     ];
                     let dot_output = format!(
-                        "digraph {{\n{}\n{:?}\n}}",
-                        settings.join("\n"),
+                        "digraph {{\n    {}\n{:?}}}",
+                        settings.join("\n    "),
                         Dot::with_attr_getters(
                             filtered_graph,
                             &[
@@ -354,87 +326,35 @@ impl Component for SVGResult {
                                 let (from, to) =
                                     (fg[edge_data.source()].idx, fg[edge_data.target()].idx);
                                 let edge = edge_data.weight();
-                                let kind = &edge.kind(inst_graph);
-                                let info = EdgeInfo {
-                                    edge,
-                                    kind,
-                                    from,
-                                    to,
-                                    graph: &*inst_graph,
-                                    ctxt,
-                                };
-                                let tooltip = info.tooltip();
-                                let is_indirect = edge_data.weight().is_indirect(inst_graph);
-                                let style = match is_indirect {
-                                    true => "dashed",
-                                    false => "solid",
-                                };
-                                let class = match is_indirect {
-                                    true => "indirect",
-                                    false => "direct",
-                                };
-                                let arrowhead = match kind.blame(inst_graph) {
-                                    NodeKind::GivenEquality(..) | NodeKind::TransEquality(_) => {
-                                        "empty"
-                                    }
-                                    _ => "normal",
-                                };
-                                format!(
-                                    "id=edge_{} tooltip=\"{tooltip}\" style={style} class={class} arrowhead={arrowhead}",
-                                    // For edges the `id` is the `VisibleEdgeIndex` from the VisibleGraph!
-                                    edge_data.id().index(),
-                                )
+                                let is_indirect = edge.is_indirect(inst_graph);
+                                let blame = edge.kind(inst_graph).blame(inst_graph);
+                                let (from, to) =
+                                    (inst_graph.raw[from].kind(), inst_graph.raw[to].kind());
+                                let all = edge.all(
+                                    (),
+                                    (is_indirect, *from, *to),
+                                    is_indirect,
+                                    is_indirect,
+                                    blame,
+                                    (),
+                                );
+                                // For edges the `id` is the `VisibleEdgeIndex` from the VisibleGraph!
+                                format!("id=edge_{} {all}", edge_data.id().index())
                             },
                             &|_, (_, data)| {
-                                let node_data = &inst_graph.raw[data.idx];
-                                let info = NodeInfo {
-                                    node: node_data,
-                                    ctxt,
-                                };
-                                let tooltip = info.tooltip(false, None);
-                                let mut style = Some("filled");
-                                let mut shape = None;
-                                let mut fillcolor = Some("white".to_string());
-                                let label = node_data.kind().to_string();
-                                match node_data.kind() {
-                                    NodeKind::Instantiation(inst) => {
-                                        let mkind = &(&*parser.borrow())
-                                            [(&*parser.borrow())[*inst].match_]
-                                            .kind;
-                                        style = Some(if mkind.is_mbqi() {
-                                            "filled,dashed"
-                                        } else {
-                                            "filled"
-                                        });
-                                        let s = match (data.hidden_children, data.hidden_parents) {
-                                            (0, 0) => "box",
-                                            (0, _) => "house",
-                                            (_, 0) => "invhouse",
-                                            (_, _) => "diamond",
-                                        };
-                                        shape = Some(s);
-                                        let hue =
-                                            rc_parser.colour_map.get_rbg_hue(mkind.quant_idx())
-                                                / 360.0;
-                                        fillcolor = Some(format!(
-                                            "{hue} {NODE_COLOUR_SATURATION} {NODE_COLOUR_VALUE}"
-                                        ));
-                                    }
-                                    NodeKind::ENode(..) => {
-                                        fillcolor = Some("lightgrey".to_string());
-                                    }
-                                    _ => (),
-                                };
                                 let idx = data.idx.0.index();
-                                let style =
-                                    style.map(|s| format!(" style=\"{s}\"")).unwrap_or_default();
-                                let shape =
-                                    shape.map(|s| format!(" shape={s}")).unwrap_or_default();
-                                let fillcolor = fillcolor
-                                    .map(|s| format!(" fillcolor=\"{s}\""))
-                                    .unwrap_or_default();
+                                let node_data = &inst_graph.raw[data.idx];
+                                let all = node_data.kind().all(
+                                    (),
+                                    (ctxt, false, None),
+                                    ctxt.parser,
+                                    (data.hidden_parents, data.hidden_children),
+                                    (ctxt.parser, rc_parser.colour_map),
+                                    (),
+                                    (),
+                                );
                                 // For nodes the `id` is the `RawNodeIndex` from the original graph!
-                                format!("id=node_{idx} tooltip=\"{tooltip}\" label=\"{label}\"{style}{shape}{fillcolor}")
+                                format!("id=node_{idx} {all}")
                             },
                         )
                     );
@@ -471,7 +391,16 @@ impl Component for SVGResult {
                     false
                 } else {
                     self.calculated = Some(calculated);
-                    self.graph_warning.show();
+                    if first {
+                        // We can run into an issue where `graph_warning` hasn't
+                        // been initialised if this case is triggered during the
+                        // first render. In this case we delay the warning.
+                        // TODO: improve this asap
+                        let warning = self.graph_warning.clone();
+                        gloo_timers::callback::Timeout::new(1, move || warning.show()).forget();
+                    } else {
+                        self.graph_warning.show();
+                    }
                     true
                 }
             }
@@ -492,7 +421,7 @@ impl Component for SVGResult {
                 }
                 WarningChoice::Render => {
                     ctx.link().send_message(Msg::SetPermission(self.graph_dim));
-                    ctx.link().send_message(Msg::RenderGraph);
+                    ctx.link().send_message(Msg::RenderGraph(false));
                     false
                 }
             },
@@ -505,70 +434,74 @@ impl Component for SVGResult {
                 ctx.props().progress.emit(GraphState::Constructed(rendered));
                 true
             }
-            Msg::RenderMLGraph(graph) => {
-                let _filtered_graph = &graph;
+            Msg::RenderMLGraph(ml_idx, graph) => {
+                let Some((_, Some(graph))) = graph.graph else {
+                    let link = ctx.props().insts_info_link.borrow();
+                    link.as_ref()
+                        .unwrap()
+                        .send_message(GraphInfoMsg::ShowMatchingLoopGraph(None));
+                    return false;
+                };
                 let cfg = ctx.link().get_configuration().unwrap();
-                let ctxt = &DisplayCtxt {
+                let mut ctxt = DisplayCtxt {
                     parser: &parser.borrow(),
                     term_display: &data.state.term_display,
-                    config: cfg.config.display.clone(),
+                    config: cfg.config.display,
                 };
+                ctxt.config.font_tag = true;
 
-                // Performance observations (default value is in [])
-                //  - splines=false -> 38s | [splines=true] -> ??
-                //  - nslimit=2 -> 7s | nslimit=4 -> 9s | nslimit=7 -> 11.5s | nslimit=10 -> 14s | [nslimit=INT_MAX] -> 38s
-                //  - [mclimit=1] -> 7s | mclimit=0.5 -> 4s (with nslimit=2)
-                // `ranksep` dictates the distance between ranks (rows) in the graph,
-                // it should be set dynamically based on the average number of children
-                // per node out of all nodes with at least one child.
-                let settings = [
-                    "ranksep=1.0;",
-                    "splines=false;",
-                    "nslimit=6;",
-                    "mclimit=0.6;",
-                ];
-                let dot_output = format!(
-                    "digraph {{\n{}\n{:?}\n}}",
-                    settings.join("\n"),
+                let settings = ["ranksep=0.5;", "splines=true;"];
+                let dot = format!(
+                    "{:?}",
                     Dot::with_attr_getters(
-                        &graph,
+                        &*graph,
                         &[
                             Config::EdgeNoLabel,
                             Config::NodeNoLabel,
                             Config::GraphContentOnly
                         ],
-                        &|_, _| "".to_string(),
+                        &|_, edge| edge.weight().all(ctxt.config.debug, (), (), (), (), ()),
                         &|_, (_, node_data)| {
-                            format!(
-                                "label=\"{}\" shape=\"{}\" style=filled fillcolor=\"{}\"",
-                                match &node_data {
-                                    MLGraphNode::QI(quant, pattern) => format!(
-                                        "{}: {}",
-                                        rc_parser.parser.borrow()[*quant].kind.with(ctxt),
-                                        pattern.with(ctxt)
-                                    ),
-                                    MLGraphNode::ENode(matched_term) =>
-                                        format!("{}", matched_term.with(ctxt)),
-                                    MLGraphNode::Equality(from, to) =>
-                                        format!("{} = {}", from.with(ctxt), to.with(ctxt)),
-                                },
-                                "box",
-                                match &node_data {
-                                    MLGraphNode::QI(quant, _) => {
-                                        let hue = rc_parser
-                                            .colour_map
-                                            .get_graphviz_hue_for_quant_idx(quant);
-                                        format!(
-                                            "{hue} {NODE_COLOUR_SATURATION} {NODE_COLOUR_VALUE}"
-                                        )
-                                    }
-                                    MLGraphNode::ENode(_) => "lightgrey".to_string(),
-                                    MLGraphNode::Equality(_, _) => "white".to_string(),
-                                }
-                            )
+                            node_data.all(ctxt, ctxt, (), (), rc_parser.colour_map, (), ())
                         },
                     )
                 );
+                let mut inputs = Vec::new();
+                let mut fixeds = Vec::new();
+                let mut outputs = Vec::new();
+                let mut outside = Vec::new();
+                for line in dot.lines() {
+                    let idx = line.find("class=\"");
+                    let class = idx.and_then(|idx| line[idx + 7..].split('"').next());
+                    match class {
+                        Some("input") => inputs.push(line),
+                        Some("fixed") => fixeds.push(line),
+                        Some("output") => outputs.push(line),
+                        _ => outside.push(line),
+                    }
+                }
+                let join = "\n    ";
+                let sub_pre1 = "\n       style=filled\n       color=gray96\n    ";
+                let sub_pre2 = "\n       style=filled\n       color=aliceblue\n    ";
+
+                let cluster_in = format!(
+                    "subgraph cluster_in {{{sub_pre2}{}{join}}}",
+                    inputs.join(join)
+                );
+                let cluster_fixed = format!(
+                    "subgraph cluster_fixed {{{sub_pre1}{}{join}}}",
+                    fixeds.join(join)
+                );
+                let cluster_out = format!(
+                    "subgraph cluster_out {{{sub_pre2}{}{join}}}",
+                    outputs.join(join)
+                );
+                let dot_output = format!(
+                    "digraph {{{join}{}{join}{cluster_in}{join}{cluster_fixed}{join}{cluster_out}{}\n}}",
+                    settings.join(join),
+                    outside.join("\n"),
+                );
+                log::info!("GRAPH SVG:\n{}", dot_output);
                 ctx.props()
                     .progress
                     .emit(GraphState::Rendering(RenderingState::RenderingGraph));
@@ -594,9 +527,10 @@ impl Component for SVGResult {
                     );
                     let svg_text = svg.outer_html();
                     link.unwrap()
-                        .send_message(GraphInfoMsg::ShowMatchingLoopGraph(AttrValue::from(
-                            svg_text,
-                        )));
+                        .send_message(GraphInfoMsg::ShowMatchingLoopGraph(Some((
+                            ml_idx,
+                            AttrValue::from(svg_text),
+                        ))));
                 });
                 // only need to re-render once the new SVG has been set
                 true
@@ -685,23 +619,23 @@ impl QuantIdxToColourMap {
         let colour = Hsv::<Srgb, f64>::from_color(colour);
         colour.hue.into_positive_degrees()
     }
-    pub fn get_for_quant_idx(&self, mkind: QuantIdx) -> LuvHue<f64> {
-        let qidx = Some(mkind);
-        debug_assert!(self.non_quant_insts || qidx.is_some());
-        let idx = qidx
-            .map(usize::from)
-            .map(|q| q + self.non_quant_insts as usize)
-            .unwrap_or_default();
-        // debug_assert!(idx < idx);
-        let idx_perm = (idx * self.coprime.get() + self.shift) % self.total_count;
-        LuvHue::new(360. * idx_perm as f64 / self.total_count as f64)
-    }
-    pub fn get_graphviz_hue_for_quant_idx(&self, mkind: &QuantIdx) -> f64 {
-        let hue = self.get_for_quant_idx(*mkind);
-        let colour = Hsluv::<D65, f64>::new(hue, 100.0, 50.0);
-        let colour = Hsv::<Srgb, f64>::from_color(colour);
-        colour.hue.into_positive_degrees() / 360.0
-    }
+    // pub fn get_for_quant_idx(&self, mkind: QuantIdx) -> LuvHue<f64> {
+    //     let qidx = Some(mkind);
+    //     debug_assert!(self.non_quant_insts || qidx.is_some());
+    //     let idx = qidx
+    //         .map(usize::from)
+    //         .map(|q| q + self.non_quant_insts as usize)
+    //         .unwrap_or_default();
+    //     // debug_assert!(idx < idx);
+    //     let idx_perm = (idx * self.coprime.get() + self.shift) % self.total_count;
+    //     LuvHue::new(360. * idx_perm as f64 / self.total_count as f64)
+    // }
+    // pub fn get_graphviz_hue_for_quant_idx(&self, mkind: QuantIdx) -> f64 {
+    //     let hue = self.get_for_quant_idx(mkind);
+    //     let colour = Hsluv::<D65, f64>::new(hue, 100.0, 50.0);
+    //     let colour = Hsv::<Srgb, f64>::from_color(colour);
+    //     colour.hue.into_positive_degrees() / 360.0
+    // }
 
     #[allow(clippy::out_of_bounds_indexing)]
     fn find_coprime(n: usize) -> NonZeroUsize {

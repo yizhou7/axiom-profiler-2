@@ -1,4 +1,3 @@
-use core::fmt;
 #[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
 
@@ -6,6 +5,7 @@ use mem_dbg::{MemDbg, MemSize};
 macro_rules! idx {
     ($struct:ident, $prefix:tt) => {
         #[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+        #[cfg_attr(feature = "mem_dbg", copy_type)]
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
         // Note: we use `u32` since this the file would need to be > ~100GB to
@@ -22,13 +22,13 @@ macro_rules! idx {
                 value.0.get() as usize
             }
         }
-        impl fmt::Debug for $struct {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        impl core::fmt::Debug for $struct {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 write!(f, $prefix, self.0)
             }
         }
-        impl fmt::Display for $struct {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        impl core::fmt::Display for $struct {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 write!(f, "{}", self.0)
             }
         }

@@ -3,25 +3,22 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use fxhash::FxHashSet;
 #[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
 use petgraph::{
     graph::NodeIndex,
-    visit::{Reversed, Visitable},
-    Direction::{self, Incoming, Outgoing},
+    visit::Reversed,
+    Direction::{self},
 };
 
 use crate::{
     graph_idx,
     items::{
-        ENodeIdx, EqGivenIdx, EqTransIdx, EqualityExpl, GraphIdx, InstIdx,
+        ENodeIdx, EqGivenIdx, EqTransIdx, EqualityExpl, GraphIdx, InstIdx, StackIdx,
         TransitiveExplSegmentKind,
     },
-    DiGraph, FxHashMap, NonMaxU32, Result, TiVec, Z3Parser,
+    DiGraph, FxHashMap, FxHashSet, NonMaxU32, Result, Z3Parser,
 };
-
-use super::subgraph::{Subgraph, VisitBox};
 
 graph_idx!(raw_idx, RawNodeIndex, RawEdgeIndex, RawIx);
 
@@ -140,7 +137,7 @@ impl RawInstGraph {
             let all = eq.all(true);
             for parent in all {
                 match parent.kind {
-                    TransitiveExplSegmentKind::Given(eq, use_) => self_.add_edge(
+                    TransitiveExplSegmentKind::Given((eq, use_)) => self_.add_edge(
                         (eq, use_),
                         idx,
                         EdgeKind::TEqualitySimple {
@@ -157,7 +154,10 @@ impl RawInstGraph {
                 }
             }
         }
-
+        debug_assert!(
+            !petgraph::algo::is_cyclic_directed(&*self_.graph),
+            "Graph is cyclic, this should not happen by construction!"
+        );
         Ok(self_)
     }
     fn add_edge(
@@ -169,48 +169,6 @@ impl RawInstGraph {
         let a = source.index(self).0;
         let b = target.index(self).0;
         self.graph.add_edge(a, b, kind);
-    }
-
-    pub fn partition(&mut self) -> Result<TiVec<GraphIdx, Subgraph>> {
-        let mut subgraphs = TiVec::default();
-        let mut discovered = VisitBox {
-            dfs: self.graph.visit_map(),
-        };
-        for node in self.graph.node_indices().map(RawNodeIndex) {
-            let has_parents = self
-                .graph
-                .neighbors_directed(node.0, Incoming)
-                .next()
-                .is_some();
-            if has_parents {
-                continue;
-            }
-            let has_children = self
-                .graph
-                .neighbors_directed(node.0, Outgoing)
-                .next()
-                .is_some();
-            if !has_children {
-                continue;
-            }
-            if self.graph[node.0].subgraph.is_some() {
-                continue;
-            }
-
-            // Construct subgraph
-            let idx = subgraphs.next_key();
-            let (subgraph, discovered_) = Subgraph::new(
-                node,
-                &mut self.graph,
-                discovered,
-                |node, i| node.subgraph = Some((idx, i)),
-                |node| node.subgraph.unwrap().1,
-            )?;
-            discovered = discovered_;
-            subgraphs.raw.try_reserve(1)?;
-            subgraphs.push(subgraph);
-        }
-        Ok(subgraphs)
     }
 
     pub fn index(&self, kind: NodeKind) -> RawNodeIndex {
@@ -225,68 +183,38 @@ impl RawInstGraph {
     pub fn rev(&self) -> Reversed<&petgraph::graph::DiGraph<Node, EdgeKind, RawIx>> {
         Reversed(&*self.graph)
     }
-    /// Similar to `self.graph.neighbors_directed` but will walk through
-    /// disabled nodes.
-    pub fn neighbors_directed(
-        &self,
-        node: RawNodeIndex,
-        dir: Direction,
-        mut f: impl FnMut(RawNodeIndex),
-    ) {
-        let mut visited = FxHashSet::default();
-        for n in self.graph.neighbors_directed(node.0, dir) {
-            if self.graph[n].disabled() {
-                visited.insert(n);
-            } else {
-                f(RawNodeIndex(n));
-            }
-        }
-        let mut disabled: Vec<_> = visited.iter().copied().collect();
-        while let Some(next) = disabled.pop() {
-            for n in self.graph.neighbors_directed(next, dir) {
-                if !visited.insert(n) {
-                    continue;
-                }
-                if self.graph[n].disabled() {
-                    disabled.push(n);
-                } else {
-                    f(RawNodeIndex(n));
-                }
-            }
-        }
-    }
-    /// Faster than [`Self::neighbors_directed_collect`] if you only need the count.
-    pub fn neighbors_directed_count(&self, node: RawNodeIndex, dir: Direction) -> usize {
-        let mut neighbors = 0;
-        self.neighbors_directed(node, dir, |_| neighbors += 1);
-        neighbors
-    }
-    pub fn neighbors_directed_count_hidden(&self, node: RawNodeIndex, dir: Direction) -> usize {
-        let mut hidden_neighbors = 0;
-        self.neighbors_directed(node, dir, |ix| {
-            if self[ix].hidden() {
-                hidden_neighbors += 1;
-            }
-        });
-        hidden_neighbors
-    }
-    pub fn neighbors_directed_collect(
-        &self,
-        node: RawNodeIndex,
-        dir: Direction,
-    ) -> FxHashSet<RawNodeIndex> {
-        let mut neighbors = FxHashSet::default();
-        self.neighbors_directed(node, dir, |ix| {
-            neighbors.insert(ix);
-        });
-        neighbors
-    }
 
     pub fn visible_nodes(&self) -> usize {
         self.graph.node_count() - self.stats.hidden as usize - self.stats.disabled as usize
     }
     pub fn node_indices(&self) -> impl Iterator<Item = RawNodeIndex> {
         self.graph.node_indices().map(RawNodeIndex)
+    }
+
+    /// Similar to `self.graph.neighbors` but will walk through disabled nodes.
+    ///
+    /// Note: Iterating the neighbors is **not** a O(1) operation.
+    pub fn neighbors(&self, node: RawNodeIndex) -> Neighbors<'_> {
+        self.neighbors_directed(node, Direction::Outgoing)
+    }
+    /// Similar to `self.graph.neighbors_directed` but will walk through
+    /// disabled nodes.
+    ///
+    /// Note: Iterating the neighbors is **not** a O(1) operation.
+    pub fn neighbors_directed(&self, node: RawNodeIndex, dir: Direction) -> Neighbors<'_> {
+        let direct = self.graph.neighbors_directed(node.0, dir).detach();
+        let walk = WalkNeighbors {
+            dir,
+            visited: FxHashSet::default(),
+            stack: Vec::new(),
+            direct,
+        };
+        Neighbors { raw: self, walk }
+    }
+
+    pub fn inst_to_raw_idx(&self) -> impl Fn(InstIdx) -> RawNodeIndex {
+        let inst_idx = self.inst_idx;
+        move |inst| RawNodeIndex(NodeIndex::new(inst_idx.0.index() + usize::from(inst)))
     }
 }
 
@@ -321,6 +249,7 @@ impl GraphStats {
     }
 }
 
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
 #[derive(Debug, Clone)]
 pub struct Node {
     state: NodeState,
@@ -331,9 +260,10 @@ pub struct Node {
     kind: NodeKind,
     pub inst_parents: NextInsts,
     pub inst_children: NextInsts,
-    pub part_of_ml: fxhash::FxHashSet<usize>,
+    pub part_of_ml: FxHashSet<usize>,
 }
 
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeState {
     Disabled,
@@ -341,6 +271,7 @@ pub enum NodeState {
     Visible,
 }
 
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Depth {
     /// What is the shortest path to a root/leaf
@@ -349,6 +280,7 @@ pub struct Depth {
     pub max: u32,
 }
 
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
 #[derive(Debug, Clone, Default)]
 pub struct NextInsts {
     /// What are the immediate next instantiation nodes
@@ -388,8 +320,17 @@ impl Node {
             (NodeState::Hidden, NodeKind::Instantiation(_))
         )
     }
+
+    pub fn frame(&self, parser: &Z3Parser) -> Option<StackIdx> {
+        match *self.kind() {
+            NodeKind::ENode(enode_idx) => Some(parser[enode_idx].frame),
+            NodeKind::Instantiation(inst_idx) => Some(parser.insts[inst_idx].frame),
+            NodeKind::GivenEquality(..) | NodeKind::TransEquality(_) => None,
+        }
+    }
 }
 
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
 #[derive(Debug, Clone, Copy)]
 pub enum NodeKind {
     /// Corresponds to `ENodeIdx`.
@@ -464,6 +405,7 @@ impl NodeKind {
     }
 }
 
+#[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
 #[derive(Debug, Clone, Copy)]
 pub enum EdgeKind {
     /// Instantiation -> ENode
@@ -501,9 +443,7 @@ impl IndexesInstGraph for EqTransIdx {
 }
 impl IndexesInstGraph for InstIdx {
     fn index(&self, graph: &RawInstGraph) -> RawNodeIndex {
-        RawNodeIndex(NodeIndex::new(
-            graph.inst_idx.0.index() + usize::from(*self),
-        ))
+        graph.inst_to_raw_idx()(*self)
     }
 }
 impl IndexesInstGraph for (EqGivenIdx, Option<NonMaxU32>) {
@@ -528,5 +468,73 @@ impl<T: IndexesInstGraph> IndexMut<T> for RawInstGraph {
     fn index_mut(&mut self, index: T) -> &mut Self::Output {
         let index = index.index(self);
         &mut self.graph[index.0]
+    }
+}
+
+#[derive(Clone)]
+pub struct Neighbors<'a> {
+    pub raw: &'a RawInstGraph,
+    pub walk: WalkNeighbors,
+}
+
+impl<'a> Neighbors<'a> {
+    pub fn detach(self) -> WalkNeighbors {
+        self.walk
+    }
+
+    pub fn count_hidden(self) -> usize {
+        let raw = self.raw;
+        self.filter(|&ix| raw[ix].hidden()).count()
+    }
+}
+
+impl Iterator for Neighbors<'_> {
+    type Item = RawNodeIndex;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.walk.next(self.raw)
+    }
+}
+
+#[derive(Clone)]
+pub struct WalkNeighbors {
+    pub dir: Direction,
+    pub visited: FxHashSet<RawNodeIndex>,
+    pub stack: Vec<RawNodeIndex>,
+    pub direct: petgraph::graph::WalkNeighbors<RawIx>,
+}
+
+impl WalkNeighbors {
+    pub fn next(&mut self, raw: &RawInstGraph) -> Option<RawNodeIndex> {
+        // TODO: decide if we want to prevent direct neighbors from being
+        // visited multiple times if there are multiple direct edges.
+        loop {
+            // let mut idx = None;
+            // while let Some((_, direct)) = self.direct.next(&raw.graph) {
+            //     let direct = RawNodeIndex(direct);
+            //     if self.visited.insert(direct) {
+            //         idx = Some(direct);
+            //         break;
+            //     }
+            // }
+            // let idx = idx.or_else(|| self.stack.pop())?;
+            let idx = self
+                .direct
+                .next(&raw.graph)
+                .map(|(_, n)| RawNodeIndex(n))
+                .or_else(|| self.stack.pop())?;
+            let node = &raw[idx];
+            if !node.disabled() {
+                return Some(idx);
+            }
+            for n in raw
+                .graph
+                .neighbors_directed(idx.0, self.dir)
+                .map(RawNodeIndex)
+            {
+                if self.visited.insert(n) {
+                    self.stack.push(n);
+                }
+            }
+        }
     }
 }

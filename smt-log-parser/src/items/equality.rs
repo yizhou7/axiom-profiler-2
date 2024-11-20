@@ -2,9 +2,9 @@
 use mem_dbg::{MemDbg, MemSize};
 
 use crate::Result;
-use crate::{BoxSlice, IString, NonMaxU32, Z3Parser};
+use crate::{BoxSlice, IString, NonMaxU32};
 
-use super::{ENodeIdx, EqGivenIdx, EqTransIdx, InstIdx};
+use super::{ENodeIdx, EqGivenIdx, EqTransIdx};
 
 /// A Z3 equality explanation.
 /// Root represents a term that is a root of its equivalence class.
@@ -156,24 +156,10 @@ impl TransitiveExpl {
             TransitiveExplIter::Backward(TransitiveExplSegment::rev(iter))
         }
     }
-    pub fn get_creator_insts(&self, parser: &Z3Parser) -> Vec<Option<InstIdx>> {
-        self.path
-            .iter()
-            .flat_map(|expl_seg| match expl_seg.kind {
-                TransitiveExplSegmentKind::Given(eq_idx, _) => match parser[eq_idx] {
-                    EqualityExpl::Literal { eq, .. } => vec![parser[eq].created_by],
-                    _ => vec![None],
-                },
-                TransitiveExplSegmentKind::Transitive(eq_idx) => {
-                    let trans_expl = &parser[eq_idx];
-                    trans_expl.get_creator_insts(parser)
-                }
-            })
-            .collect()
-    }
 }
 
 #[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "mem_dbg", copy_type)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy)]
 pub struct TransitiveExplSegment {
@@ -194,17 +180,20 @@ impl TransitiveExplSegment {
     }
 }
 
+pub type EqGivenUse = (EqGivenIdx, Option<NonMaxU32>);
+
 #[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
+#[cfg_attr(feature = "mem_dbg", copy_type)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy)]
 pub enum TransitiveExplSegmentKind {
-    Given(EqGivenIdx, Option<NonMaxU32>),
+    Given(EqGivenUse),
     Transitive(EqTransIdx),
 }
 impl TransitiveExplSegmentKind {
-    pub fn given(self) -> Option<EqGivenIdx> {
+    pub fn given(self) -> Option<EqGivenUse> {
         match self {
-            Self::Given(given, _) => Some(given),
+            Self::Given(eq_use) => Some(eq_use),
             _ => None,
         }
     }

@@ -1,8 +1,11 @@
 #[cfg(feature = "mem_dbg")]
 mod r#impl;
+mod utils;
+
+pub use utils::*;
 
 use core::fmt;
-use std::ops::{Deref, DerefMut};
+use core::ops::{Deref, DerefMut};
 
 macro_rules! derive_wrapper {
     ($head:ident $(:: $tail:ident)+ $(<$($rest1:tt)*)? $(: $($rest2:tt)*)?) => {
@@ -11,7 +14,7 @@ macro_rules! derive_wrapper {
     ($($module:ident ::)+ ; $head:ident , $($tail:ident,)+ $($rest:tt)*) => {
         derive_wrapper!( $($module ::)* $head :: ; $($tail,)* $($rest)* );
     };
-    ($($module:ident ::)+ ; $struct:ident, $(<$($t:ident$(= $default:ty)?),*>)? $(: $trait:ident $(+ $other:ident)*)?) => {
+    ($($module:ident ::)* ; $struct:ident, $(<$($t:ident$(= $default:ty)?),*>)? $(: $trait:ident $(+ $other:ident)*)?) => {
         derive_wrapper!(
             $(#[derive($trait$(,$other)*)])?
             struct $struct$(<$($t$(= $default)?),*>)?($($module::)+$struct$(<$($t),*>)?);
@@ -67,6 +70,11 @@ macro_rules! derive_wrapper {
                 <$inner as serde::Deserialize<'de>>::deserialize(deserializer).map(Self)
             }
         }
+        impl$(<$($t),*>)? From<$inner> for $struct$(<$($t),*>)? {
+            fn from(inner: $inner) -> Self {
+                Self(inner)
+            }
+        }
     };
 }
 
@@ -107,6 +115,16 @@ macro_rules! derive_non_max {
 derive_non_max!(NonMaxU32, u32);
 derive_non_max!(NonMaxUsize, usize);
 
+// BigRational
+
+derive_wrapper!(num::BigRational: PartialEq + Eq + PartialOrd + Ord + Hash);
+
+impl fmt::Display for BigRational {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 // TiVec
 
 derive_wrapper!(typed_index_collections::TiVec<K, V>);
@@ -118,6 +136,18 @@ impl<K, V> Default for TiVec<K, V> {
 impl<K, V> FromIterator<V> for TiVec<K, V> {
     fn from_iter<T: IntoIterator<Item = V>>(iter: T) -> Self {
         Self(typed_index_collections::TiVec::from_iter(iter))
+    }
+}
+impl<K, V> std::iter::IntoIterator for TiVec<K, V> {
+    type Item = <Self::IntoIter as std::iter::IntoIterator>::Item;
+    type IntoIter = std::vec::IntoIter<V>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+impl<K: From<usize>, V> TiVec<K, V> {
+    pub fn into_iter_enumerated(self) -> impl Iterator<Item = (K, V)> {
+        self.0.into_iter_enumerated()
     }
 }
 
@@ -132,6 +162,34 @@ impl<K, V> Default for FxHashMap<K, V> {
 impl<K: Eq + std::hash::Hash, V> FromIterator<(K, V)> for FxHashMap<K, V> {
     fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
         Self(fxhash::FxHashMap::from_iter(iter))
+    }
+}
+impl<K, V> std::iter::IntoIterator for FxHashMap<K, V> {
+    type Item = <Self::IntoIter as std::iter::IntoIterator>::Item;
+    type IntoIter = std::collections::hash_map::IntoIter<K, V>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+// FxHashSet
+
+derive_wrapper!(fxhash::FxHashSet<K>);
+impl<K> Default for FxHashSet<K> {
+    fn default() -> Self {
+        Self(fxhash::FxHashSet::default())
+    }
+}
+impl<K: Eq + std::hash::Hash> FromIterator<K> for FxHashSet<K> {
+    fn from_iter<T: IntoIterator<Item = K>>(iter: T) -> Self {
+        Self(fxhash::FxHashSet::from_iter(iter))
+    }
+}
+impl<K> std::iter::IntoIterator for FxHashSet<K> {
+    type Item = <Self::IntoIter as std::iter::IntoIterator>::Item;
+    type IntoIter = std::collections::hash_set::IntoIter<K>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
@@ -165,77 +223,4 @@ impl<N, E, Ty: petgraph::EdgeType, Ix: petgraph::graph::IndexType> Graph<N, E, T
             nodes, edges,
         ))
     }
-}
-
-// BoxSlice
-
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum BoxSlice<T> {
-    Large(Box<[T]>),
-    Small(T),
-}
-impl<T> Default for BoxSlice<T> {
-    fn default() -> Self {
-        Self::Large(Default::default())
-    }
-}
-impl<T> Deref for BoxSlice<T> {
-    type Target = [T];
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::Large(slice) => slice,
-            Self::Small(slice) => core::slice::from_ref(slice),
-        }
-    }
-}
-impl<T> DerefMut for BoxSlice<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match self {
-            Self::Large(slice) => slice,
-            Self::Small(slice) => core::slice::from_mut(slice),
-        }
-    }
-}
-impl<T> FromIterator<T> for BoxSlice<T> {
-    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        assert!(Self::CHECK_T_SMALL);
-        let mut iter = iter.into_iter();
-        let Some(first) = iter.next() else {
-            return Self::default();
-        };
-        match iter.next() {
-            None => Self::Small(first),
-            Some(second) => {
-                let large = [first, second].into_iter().chain(iter).collect();
-                Self::Large(large)
-            }
-        }
-    }
-}
-impl<T> From<Vec<T>> for BoxSlice<T> {
-    fn from(vec: Vec<T>) -> Self {
-        assert!(Self::CHECK_T_SMALL);
-        match vec.len() {
-            1 => Self::Small(vec.into_iter().next().unwrap()),
-            _ => Self::Large(vec.into_boxed_slice()),
-        }
-    }
-}
-impl<T, const N: usize> From<[T; N]> for BoxSlice<T> {
-    fn from(array: [T; N]) -> Self {
-        assert!(Self::CHECK_T_SMALL);
-        array.into_iter().collect()
-    }
-}
-
-impl<T> BoxSlice<T> {
-    #[allow(clippy::no_effect)]
-    const CHECK_T_SMALL: bool = {
-        let is_t_small = core::mem::size_of::<T>() <= core::mem::size_of::<usize>();
-        [(); 1][!is_t_small as usize]; // `size_of::<T>() > size_of::<usize>()`!
-        let is_no_ovhd = core::mem::size_of::<BoxSlice<T>>() == core::mem::size_of::<Box<[T]>>();
-        [(); 1][!is_no_ovhd as usize]; // `size_of::<BoxSlice<T>>() == size_of::<Box<[T]>>()`!
-        true
-    };
 }

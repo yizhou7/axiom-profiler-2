@@ -8,11 +8,13 @@ use yew::prelude::*;
 use yew::{function_component, html};
 
 use crate::results::svg_result::RenderedGraph;
+use crate::utils::svg::{SvgHelper, ViewBox};
 use crate::{mouse_position, PrecisePosition};
 
 #[derive(Properties, PartialEq, Default)]
 pub struct GraphProps {
     pub rendered: Option<RenderedGraph>,
+    pub on_rerender: Callback<()>,
     pub update_selected_nodes: Callback<RawNodeIndex>,
     pub update_selected_edges: Callback<VisibleEdgeIndex>,
     pub zoom_factor: f64,
@@ -55,15 +57,10 @@ pub fn Graph(props: &GraphProps) -> Html {
                 let svg_element = div.get_elements_by_tag_name("svg").item(0);
                 if let Some(el) = svg_element {
                     let svg_el = el.dyn_into::<SvgsvgElement>().ok().unwrap();
-                    let view_box: Vec<f64> = svg_el
-                        .get_attribute("viewBox")
-                        .unwrap()
-                        .split_ascii_whitespace()
-                        .map(|s| s.parse().unwrap())
-                        .collect();
+                    let view_box = svg_el.get_view_box().unwrap();
                     let (svg_width, svg_height) = (
-                        view_box[2] + 2.0 * view_box[0],
-                        view_box[3] + 2.0 * view_box[1],
+                        view_box.width + 2.0 * view_box.x,
+                        view_box.height + 2.0 * view_box.y,
                     );
 
                     let scroll_window = scroll_window.cast::<Element>().unwrap();
@@ -74,13 +71,13 @@ pub fn Graph(props: &GraphProps) -> Html {
                     const MARGIN: f64 = 128.0;
                     let (svg_width, svg_height) =
                         (svg_width + 2.0 * MARGIN, svg_height + 2.0 * MARGIN);
-                    svg_el
-                        .set_attribute(
-                            "viewBox",
-                            format!("{} {} {} {}", -MARGIN, -MARGIN, svg_width, svg_height)
-                                .as_str(),
-                        )
-                        .unwrap();
+                    let view_box = ViewBox {
+                        x: -MARGIN,
+                        y: -MARGIN,
+                        width: svg_width,
+                        height: svg_height,
+                    };
+                    svg_el.set_view_box(view_box).unwrap();
 
                     let new_scroll = {
                         let (x, y) = if zoom_with_mouse {
@@ -197,10 +194,12 @@ pub fn Graph(props: &GraphProps) -> Html {
     {
         let nodes_callback = props.update_selected_nodes.clone();
         let edges_callback = props.update_selected_edges.clone();
+        let on_rerender = props.on_rerender.clone();
 
         let div_ref = div_ref.clone();
         use_effect_with_deps(
             move |generation| {
+                on_rerender.emit(());
                 let (nodes, edges) = if generation.is_some() {
                     let div = div_ref
                         .cast::<Element>()
@@ -239,6 +238,7 @@ pub fn Graph(props: &GraphProps) -> Html {
                             let callback = nodes_callback.clone();
                             let mousedown: Closure<dyn Fn(Event)> =
                                 Closure::new(move |e: Event| {
+                                    e.prevent_default();
                                     e.cancel_bubble();
                                     e.stop_propagation();
                                     callback.emit(idx);
@@ -294,6 +294,7 @@ pub fn Graph(props: &GraphProps) -> Html {
                             let callback = edges_callback.clone();
                             let mousedown: Closure<dyn Fn(Event)> =
                                 Closure::new(move |e: Event| {
+                                    e.prevent_default();
                                     e.cancel_bubble();
                                     e.stop_propagation();
                                     callback.emit(idx);

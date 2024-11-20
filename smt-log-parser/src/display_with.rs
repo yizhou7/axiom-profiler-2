@@ -5,10 +5,15 @@ use std::{
 
 use crate::{
     formatter::{
-        BindPowerPair, ChildIndex, MatchResult, SubFormatter, TermDisplayContext, QUANT_BIND,
+        BindPowerPair, ChildIndex, MatchResult, SubFormatter, TermDisplayContext,
+        DEFAULT_BIND_POWER, QUANT_BIND,
     },
     items::*,
-    parsers::z3::{stm2::Event, z3parser::Z3Parser},
+    parsers::z3::{
+        stm2::EventKind,
+        synthetic::{AnyTerm, SynthIdx, SynthTermKind},
+        z3parser::Z3Parser,
+    },
     NonMaxU32, StringTable,
 };
 
@@ -17,7 +22,13 @@ use crate::{
 ////////////
 
 pub trait DisplayWithCtxt<Ctxt, Data>: Sized {
+    /// Display the term with the given context and data. Should not be used
+    /// outside of the implementations of this trait.
     fn fmt_with(self, f: &mut fmt::Formatter<'_>, ctxt: &Ctxt, data: &mut Data) -> fmt::Result;
+
+    /// Wrap the receiver in an object which carries along a parser context to
+    /// enable efficient printing of terms. For quick debugging use the `debug`
+    /// method instead to avoid building a full context.
     fn with(self, ctxt: &Ctxt) -> DisplayWrapperEmpty<'_, Ctxt, Data, Self>
     where
         Self: Copy,
@@ -29,6 +40,10 @@ pub trait DisplayWithCtxt<Ctxt, Data>: Sized {
             data_marker: std::marker::PhantomData,
         }
     }
+
+    /// To be used with `TermIdx` or `SynthIdx` where we want to pass in the
+    /// surrounding quantifier as `data` such that qvars are printed with names.
+    /// Otherwise, always use `with` instead (which uses default `data`).
     fn with_data<'a, 'b>(
         self,
         ctxt: &'a Ctxt,
@@ -43,6 +58,23 @@ pub trait DisplayWithCtxt<Ctxt, Data>: Sized {
             data,
             data_marker: std::marker::PhantomData,
         }
+    }
+
+    /// Only use for quickly displaying things when debugging.
+    fn debug<'a>(self, parser: &'a Z3Parser) -> String
+    where
+        Self: DisplayWithCtxt<DisplayCtxt<'a>, Data> + Copy,
+        Data: Default,
+    {
+        static TERM_DISPLAY: std::sync::OnceLock<TermDisplayContext> = std::sync::OnceLock::new();
+        let term_display = TERM_DISPLAY.get_or_init(TermDisplayContext::basic);
+        let config = DisplayConfiguration::default();
+        let ctxt = DisplayCtxt {
+            parser,
+            term_display,
+            config,
+        };
+        self.with(&ctxt).to_string()
     }
 }
 
@@ -81,6 +113,7 @@ impl<'a, 'b, Ctxt, Data, T: DisplayWithCtxt<Ctxt, Data> + Copy> fmt::Display
 // Items
 ////////////
 
+#[derive(Clone, Copy)]
 pub struct DisplayCtxt<'a> {
     pub parser: &'a Z3Parser,
     pub term_display: &'a TermDisplayContext,
@@ -88,9 +121,10 @@ pub struct DisplayCtxt<'a> {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SymbolReplacement {
     Math,
+    #[default]
     Code,
     /// Display quantifiers and symbols in the smt2 format, using the
     /// [`TermDisplayContext::s_expression`] formatter is recommended.
@@ -112,14 +146,23 @@ impl SymbolReplacement {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", serde(default))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DisplayConfiguration {
-    pub display_term_ids: bool,
+    pub debug: bool,
     pub display_quantifier_name: bool,
     pub replace_symbols: SymbolReplacement,
+    /// Print `SynthTermKind::Generalised` terms as either `_` if true or
+    /// `...(_)` if false.
+    pub input: Option<bool>,
     /// Use tags for formatting
     #[cfg(feature = "display_html")]
     pub html: bool,
+    /// Use the HTML4 `<font>` tag for setting the colour of text. This isn't
+    /// supported in HTML5 and may be used for graphviz HTML-like label
+    /// compatibility.
+    #[cfg(feature = "display_html")]
+    pub font_tag: bool,
 
     // If `enode_char_limit` is Some, then any term longer than
     // the limit will be truncated.
@@ -134,23 +177,69 @@ impl DisplayConfiguration {
         #[cfg(not(feature = "display_html"))]
         return false;
     }
+    pub fn font_tag(&self) -> bool {
+        #[cfg(feature = "display_html")]
+        return self.font_tag;
+        #[cfg(not(feature = "display_html"))]
+        return false;
+    }
+
+    pub fn with_html_italic(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        rest: impl FnMut(&mut fmt::Formatter) -> fmt::Result,
+    ) -> fmt::Result {
+        self.with_html_tag(f, "i", None, rest)
+    }
+    pub fn with_html_colour(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        colour: &str,
+        rest: impl FnMut(&mut fmt::Formatter) -> fmt::Result,
+    ) -> fmt::Result {
+        let (tag, attribute) = if self.font_tag() {
+            ("font", format!("color=\"{colour}\""))
+        } else {
+            ("span", format!("style=\"color:{colour}\""))
+        };
+        self.with_html_tag(f, tag, Some(&attribute), rest)
+    }
+
+    pub fn with_html_tag(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        tag: &str,
+        attributes: Option<&str>,
+        mut rest: impl FnMut(&mut fmt::Formatter<'_>) -> fmt::Result,
+    ) -> fmt::Result {
+        if self.html() {
+            write!(f, "<{tag}")?;
+            if let Some(attributes) = attributes {
+                write!(f, " {}", attributes)?;
+            }
+            write!(f, ">")?;
+        }
+        rest(f)?;
+        if self.html() {
+            write!(f, "</{tag}>")?;
+        }
+        Ok(())
+    }
 }
 
 mod private {
-    use crate::formatter::DEFAULT_BIND_POWER;
-
     use super::*;
 
     #[derive(Debug, Clone)]
     pub(super) struct DisplayData<'a> {
-        pub(super) term: TermIdx,
-        children: &'a [TermIdx],
+        pub(super) term: SynthIdx,
+        children: &'a [SynthIdx],
         quant: Vec<&'a Quantifier>,
         bind_power: BindPowerPair,
         ast_depth: u32,
     }
     impl<'a> DisplayData<'a> {
-        pub(super) fn new(term: TermIdx) -> Self {
+        pub(super) fn new(term: SynthIdx) -> Self {
             Self {
                 term,
                 children: &[],
@@ -161,7 +250,7 @@ mod private {
         }
         pub(super) fn with_children<T>(
             &mut self,
-            children: &'a [TermIdx],
+            children: &'a [SynthIdx],
             f: impl FnOnce(&mut Self) -> T,
         ) -> T {
             let old = std::mem::replace(&mut self.children, children);
@@ -206,14 +295,14 @@ mod private {
             self.bind_power = old;
             result
         }
-        pub(super) fn with_term<T>(&mut self, term: TermIdx, f: impl FnOnce(&mut Self) -> T) -> T {
+        pub(super) fn with_term<T>(&mut self, term: SynthIdx, f: impl FnOnce(&mut Self) -> T) -> T {
             let term = std::mem::replace(&mut self.term, term);
             let result = f(self);
             self.term = term;
             result
         }
 
-        pub(super) fn children(&self) -> &'a [TermIdx] {
+        pub(super) fn children(&self) -> &'a [SynthIdx] {
             self.children
         }
         pub(super) fn find_quant(&self, idx: &mut u32) -> Option<&Quantifier> {
@@ -257,13 +346,24 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, Option<QuantIdx>> for TermIdx {
         ctxt: &DisplayCtxt<'_>,
         quant: &mut Option<QuantIdx>,
     ) -> fmt::Result {
+        SynthIdx::from(self).fmt_with(f, ctxt, quant)
+    }
+}
+
+impl DisplayWithCtxt<DisplayCtxt<'_>, Option<QuantIdx>> for SynthIdx {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'_>,
+        quant: &mut Option<QuantIdx>,
+    ) -> fmt::Result {
         let mut data = DisplayData::new(self);
         if let Some(quant) = quant {
             data.with_quant(&ctxt.parser[*quant], |data| {
-                write!(f, "{}", ctxt.parser[self].with_data(ctxt, data))
+                ctxt.parser[self].fmt_with(f, ctxt, data)
             })
         } else {
-            write!(f, "{}", ctxt.parser[self].with_data(ctxt, &mut data))
+            ctxt.parser[self].fmt_with(f, ctxt, &mut data)
         }
     }
 }
@@ -299,7 +399,7 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for QuantIdx {
         _data: &mut (),
     ) -> fmt::Result {
         let quant = &ctxt.parser[self];
-        quant.term.fmt_with(f, ctxt, &mut None)
+        quant.term.fmt_with(f, ctxt, &mut Some(self))
     }
 }
 
@@ -350,7 +450,7 @@ impl DisplayWithCtxt<DisplayCtxt<'_>, ()> for &MatchKind {
                 quant.fmt_with(f, ctxt, data)
             }
             MatchKind::TheorySolving { axiom_id, .. } => {
-                write!(f, "[TheorySolving] {}#", &ctxt.parser[axiom_id.namespace],)?;
+                write!(f, "[TheorySolving] {}#", &ctxt.parser[axiom_id.namespace])?;
                 if let Some(id) = axiom_id.id {
                     write!(f, "{id}")?;
                 }
@@ -401,30 +501,106 @@ impl<'a: 'b, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a Term 
         ctxt: &DisplayCtxt<'b>,
         data: &mut DisplayData<'b>,
     ) -> fmt::Result {
-        data.with_children(&self.child_ids, |data| {
-            if ctxt.config.display_term_ids {
-                match self.id {
-                    None => write!(f, "[synthetic]")?,
-                    Some(id) => {
-                        let namespace = &ctxt.parser[id.namespace];
-                        let id = id.id.map(|id| id.to_string()).unwrap_or_default();
-                        write!(f, "[{namespace}#{id}]")?
+        self.as_any().fmt_with(f, ctxt, data)
+    }
+}
+impl<'a: 'b, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a AnyTerm {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'b>,
+        data: &mut DisplayData<'b>,
+    ) -> fmt::Result {
+        data.with_children(self.child_ids(), |data| {
+            if ctxt.config.debug {
+                match self.id() {
+                    Some(id) => write!(f, "[{}]", id.with(ctxt))?,
+                    None => write!(f, "[synth]")?,
+                }
+            }
+            let meaning = ctxt
+                .parser
+                .as_tidx(data.term)
+                .and_then(|tidx| ctxt.parser.meaning(tidx));
+            let meaning = meaning.or(match self {
+                AnyTerm::Constant(meaning) => Some(meaning),
+                _ => None,
+            });
+            if let Some(meaning) = meaning {
+                let mut fn_ = |f: &mut fmt::Formatter| {
+                    ctxt.config
+                        .with_html_italic(f, |f| meaning.fmt_with(f, ctxt, data))
+                };
+                // The text block inside graphviz messes up the text alignment,
+                // skip it in that case.
+                if ctxt.config.font_tag() {
+                    fn_(f)
+                } else {
+                    ctxt.config.with_html_colour(f, "#666666", fn_)
+                }
+            } else {
+                self.kind().fmt_with(f, ctxt, data)
+            }
+        })
+    }
+}
+
+impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a SynthTermKind {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'b>,
+        data: &mut DisplayData<'b>,
+    ) -> fmt::Result {
+        match self {
+            SynthTermKind::Parsed(kind) => kind.fmt_with(f, ctxt, data),
+            SynthTermKind::Generalised => {
+                let synth_idx = data.children()[0];
+                match ctxt.config.input {
+                    Some(true) => write!(f, "⭐"),
+                    // Colour the generalised term in blue
+                    Some(false) => ctxt
+                        .config
+                        .with_html_colour(f, "#4285f4", |f| synth_idx.fmt_with(f, ctxt, &mut None)),
+                    None => {
+                        write!(f, "[⭐ → ")?;
+                        ctxt.config.with_html_colour(f, "#4285f4", |f| {
+                            synth_idx.fmt_with(f, ctxt, &mut None)
+                        })?;
+                        write!(f, "]")
                     }
                 }
             }
-            if let Some(meaning) = ctxt.parser.meaning(data.term) {
-                if ctxt.config.html() {
-                    write!(f, "<i style=\"color:#666\">")?;
+            SynthTermKind::Variable(var) => write!(f, "${var}"),
+            SynthTermKind::Input(offset) => match offset {
+                Some(offset) => {
+                    write!(f, "⭐ + ")?;
+                    offset.fmt_with(f, ctxt, &mut None)
                 }
-                write!(f, "{}", meaning.with_data(ctxt, data))?;
-                if ctxt.config.html() {
-                    write!(f, "</i>")?;
-                }
-            } else {
-                write!(f, "{}", self.kind.with_data(ctxt, data))?;
-            }
-            Ok(())
-        })
+                None => write!(f, "⭐"),
+            },
+            SynthTermKind::Constant => write!(f, "CONST"),
+        }
+    }
+}
+
+impl<'a: 'b, 'b> DisplayWithCtxt<DisplayCtxt<'b>, ()> for &'a TermId {
+    fn fmt_with(
+        self,
+        f: &mut fmt::Formatter<'_>,
+        ctxt: &DisplayCtxt<'b>,
+        _data: &mut (),
+    ) -> fmt::Result {
+        let namespace = &ctxt.parser[self.namespace];
+        let id = self.id.map(|id| id.to_string()).unwrap_or_default();
+        write!(f, "{namespace}#{id}")
+    }
+}
+
+pub struct VarName<F: Fn(&mut fmt::Formatter) -> fmt::Result>(F);
+impl<F: Fn(&mut fmt::Formatter) -> fmt::Result> fmt::Display for VarName<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (self.0)(f)
     }
 }
 
@@ -433,32 +609,41 @@ impl VarNames {
         strings: &'a StringTable,
         this: Option<&Self>,
         idx: usize,
-        config: &DisplayConfiguration,
-    ) -> Cow<'a, str> {
+        config: DisplayConfiguration,
+    ) -> VarName<impl Fn(&mut fmt::Formatter) -> fmt::Result + 'a> {
         let name = match this {
             Some(Self::NameAndType(names)) => Cow::Borrowed(&strings[*names[idx].0]),
             None | Some(Self::TypeOnly(_)) => Cow::Owned(
                 if matches!(config.replace_symbols, SymbolReplacement::Math) {
                     format!("•{idx}")
                 } else {
-                    format!("qvar_{idx}")
+                    format!("_{idx}")
                 },
             ),
         };
-        if config.html() {
-            const COLORS: [&str; 9] = [
+
+        let mut colour = None;
+        #[cfg(feature = "display_html")]
+        let name = if config.html() {
+            const COLOURS: [&str; 9] = [
                 "blue", "green", "olive", "maroon", "teal", "purple", "red", "fuchsia", "navy",
             ];
-            let color = COLORS[idx % COLORS.len()];
-            #[cfg(feature = "display_html")]
+            colour = Some(COLOURS[idx % COLOURS.len()]);
             let name = ammonia::clean_text(name.borrow());
-            let name = format!("<span style=\"color:{color}\">{name}</span>");
             Cow::Owned(name)
         } else {
             name
-        }
+        };
+        VarName(move |f| {
+            if let Some(colour) = colour {
+                config.with_html_colour(f, colour, |f| write!(f, "{name}"))
+            } else {
+                write!(f, "{name}")
+            }
+        })
     }
 }
+
 impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a TermKind {
     fn fmt_with(
         self,
@@ -470,7 +655,7 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a TermKind 
             TermKind::Var(mut idx) => {
                 let vars = data.find_quant(&mut idx).and_then(|q| q.vars.as_ref());
                 let name =
-                    VarNames::get_name(&ctxt.parser.strings, vars, idx as usize, &ctxt.config);
+                    VarNames::get_name(&ctxt.parser.strings, vars, idx as usize, ctxt.config);
                 write!(f, "{name}")
             }
             TermKind::App(name) => {
@@ -479,23 +664,19 @@ impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a TermKind 
                 let match_ = ctxt.term_display.match_str(name, children);
                 match_.fmt_with(f, ctxt, data)
             }
-            TermKind::Quant(idx) => write!(f, "{}", ctxt.parser[idx].with_data(ctxt, data)),
-            // TODO: it would be nice to display some extra information here
-            TermKind::Generalised => write!(f, "_"),
+            TermKind::Quant(idx) => ctxt.parser[idx].fmt_with(f, ctxt, data),
         }
     }
 }
 
 fn display_child<'b>(
     f: &mut fmt::Formatter<'_>,
-    child: TermIdx,
+    child: SynthIdx,
     ctxt: &DisplayCtxt<'b>,
     data: &mut DisplayData<'b>,
 ) -> fmt::Result {
     data.incr_ast_depth_with_limit(ctxt.config.ast_depth_limit, |data| {
-        data.with_term(child, |data| {
-            write!(f, "{}", ctxt.parser[child].with_data(ctxt, data))
-        })
+        data.with_term(child, |data| ctxt.parser[child].fmt_with(f, ctxt, data))
     })
     .unwrap_or_else(|| write!(f, "..."))
 }
@@ -646,11 +827,11 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Meaning {
         ctxt: &DisplayCtxt<'a>,
         _data: &mut DisplayData<'a>,
     ) -> fmt::Result {
-        let theory = &ctxt.parser[self.theory];
-        let value = &ctxt.parser[self.value];
-        match theory {
-            "arith" | "bv" => write!(f, "{value}"),
-            theory => write!(f, "/{theory} {value}\\"),
+        match self {
+            Meaning::Arith(value) => write!(f, "{value}"),
+            &Meaning::Unknown { theory, value } => {
+                write!(f, "/{} {}\\", &ctxt.parser[theory], &ctxt.parser[value])
+            }
         }
     }
 }
@@ -672,7 +853,7 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
                         &ctxt.parser.strings,
                         self.vars.as_ref(),
                         idx as usize,
-                        &ctxt.config,
+                        ctxt.config,
                     );
                     let ty =
                         VarNames::get_type(&ctxt.parser.strings, self.vars.as_ref(), idx as usize);
@@ -689,7 +870,7 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
                     }
                     write!(f, ") (!\n  ")?;
                     display_child(f, *body, ctxt, data)?;
-                    for &pattern in patterns {
+                    for &pattern in patterns.iter() {
                         write!(f, "\n  ")?;
                         display_child(f, pattern, ctxt, data)?;
                     }
@@ -711,14 +892,13 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
                         if not_first {
                             write!(f, ", ")?;
                         }
+                        write!(f, "{name}")?;
                         if let Some(ty) = ty {
-                            write!(f, "{name}: {ty}")?;
-                        } else {
-                            write!(f, "{name}")?;
+                            write!(f, ": {ty}")?;
                         }
                     }
                     write!(f, "{sep} ")?;
-                    for &pattern in patterns {
+                    for &pattern in patterns.iter() {
                         display_child(f, pattern, ctxt, data)?;
                         write!(f, " ")?;
                     }
@@ -731,7 +911,7 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
     }
 }
 
-impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, ()> for &'a Event {
+impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, ()> for &'a EventKind {
     fn fmt_with(
         self,
         f: &mut fmt::Formatter<'_>,
@@ -739,7 +919,7 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, ()> for &'a Event {
         _data: &mut (),
     ) -> fmt::Result {
         match *self {
-            Event::NewConst(term_idx) => {
+            EventKind::NewConst(term_idx) => {
                 let term = &ctxt.parser[term_idx];
                 let name = &ctxt.parser[term.kind.app_name().unwrap()];
                 if term.child_ids.is_empty() {
@@ -752,17 +932,17 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, ()> for &'a Event {
                     write!(f, ") ?)")
                 }
             }
-            Event::Assert(proof_idx) => {
+            EventKind::Assert(proof_idx) => {
                 let proof = &ctxt.parser[proof_idx];
                 let display = proof.result.with(ctxt);
                 write!(f, "(assert {display})")
             }
-            Event::Push => write!(f, "(push)"),
-            Event::Pop(num) => match num {
+            EventKind::Push => write!(f, "(push)"),
+            EventKind::Pop(num) => match num {
                 Some(num) => write!(f, "(pop {})", num.get()),
                 None => write!(f, "(pop)"),
             },
-            Event::BeginCheck => write!(f, "(check-sat)"),
+            EventKind::BeginCheck => write!(f, "(check-sat)"),
         }
     }
 }
