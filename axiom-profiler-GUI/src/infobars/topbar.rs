@@ -1,9 +1,12 @@
 use material_yew::linear_progress::MatLinearProgress;
 use smt_log_parser::analysis::RawNodeIndex;
-use yew::{function_component, html, use_context, Callback, Html, NodeRef, Properties};
+use yew::{function_component, html, use_context, use_node_ref, Callback, Html, Properties};
 
 use crate::{
-    infobars::{ml_omnibox::MlOmnibox, Omnibox, SearchActionResult},
+    infobars::{
+        ml_omnibox::MlOmnibox, Dropdown, DropdownButton, DropdownContainer, History, MenuButton,
+        Omnibox, SearchActionResult,
+    },
     state::StateProvider,
     utils::lookup::Kind,
     LoadingState,
@@ -19,11 +22,12 @@ pub struct OmnibarMessage {
 pub struct TopbarProps {
     pub progress: LoadingState,
     pub message: Option<OmnibarMessage>,
-    pub omnibox: NodeRef,
     pub search: Callback<String, Option<SearchActionResult>>,
     pub pick: Callback<(String, Kind), Option<Vec<RawNodeIndex>>>,
     pub select: Callback<RawNodeIndex>,
     pub pick_nth_ml: Callback<usize>,
+
+    pub dropdowns: Vec<(String, Html)>,
 }
 
 #[function_component]
@@ -67,11 +71,11 @@ pub fn Topbar(props: &TopbarProps) -> Html {
     let omnibox = if ml_viewer_mode {
         let ml_data = state.state.parser.as_ref().unwrap().ml_data.unwrap();
         html! {
-            <MlOmnibox message={props.message.clone()} omnibox={props.omnibox.clone()} {ml_data} pick_nth_ml={props.pick_nth_ml.clone()} />
+            <MlOmnibox message={props.message.clone()} {ml_data} pick_nth_ml={props.pick_nth_ml.clone()} />
         }
     } else {
         html! {
-            <Omnibox progress={props.progress.clone()} message={props.message.clone()} omnibox={props.omnibox.clone()} search={props.search.clone()} pick={props.pick.clone()} select={props.select.clone()} />
+            <Omnibox progress={props.progress.clone()} message={props.message.clone()} search={props.search.clone()} pick={props.pick.clone()} select={props.select.clone()} />
         }
     };
     let topbar_class = if ml_viewer_mode {
@@ -79,9 +83,26 @@ pub fn Topbar(props: &TopbarProps) -> Html {
     } else {
         "topbar"
     };
+    let (dl, dm, dr) = (use_node_ref(), use_node_ref(), use_node_ref());
+    let mut dropdown_left = Vec::<Html>::new();
+    let mut dropdown_right = Vec::<Html>::new();
+    for (idx, (label, html)) in props.dropdowns.iter().enumerate() {
+        dropdown_left.push(html! {<DropdownButton idx={idx as u32}>
+            <MenuButton label={label.clone()} />
+            <Dropdown>{html.clone()}</Dropdown>
+        </DropdownButton>});
+    }
+    dropdown_right.push(html! {<History />});
+    let dl_class = if state.state.sidebar_closed {
+        "menu-bar pad"
+    } else {
+        "menu-bar"
+    };
     html! {
     <div class={topbar_class}>
-        {omnibox}
+        <div ref={&dl} class={dl_class}>     <DropdownContainer container_ref={dl}>{for dropdown_left} </DropdownContainer></div>
+        <div ref={&dm} class="omnibox-outer"><DropdownContainer container_ref={dm}>{omnibox}           </DropdownContainer></div>
+        <div ref={&dr} class="menu-bar">     <DropdownContainer container_ref={dr}>{for dropdown_right}</DropdownContainer></div>
         <div {class}><MatLinearProgress {closed} {indeterminate} {progress} {buffer}/></div>
     </div>
     }
