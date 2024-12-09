@@ -43,6 +43,10 @@ impl RawInstGraph {
         let edges_lower_bound =
             parser.insts.insts.len() + parser.egraph.equalities.transitive.len();
         let mut graph = DiGraph::with_capacity(total_nodes, edges_lower_bound);
+        let inst_idx = RawNodeIndex(NodeIndex::new(graph.node_count()));
+        for inst in parser.insts.insts.keys() {
+            graph.add_node(Node::new(NodeKind::Instantiation(inst)));
+        }
         let enode_idx = RawNodeIndex(NodeIndex::new(graph.node_count()));
         for enode in parser.egraph.enodes.keys() {
             graph.add_node(Node::new(NodeKind::ENode(enode)));
@@ -50,10 +54,6 @@ impl RawInstGraph {
         let eq_trans_idx = RawNodeIndex(NodeIndex::new(graph.node_count()));
         for eq_trans in parser.egraph.equalities.transitive.keys() {
             graph.add_node(Node::new(NodeKind::TransEquality(eq_trans)));
-        }
-        let inst_idx = RawNodeIndex(NodeIndex::new(graph.node_count()));
-        for inst in parser.insts.insts.keys() {
-            graph.add_node(Node::new(NodeKind::Instantiation(inst)));
         }
         let mut eq_given_idx = FxHashMap::default();
         eq_given_idx.try_reserve(parser.egraph.equalities.given.len())?;
@@ -93,17 +93,17 @@ impl RawInstGraph {
                 self_.add_edge(idx, *yields, EdgeKind::Yield);
             }
             for (i, blame) in parser.insts.matches[inst.match_]
-                .trigger_matches()
+                .pattern_matches()
                 .enumerate()
             {
-                let trigger_term = i as u16;
-                self_.add_edge(blame.enode(), idx, EdgeKind::Blame { trigger_term });
+                let pattern_term = i as u16;
+                self_.add_edge(blame.enode(), idx, EdgeKind::Blame { pattern_term });
                 for (i, eq) in blame.equalities().enumerate() {
                     self_.add_edge(
                         eq,
                         idx,
                         EdgeKind::BlameEq {
-                            trigger_term,
+                            pattern_term,
                             eq_order: i as u16,
                         },
                     );
@@ -258,9 +258,8 @@ pub struct Node {
     pub bwd_depth: Depth,
     pub subgraph: Option<(GraphIdx, u32)>,
     kind: NodeKind,
-    pub inst_parents: NextInsts,
-    pub inst_children: NextInsts,
-    pub part_of_ml: FxHashSet<usize>,
+    pub parents: NextNodes,
+    pub children: NextNodes,
 }
 
 #[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
@@ -282,9 +281,12 @@ pub struct Depth {
 
 #[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
 #[derive(Debug, Clone, Default)]
-pub struct NextInsts {
+pub struct NextNodes {
     /// What are the immediate next instantiation nodes
-    pub nodes: FxHashSet<InstIdx>,
+    pub insts: FxHashSet<InstIdx>,
+    /// How many parents/children does this node have (not-necessarily
+    /// instantiation nodes), walking through disabled nodes.
+    pub count: u32,
 }
 
 impl Node {
@@ -296,9 +298,8 @@ impl Node {
             bwd_depth: Depth::default(),
             subgraph: None,
             kind,
-            inst_parents: NextInsts::default(),
-            inst_children: NextInsts::default(),
-            part_of_ml: FxHashSet::default(),
+            parents: NextNodes::default(),
+            children: NextNodes::default(),
         }
     }
     pub fn kind(&self) -> &NodeKind {
@@ -333,6 +334,11 @@ impl Node {
 #[cfg_attr(feature = "mem_dbg", derive(MemSize, MemDbg))]
 #[derive(Debug, Clone, Copy)]
 pub enum NodeKind {
+    /// Corresponds to `InstIdx`.
+    ///
+    /// **Parents:** arbitrary count, will always be `ENode` or `TransEquality`.\
+    /// **Children:** arbitrary count, will always be `ENode`.
+    Instantiation(InstIdx),
     /// Corresponds to `ENodeIdx`.
     ///
     /// **Parents:** will always have 0 or 1 parents, if 1 then this will be an `Instantiation`.\
@@ -354,11 +360,6 @@ pub enum NodeKind {
     /// **Children:** arbitrary count, can be `GivenEquality`, `TransEquality`
     /// or `Instantiation`.
     TransEquality(EqTransIdx),
-    /// Corresponds to `InstIdx`.
-    ///
-    /// **Parents:** arbitrary count, will always be `ENode` or `TransEquality`.\
-    /// **Children:** arbitrary count, will always be `ENode`.
-    Instantiation(InstIdx),
 }
 
 impl fmt::Display for NodeKind {
@@ -411,9 +412,9 @@ pub enum EdgeKind {
     /// Instantiation -> ENode
     Yield,
     /// ENode -> Instantiation
-    Blame { trigger_term: u16 },
+    Blame { pattern_term: u16 },
     /// TransEquality -> Instantiation
-    BlameEq { trigger_term: u16, eq_order: u16 },
+    BlameEq { pattern_term: u16, eq_order: u16 },
     /// ENode -> GivenEquality (`EqualityExpl::Literal`)
     EqualityFact,
     /// TransEquality -> GivenEquality (`EqualityExpl::Congruence`)

@@ -1,4 +1,3 @@
-use fxhash::FxHashSet;
 use petgraph::graph::NodeIndex;
 
 use crate::{
@@ -11,7 +10,7 @@ use crate::{
         egraph::{Equalities, EqualityWalker},
         synthetic::{AnyTerm, SynthIdx},
     },
-    BoxSlice, FxHashMap, Graph, IString, Result, Z3Parser,
+    BoxSlice, FxHashMap, FxHashSet, Graph, IString, Result, Z3Parser,
 };
 
 use super::{GenIdx, MLGraphEdge, MLGraphNode, MlExplanation, MlOutput};
@@ -77,10 +76,10 @@ impl MlExplainer {
         let recurring = self.add_inst(ml_out, parser, above2, gen);
 
         // Add others between as well as their deps
-        let mut others1 = MlOutput::others_between(ml_out.topo, above1, leaf);
+        let mut others1 = MlOutput::others_between(&ml_out.topo, above1, leaf);
         assert!(others1.remove(&leaf));
 
-        let mut others2 = MlOutput::others_between(ml_out.topo, above2, above1);
+        let mut others2 = MlOutput::others_between(&ml_out.topo, above2, above1);
         assert!(others2.remove(&above1));
 
         self.add_others(ml_out, parser, others1, others2);
@@ -152,8 +151,12 @@ impl MlExplainer {
         let prev_info = &ml_out.node_to_ml[&prev];
 
         let sig = ml_out.signatures[prev_info.ml_sig].clone();
-        let pattern = sig.pattern.into();
-        let prev_inst = self.graph.add_node(MLGraphNode::QI(sig, pattern));
+        let Some(pat) = parser.get_pattern(sig.qpat) else {
+            debug_assert!(false, "Found an MBQI matching loop?");
+            self.error = true;
+            return Vec::new();
+        };
+        let prev_inst = self.graph.add_node(MLGraphNode::QI(sig, pat.into()));
         let old = self.instantiations.insert(prev, prev_inst);
         assert!(old.is_none());
 

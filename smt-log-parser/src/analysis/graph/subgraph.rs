@@ -24,6 +24,9 @@ pub struct Subgraphs {
 }
 
 impl Subgraphs {
+    pub fn topo_node_indices(&self) -> impl Iterator<Item = RawNodeIndex> + '_ {
+        self.in_subgraphs().chain(self.singletons())
+    }
     pub fn in_subgraphs(&self) -> impl Iterator<Item = RawNodeIndex> + '_ {
         self.subgraphs.iter().flat_map(|s| s.nodes.iter().copied())
     }
@@ -45,7 +48,7 @@ impl RawInstGraph {
         let mut discovered = VisitBox {
             dfs: self.graph.visit_map(),
         };
-        for node in self.graph.node_indices().map(RawNodeIndex) {
+        for node in self.node_indices() {
             let has_parents = self
                 .graph
                 .neighbors_directed(node.0, Incoming)
@@ -103,8 +106,6 @@ pub struct Subgraph {
     pub(super) nodes: Vec<RawNodeIndex>,
     /// `reach_fwd[idx]` gives the set of nodes that can be reached from `idx`
     pub reach_fwd: TransitiveClosure,
-    /// `reach_bwd[idx]` gives the set of nodes that can reach `idx`
-    pub reach_bwd: TransitiveClosure,
 }
 
 pub struct VisitBox<D: VisitMap<NodeIndex<RawIx>>> {
@@ -192,44 +193,7 @@ impl Subgraph {
         //     tc_combined.append(tc.into_iter().map(|x| x + offset));
         // }
 
-        let mut reach_bwd = TransitiveClosure(vec![RoaringBitmap::new(); nodes.len()]);
-        {
-            let mut reach_bwd = &mut *reach_bwd.0;
-            let mut topo = nodes.iter().enumerate();
-            while let (Some((idx, node)), Some((curr, others))) =
-                (topo.next(), reach_bwd.split_first_mut())
-            {
-                reach_bwd = others;
-                curr.insert(idx as u32);
-
-                if cfg!(feature = "never_panic") {
-                    let neighbors = graph.neighbors_directed(node.0, Outgoing).count();
-                    let mut allocation = Vec::<u8>::new();
-                    allocation.try_reserve_exact(2 * neighbors * curr.serialized_size())?;
-                    drop(allocation);
-                }
-
-                for child in graph.neighbors_directed(node.0, Outgoing) {
-                    let child = c(&graph[child]);
-                    reach_bwd[child as usize - idx - 1] |= &*curr;
-                }
-            }
-            // Alternative, seems to be slightly slower?
-            // for (idx, fwd) in reach_fwd.0.iter().enumerate() {
-            //     for to in fwd.iter() {
-            //         reach_bwd.0[to as usize].insert(idx as u32);
-            //     }
-            // }
-        }
-
-        Ok((
-            Self {
-                nodes,
-                reach_fwd,
-                reach_bwd,
-            },
-            visit,
-        ))
+        Ok((Self { nodes, reach_fwd }, visit))
     }
 }
 

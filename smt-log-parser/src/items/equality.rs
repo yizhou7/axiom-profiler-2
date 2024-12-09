@@ -1,8 +1,8 @@
 #[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
 
-use crate::Result;
 use crate::{BoxSlice, IString, NonMaxU32};
+use crate::{Result, StringTable};
 
 use super::{ENodeIdx, EqGivenIdx, EqTransIdx};
 
@@ -47,6 +47,9 @@ pub enum EqualityExpl {
 }
 
 impl EqualityExpl {
+    pub fn is_trivial(&self) -> bool {
+        self.from() == self.to()
+    }
     pub fn from(&self) -> ENodeIdx {
         use EqualityExpl::*;
         match *self {
@@ -86,15 +89,19 @@ impl EqualityExpl {
             (self.to() == from).then(|| self.from())
         }
     }
-    pub fn short_str(&self) -> &'static str {
-        match self {
+    pub fn kind(&self) -> core::result::Result<&'static str, IString> {
+        let kind = match *self {
             EqualityExpl::Root { .. } => "root",
             EqualityExpl::Literal { .. } => "literal",
             EqualityExpl::Congruence { .. } => "congruence",
             EqualityExpl::Theory { .. } => "theory",
             EqualityExpl::Axiom { .. } => "axiom",
-            EqualityExpl::Unknown { .. } => "unknown",
-        }
+            EqualityExpl::Unknown { kind, .. } => return Err(kind),
+        };
+        Ok(kind)
+    }
+    pub fn kind_str<'a>(&self, strings: &'a StringTable) -> &'a str {
+        self.kind().unwrap_or_else(|kind| &strings[*kind])
     }
 }
 
