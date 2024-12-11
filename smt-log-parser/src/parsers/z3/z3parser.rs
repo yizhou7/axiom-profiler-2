@@ -468,6 +468,7 @@ impl Z3LogParser for Z3Parser {
             kind,
             result,
             prerequisites: prerequisites.into(),
+            frame: self.stack.active_frame(),
         };
         let proof_idx = self.terms.proof_terms.new_term(proof_step)?;
         self.events.new_proof_step(
@@ -932,6 +933,17 @@ impl Z3Parser {
 
     pub fn get_pattern(&self, qpat: QuantPat) -> Option<TermIdx> {
         qpat.pat.map(|pat| self.patterns(qpat.quant).unwrap()[pat])
+    }
+
+    /// Does the proof step `pidx` prove `false`? This can may be under a
+    /// hypothesis so might not necessarily imply unsat.
+    pub fn proves_false(&self, pidx: ProofIdx) -> bool {
+        let result = &self[self[pidx].result];
+        result.child_ids.is_empty()
+            && result
+                .kind
+                .app_name()
+                .is_some_and(|name| &self[name] == "false")
     }
 
     /// Returns the size in AST nodes of the term `tidx`. Note that z3 eagerly

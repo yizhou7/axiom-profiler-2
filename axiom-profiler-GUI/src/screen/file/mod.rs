@@ -4,11 +4,7 @@ mod summary;
 
 use std::rc::Rc;
 
-use smt_log_parser::{
-    analysis::{InstGraph, QuantifierAnalysis},
-    formatter::TermDisplayContext,
-    parsers::ParseState,
-};
+use smt_log_parser::{analysis::InstGraph, formatter::TermDisplayContext, parsers::ParseState};
 use yew::{html, ContextHandle, ContextProvider, Html};
 
 use crate::{
@@ -26,7 +22,9 @@ use super::{
     },
     homepage::{FileInfo, ParseInfo, RcParser},
     inst_graph::{
-        filter::{DEFAULT_DISABLER_CHAIN, DEFAULT_FILTER_CHAIN},
+        filter::{
+            DEFAULT_DISABLER_CHAIN, DEFAULT_FILTER_CHAIN, PROOF_DISABLER_CHAIN, PROOF_FILTER_CHAIN,
+        },
         GraphProps,
     },
     manager::{NestedScreen, NestedScreenM},
@@ -105,6 +103,7 @@ pub enum ViewChoice {
     Overview,
     Graph,
     MatchingLoop,
+    Proofs,
 }
 
 impl Screen for File {
@@ -157,10 +156,7 @@ impl Screen for File {
                 let parser = props.parser.parser.borrow();
                 match InstGraph::new(&parser) {
                     Ok(graph) => {
-                        let data = AnalysisData {
-                            quants: QuantifierAnalysis::new(&parser, &graph),
-                            graph,
-                        };
+                        let data = AnalysisData::new(&parser, graph);
                         self.analysis = Err(RcAnalysis::new(data));
                     }
                     Err(err) => {
@@ -189,6 +185,7 @@ impl Screen for File {
                             default_filters: DEFAULT_FILTER_CHAIN.to_vec(),
                             default_disablers: DEFAULT_DISABLER_CHAIN.to_vec(),
                             extra: None,
+                            enable_proofs: false,
                         })
                     }
                     ViewChoice::MatchingLoop => {
@@ -199,6 +196,19 @@ impl Screen for File {
                             file: props.file_info.clone(),
                             parser: props.parser.clone(),
                             analysis: analysis.clone(),
+                        })
+                    }
+                    ViewChoice::Proofs => {
+                        let Some(analysis) = self.analysis_or_error(link, 14) else {
+                            return false;
+                        };
+                        ViewProps::Graph(GraphProps {
+                            parser: props.parser.clone(),
+                            analysis: analysis.clone(),
+                            default_filters: PROOF_FILTER_CHAIN.to_vec(),
+                            default_disablers: PROOF_DISABLER_CHAIN.to_vec(),
+                            extra: None,
+                            enable_proofs: true,
                         })
                     }
                 };
@@ -343,6 +353,15 @@ impl File {
                     disabled: true,
                     click: Action::MouseDown(
                         link.callback(|()| FileM::ChangeView(ViewChoice::MatchingLoop)),
+                    ),
+                }),
+                ElementKind::Simple(SimpleButton {
+                    icon: "batch_prediction",
+                    text: "Proof tree".to_string(),
+                    hover_text: Some("View with logical proof tree".to_string()),
+                    disabled: props.parser.parser.borrow().proofs().is_empty(),
+                    click: Action::MouseDown(
+                        link.callback(|()| FileM::ChangeView(ViewChoice::Proofs)),
                     ),
                 }),
             ],

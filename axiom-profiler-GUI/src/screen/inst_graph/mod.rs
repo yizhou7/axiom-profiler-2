@@ -48,6 +48,8 @@ pub struct GraphProps {
     pub default_filters: Vec<Filter>,
     pub default_disablers: Vec<(Disabler, bool)>,
     pub extra: Option<GraphExtraProps>,
+    // TODO: make the graph display be generic over this (and not a parameter).
+    pub enable_proofs: bool,
 }
 
 impl GraphProps {
@@ -128,7 +130,7 @@ impl Screen for Graph {
                 Self::default_permissions(),
                 link,
             ),
-            disabler: DisablersState::new(props.default_disablers.clone()),
+            disabler: DisablersState::new(props.default_disablers.clone(), props.enable_proofs),
             nodes_to_select: Vec::new(),
             svg_view: WeakComponentLink::default(),
             graph_warning: WeakComponentLink::default(),
@@ -145,9 +147,11 @@ impl Screen for Graph {
             *self = Self::create(link, props);
             return true;
         }
-        let disablers_changed = props.default_disablers != old_props.default_disablers;
+        let disablers_changed = props.default_disablers != old_props.default_disablers
+            || props.enable_proofs != old_props.enable_proofs;
         if disablers_changed {
-            self.disabler = DisablersState::new(props.default_disablers.clone());
+            self.disabler =
+                DisablersState::new(props.default_disablers.clone(), props.enable_proofs);
         }
         if props.default_filters != old_props.default_filters {
             self.filter = FiltersState::new(
@@ -172,7 +176,7 @@ impl Screen for Graph {
                 let mut analysis = props.analysis.borrow_mut();
 
                 let (is_first, modified, update_view) =
-                    self.apply_filter(&parser, &mut analysis.graph, cmd);
+                    self.apply_filter(&parser, &mut analysis.graph, cmd, props.enable_proofs);
                 if !modified || filter_only {
                     return update_view;
                 }
@@ -296,17 +300,12 @@ impl Screen for Graph {
     }
 
     fn view(&self, link: &Scope<Self>, props: &Self::Properties) -> Html {
-        let Some(rendered) = self.rendered_graph() else {
-            return html! {};
-        };
-        let dimensions = self
-            .waiting()
-            .map_or(rendered.dims(), GraphDimensions::of_graph);
+        let dimensions = self.waiting().map(GraphDimensions::of_graph);
         html! {<>
             <GraphInfo
                 parser={props.parser.clone()}
                 analysis={props.analysis.clone()}
-                rendered={rendered.clone()}
+                rendered={self.rendered_graph().cloned()}
                 outdated={self.waiting.is_some()}
                 update_selected={link.callback(GraphM::Selection)}
                 svg_view={self.svg_view.clone()}
@@ -342,6 +341,7 @@ impl Screen for Graph {
             &link.callback(|f| GraphM::Filter(FilterM::AddFilter(f))),
             selected,
             reset,
+            props.enable_proofs,
         )
     }
 

@@ -1,7 +1,4 @@
-use std::{
-    borrow::{Borrow, Cow},
-    fmt,
-};
+use std::{borrow::Cow, fmt};
 
 use crate::{
     formatter::{
@@ -635,25 +632,30 @@ impl VarNames {
             ),
         };
 
-        let mut colour = None;
         #[cfg(feature = "display_html")]
-        let name = if config.html() {
-            const COLOURS: [&str; 9] = [
-                "blue", "green", "olive", "maroon", "teal", "purple", "red", "fuchsia", "navy",
-            ];
-            colour = Some(COLOURS[idx % COLOURS.len()]);
-            let name = ammonia::clean_text(name.borrow());
-            Cow::Owned(name)
-        } else {
-            name
-        };
-        VarName(move |f| {
-            if let Some(colour) = colour {
-                config.with_html_colour(f, colour, |f| write!(f, "{name}"))
+        {
+            let mut colour = None;
+            let name = if config.html() {
+                const COLOURS: [&str; 9] = [
+                    "blue", "green", "olive", "maroon", "teal", "purple", "red", "fuchsia", "navy",
+                ];
+                colour = Some(COLOURS[idx % COLOURS.len()]);
+                use std::borrow::Borrow;
+                let name = ammonia::clean_text(name.borrow());
+                Cow::Owned(name)
             } else {
-                write!(f, "{name}")
-            }
-        })
+                name
+            };
+            VarName(move |f| {
+                if let Some(colour) = colour {
+                    config.with_html_colour(f, colour, |f| write!(f, "{name}"))
+                } else {
+                    write!(f, "{name}")
+                }
+            })
+        }
+        #[cfg(not(feature = "display_html"))]
+        VarName(move |f| write!(f, "{name}"))
     }
 }
 
@@ -688,10 +690,15 @@ fn display_child<'b>(
     ctxt: &DisplayCtxt<'b>,
     data: &mut DisplayData<'b>,
 ) -> fmt::Result {
-    data.incr_ast_depth_with_limit(ctxt.config.ast_depth_limit, |data| {
-        data.with_term(child, |data| ctxt.parser[child].fmt_with(f, ctxt, data))
-    })
-    .unwrap_or_else(|| write!(f, "..."))
+    let cterm = &ctxt.parser[child];
+    let mut display =
+        |data: &mut DisplayData<'b>| data.with_term(child, |data| cterm.fmt_with(f, ctxt, data));
+    if cterm.child_ids().is_empty() {
+        display(data)
+    } else {
+        data.incr_ast_depth_with_limit(ctxt.config.ast_depth_limit, display)
+            .unwrap_or_else(|| write!(f, "..."))
+    }
 }
 
 impl<'a, 'b> DisplayWithCtxt<DisplayCtxt<'b>, DisplayData<'b>> for &'a MatchResult<'a, 'a> {
@@ -861,6 +868,9 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
         // for this, we need to store the quantifier in the context
         data.with_quant(self, |data| {
             data.with_outer_bind_power(f, QUANT_BIND, |data, f| {
+                let Some((body, patterns)) = data.children().split_last() else {
+                    return write!(f, "lambda");
+                };
                 // Print the variables in reverse since they are logged in
                 // reverse for some reason.
                 let vars = (0..self.num_vars).rev().map(|idx| {
@@ -874,7 +884,6 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
                         VarNames::get_type(&ctxt.parser.strings, self.vars.as_ref(), idx as usize);
                     (idx != self.num_vars - 1, name, ty)
                 });
-                let (body, patterns) = data.children().split_last().unwrap();
                 if ctxt.config.replace_symbols.is_none() {
                     write!(f, "(forall (")?;
                     for (not_first, name, ty) in vars {

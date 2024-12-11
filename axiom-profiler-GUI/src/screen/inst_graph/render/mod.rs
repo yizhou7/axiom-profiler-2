@@ -26,11 +26,7 @@ use crate::{
     utils::colouring::QuantIdxToColourMap,
 };
 
-use super::{
-    filter::{Disabler, RenderCommand},
-    visible::RcVisibleGraph,
-    Graph, GraphM,
-};
+use super::{filter::RenderCommand, visible::RcVisibleGraph, Graph, GraphM};
 
 impl Graph {
     pub(super) fn apply_filter(
@@ -38,11 +34,10 @@ impl Graph {
         parser: &Z3Parser,
         graph: &mut InstGraph,
         cmd: RenderCommand,
+        enable_proofs: bool,
     ) -> (bool, bool, bool) {
         if cmd.is_full() {
-            if self.disabler.modified() {
-                Disabler::apply(self.disabler.disablers(), graph, parser);
-            }
+            self.disabler.apply(graph, parser);
             graph.raw.reset_visibility_to(false);
             self.filter.no_effects.clear();
         }
@@ -60,6 +55,19 @@ impl Graph {
             }
             if let Some(to_select) = output.select.filter(|_| can_select) {
                 update_view |= self.set_to_select(to_select);
+            }
+        }
+        // Force instantiations which are parents of visible proof nodes to be
+        // visible also (regardless of filters).
+        if enable_proofs {
+            for (idx, inst) in parser.instantiations().iter_enumerated() {
+                let Some(proof) = inst.proof_id.proof() else {
+                    continue;
+                };
+                if !graph.raw[proof].visible() {
+                    continue;
+                }
+                modified |= graph.raw.set_visibility(idx, false);
             }
         }
         (cmd.is_first(), modified, update_view)
@@ -117,7 +125,7 @@ impl Graph {
         let (selected_nodes, selected_edges) = self.update_selected(&visible);
         let dimensions = GraphDimensions::of_graph(&visible);
 
-        log::debug!("Rendering graph with {dimensions:?}");
+        log::trace!("Rendering graph with {dimensions:?}");
         let new_permissions = dimensions.max(Self::default_permissions());
         self.filter.chain.set_permissions(new_permissions);
 
@@ -180,9 +188,9 @@ impl Graph {
                         (),
                         (),
                         parser,
-                        parser,
+                        (parser, node_data.proof),
                         (data.hidden_parents, data.hidden_children),
-                        (parser, colour_map),
+                        (parser, colour_map, node_data.proof),
                         (),
                         (),
                         (),
@@ -192,7 +200,7 @@ impl Graph {
                 },
             )
         );
-        // log::debug!("Graph DOT:\n{dot_output}");
+        // log::trace!("Graph DOT:\n{dot_output}");
         self.state = Ok(GraphState::RenderingGraph);
         let link = link.clone();
         wasm_bindgen_futures::spawn_local(async move {
