@@ -78,13 +78,21 @@ pub enum Error {
     // Enode
     UnknownEnode(TermIdx),
     EnodePoppedFrame(StackIdx),
-    InvalidGeneration(ParseIntError),
+    InvalidGeneration(nonmax::ParseIntError),
     EnodeRootMismatch(ENodeIdx, ENodeIdx),
 
     // Stack
     StackFrameNotPushed,
     PopConflictMismatch,
     InvalidFrameInteger(ParseIntError),
+
+    // CDCL
+    NoConflict,
+    BoolLiteral,
+    BoolLiteralNotP,
+    InvalidBoolLiteral(nonmax::ParseIntError),
+    UnknownJustification(String),
+    MissingColonJustification,
 
     // File IO
     FileRead(std::io::Error),

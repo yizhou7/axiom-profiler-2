@@ -1,4 +1,4 @@
-use std::ops::Index;
+use core::{num::NonZeroUsize, ops::Index};
 
 #[cfg(feature = "mem_dbg")]
 use mem_dbg::{MemDbg, MemSize};
@@ -7,14 +7,14 @@ use typed_index_collections::TiSlice;
 use crate::{
     items::*,
     parsers::z3::{VersionInfo, Z3LogParser},
-    BigRational, BoxSlice, Error, IString, NonMaxU32, Result, StringTable, TiVec,
+    BigRational, BoxSlice, Error as E, IString, NonMaxU32, Result, StringTable, TiVec,
 };
 
 use super::{
     egraph::EGraph,
     inst::{InstData, Insts},
     inter_line::{InterLine, LineKind},
-    stack::Stack,
+    stack::{CdclTree, Stack},
     stm2::EventLog,
     synthetic::{AnyTerm, SynthIdx, SynthTerms},
     terms::Terms,
@@ -37,6 +37,8 @@ pub struct Z3Parser {
     pub(crate) egraph: EGraph,
     pub(crate) stack: Stack,
 
+    pub cdcl: CdclTree,
+
     pub strings: StringTable,
     pub events: EventLog,
     comm: InterLine,
@@ -54,6 +56,7 @@ impl Default for Z3Parser {
             inst_stack: Default::default(),
             egraph: Default::default(),
             stack: Default::default(),
+            cdcl: Default::default(),
             events: EventLog::new(&mut strings),
             comm: Default::default(),
             strings,
@@ -63,14 +66,24 @@ impl Default for Z3Parser {
 
 impl Z3Parser {
     pub fn parse_new_full_id(&mut self, id: Option<&str>) -> Result<TermId> {
-        let full_id = id.ok_or(Error::UnexpectedNewline)?;
+        let full_id = id.ok_or(E::UnexpectedNewline)?;
         TermId::parse(&mut self.strings, full_id)
     }
-    pub fn parse_existing_enode(&mut self, id: &str) -> Result<ENodeIdx> {
-        let idx = self
-            .terms
+
+    pub fn parse_existing_app(&mut self, id: &str) -> Result<TermIdx> {
+        self.terms
             .app_terms
-            .parse_existing_id(&mut self.strings, id)?;
+            .parse_existing_id(&mut self.strings, id)
+    }
+
+    pub fn parse_existing_proof(&mut self, id: &str) -> Result<ProofIdx> {
+        self.terms
+            .proof_terms
+            .parse_existing_id(&mut self.strings, id)
+    }
+
+    pub fn parse_existing_enode(&mut self, id: &str) -> Result<ENodeIdx> {
+        let idx = self.parse_existing_app(id)?;
         let enode = self.egraph.get_enode(idx, &self.stack);
         if self.version_info.is_version(4, 12, 2) && enode.is_err() {
             // Very rarely in version 4.12.2, an `[attach-enode]` is not emitted. Create it here.
@@ -81,12 +94,13 @@ impl Z3Parser {
         }
         enode
     }
+
     pub fn parse_z3_generation<'a>(
         l: &mut impl Iterator<Item = &'a str>,
     ) -> Result<Option<NonMaxU32>> {
         if let Some(gen) = l.next() {
-            let gen = gen.parse::<u32>().map_err(Error::InvalidGeneration)?;
-            Ok(Some(NonMaxU32::new(gen).unwrap()))
+            let gen = gen.parse::<NonMaxU32>().map_err(E::InvalidGeneration)?;
+            Ok(Some(gen))
         } else {
             Ok(None)
         }
@@ -96,34 +110,24 @@ impl Z3Parser {
         &mut self,
         l: impl Iterator<Item = &'a str>,
     ) -> Result<BoxSlice<ProofIdx>> {
-        l.map(|id| {
-            self.terms
-                .proof_terms
-                .parse_existing_id(&mut self.strings, id)
-        })
-        .collect()
+        l.map(|id| self.parse_existing_proof(id)).collect()
     }
     fn gobble_term_children<'a>(
         &mut self,
         l: impl Iterator<Item = &'a str>,
     ) -> Result<BoxSlice<TermIdx>> {
-        l.map(|id| {
-            self.terms
-                .app_terms
-                .parse_existing_id(&mut self.strings, id)
-        })
-        .collect()
+        l.map(|id| self.parse_existing_app(id)).collect()
     }
     fn gobble_var_names_list<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Result<VarNames> {
         let mut t = Self::gobble_tuples::<true>(l);
         // TODO: if the list can be empty then remove the first `?` and
         // replace with default case.
-        let (first, second) = t.next().ok_or(Error::UnexpectedEnd)??;
+        let (first, second) = t.next().ok_or(E::UnexpectedEnd)??;
         if first.is_empty() {
             let first = self.mk_string(second);
             let tuples = t.map(|t| match t? {
                 ("", second) => self.mk_string(second),
-                _ => Err(Error::VarNamesListInconsistent),
+                _ => Err(E::VarNamesListInconsistent),
             });
             let types = [first].into_iter().chain(tuples);
             Ok(VarNames::TypeOnly(types.collect::<Result<_>>()?))
@@ -134,14 +138,14 @@ impl Z3Parser {
             ) -> Result<(IString, IString)> {
                 let first = first
                     .strip_prefix('|')
-                    .ok_or(Error::VarNamesNoBar)?
+                    .ok_or(E::VarNamesNoBar)?
                     .strip_suffix('|')
-                    .ok_or(Error::VarNamesNoBar)?;
+                    .ok_or(E::VarNamesNoBar)?;
                 let second = second
                     .strip_prefix('|')
-                    .ok_or(Error::VarNamesNoBar)?
+                    .ok_or(E::VarNamesNoBar)?
                     .strip_suffix('|')
-                    .ok_or(Error::VarNamesNoBar)?;
+                    .ok_or(E::VarNamesNoBar)?;
                 Ok((
                     IString(strings.get_or_intern(first)),
                     IString(strings.get_or_intern(second)),
@@ -174,33 +178,33 @@ impl Z3Parser {
             let (first, second) = if first.ends_with(')') {
                 let spaces = *spaces.get_or_insert(0);
                 if FORMS_EQUAL && spaces != 0 {
-                    return Err(Error::UnequalTupleForms(spaces, 0));
+                    return Err(E::UnequalTupleForms(spaces, 0));
                 }
                 let mut l = first.split(';');
                 (
-                    l.next().ok_or(Error::UnexpectedNewline)?,
-                    l.next().ok_or(Error::UnexpectedNewline)?,
+                    l.next().ok_or(E::UnexpectedNewline)?,
+                    l.next().ok_or(E::UnexpectedNewline)?,
                 )
             } else {
-                let middle = l.next().ok_or(Error::UnexpectedNewline)?;
+                let middle = l.next().ok_or(E::UnexpectedNewline)?;
                 if middle != ";" {
                     let spaces = *spaces.get_or_insert(1);
                     if FORMS_EQUAL && spaces != 1 {
-                        return Err(Error::UnequalTupleForms(spaces, 1));
+                        return Err(E::UnequalTupleForms(spaces, 1));
                     }
                     (first, middle)
                 } else {
                     let spaces = *spaces.get_or_insert(2);
                     if FORMS_EQUAL && spaces != 2 {
-                        return Err(Error::UnequalTupleForms(spaces, 2));
+                        return Err(E::UnequalTupleForms(spaces, 2));
                     }
-                    let second = l.next().ok_or(Error::UnexpectedNewline)?;
+                    let second = l.next().ok_or(E::UnexpectedNewline)?;
                     (first, second)
                 }
             };
             let t = (
-                first.strip_prefix('(').ok_or(Error::TupleMissingParens)?,
-                second.strip_suffix(')').ok_or(Error::TupleMissingParens)?,
+                first.strip_prefix('(').ok_or(E::TupleMissingParens)?,
+                second.strip_suffix(')').ok_or(E::TupleMissingParens)?,
             );
             Ok(Some(t))
         };
@@ -261,7 +265,7 @@ impl Z3Parser {
     }
     fn expect_completed<'s>(mut l: impl Iterator<Item = &'s str>) -> Result<()> {
         l.next()
-            .map_or(Ok(()), |more| Err(Error::ExpectedNewline(more.to_string())))
+            .map_or(Ok(()), |more| Err(E::ExpectedNewline(more.to_string())))
     }
 
     fn mk_string(&mut self, s: &str) -> Result<IString> {
@@ -317,11 +321,11 @@ impl Z3Parser {
             assert_ne!(end, 0);
             let value = meaning[..end]
                 .parse::<num::BigUint>()
-                .map_err(Error::ParseBigUintError)?;
+                .map_err(E::ParseBigUintError)?;
             let value = num::BigRational::from(num::BigInt::from(value));
             return Ok((&meaning[end..], value));
         };
-        let error = || Error::ParseError(meaning.to_owned());
+        let error = || E::ParseError(meaning.to_owned());
         let space = meaning.bytes().position(|b| b == b' ').ok_or_else(error)?;
         let (op, mut rest) = (&meaning[..space], &meaning[space..]);
         let mut arguments = Vec::new();
@@ -346,6 +350,66 @@ impl Z3Parser {
             _ => Err(error()),
         }
     }
+
+    fn parse_literal<'a>(
+        &mut self,
+        l: &mut impl Iterator<Item = &'a str>,
+    ) -> Result<Option<Assignment>> {
+        let Some(lit) = l.next() else {
+            return Ok(None);
+        };
+        let (lit, value) = match lit {
+            // Have never seen this, but it is possible according to z3 source.
+            "true" | "false" => return Err(E::BoolLiteral),
+            "(not" => {
+                let lit = l.next().ok_or(E::UnexpectedNewline)?;
+                let lit = lit.strip_suffix(')').ok_or(E::TupleMissingParens)?;
+                (lit, false)
+            }
+            _ => (lit, true),
+        };
+        let literal = self.parse_existing_app(lit)?;
+        Ok(Some(Assignment { literal, value }))
+    }
+
+    /// When logging `assign` z3 prints some literals as their "bool var idx"
+    /// rather than translating them through its `m_bool_var2expr` to print a
+    /// "#id".
+    ///
+    /// These look like `p123` and `(not p123)` in <= v4.8.9, or `123`
+    /// and `-123` in >= v4.8.10. Unfortunately we don't have the
+    /// `m_bool_var2expr` map so can't translate these back to a `TermIdx`. The
+    /// literal is rarely also `true` or `false` (for which this returns `None`)
+    fn parse_bool_literal<'a>(
+        &mut self,
+        l: &mut impl Iterator<Item = &'a str>,
+    ) -> Result<Option<(Option<NonMaxU32>, bool)>> {
+        let Some(lit) = l.next() else {
+            return Ok(None);
+        };
+        match lit {
+            "true" => return Ok(Some((None, true))),
+            "false" => return Ok(Some((None, false))),
+            _ => (),
+        };
+
+        let new_mode = self.version_info.is_ge_version(4, 8, 10);
+        let (lit, value) = if new_mode {
+            let noneg = lit.strip_prefix('-');
+            (noneg.unwrap_or(lit), noneg.is_none())
+        } else {
+            let (lit, value) = if lit == "(not" {
+                let lit = l.next().ok_or(E::UnexpectedNewline)?;
+                let lit = lit.strip_suffix(')').ok_or(E::TupleMissingParens)?;
+                (lit, false)
+            } else {
+                (lit, true)
+            };
+            (lit.strip_prefix('p').ok_or(E::BoolLiteralNotP)?, value)
+        };
+        let bool_lit = lit.parse::<NonMaxU32>().map_err(E::InvalidBoolLiteral)?;
+        Ok(Some((Some(bool_lit), value)))
+    }
 }
 
 impl Z3LogParser for Z3Parser {
@@ -354,8 +418,8 @@ impl Z3LogParser for Z3Parser {
     }
 
     fn version_info<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
-        let solver = l.next().ok_or(Error::UnexpectedNewline)?.to_string();
-        let version = l.next().ok_or(Error::UnexpectedNewline)?;
+        let solver = l.next().ok_or(E::UnexpectedNewline)?.to_string();
+        let version = l.next().ok_or(E::UnexpectedNewline)?;
         // Return if there is unexpectedly more data
         Self::expect_completed(l)?;
         let version = semver::Version::parse(version)?;
@@ -366,13 +430,13 @@ impl Z3LogParser for Z3Parser {
 
     fn mk_quant<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
         let full_id = self.parse_new_full_id(l.next())?;
-        let mut quant_name = std::borrow::Cow::Borrowed(l.next().ok_or(Error::UnexpectedNewline)?);
-        let mut num_vars_str = l.next().ok_or(Error::UnexpectedNewline)?;
+        let mut quant_name = std::borrow::Cow::Borrowed(l.next().ok_or(E::UnexpectedNewline)?);
+        let mut num_vars_str = l.next().ok_or(E::UnexpectedNewline)?;
         let mut num_vars = num_vars_str.parse::<u32>();
         // The name may contain spaces... TODO: PR to add quotes around name when logging in z3
         while num_vars.is_err() {
             quant_name = std::borrow::Cow::Owned(format!("{quant_name} {num_vars_str}"));
-            num_vars_str = l.next().ok_or(Error::UnexpectedNewline)?;
+            num_vars_str = l.next().ok_or(E::UnexpectedNewline)?;
             num_vars = num_vars_str.parse::<u32>();
         }
         let quant_name = QuantKind::parse(&mut self.strings, &quant_name);
@@ -394,12 +458,12 @@ impl Z3LogParser for Z3Parser {
 
     fn mk_lambda<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
         let full_id = self.parse_new_full_id(l.next())?;
-        let lambda_name = l.next().ok_or(Error::UnexpectedNewline)?;
+        let lambda_name = l.next().ok_or(E::UnexpectedNewline)?;
         if lambda_name != self.expected_null_str() {
-            return Err(Error::NonNullLambdaName(lambda_name.to_string()));
+            return Err(E::NonNullLambdaName(lambda_name.to_string()));
         }
-        let num_vars = l.next().ok_or(Error::UnexpectedNewline)?;
-        let num_vars = num_vars.parse::<u32>().map_err(Error::InvalidQVarInteger)?;
+        let num_vars = l.next().ok_or(E::UnexpectedNewline)?;
+        let num_vars = num_vars.parse::<u32>().map_err(E::InvalidQVarInteger)?;
         let child_ids = self.gobble_proof_children(l)?;
         let kind = QuantKind::Lambda(child_ids);
         self.quant_or_lamda(full_id, Default::default(), num_vars, kind)
@@ -407,7 +471,7 @@ impl Z3LogParser for Z3Parser {
 
     fn mk_var<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
         let full_id = self.parse_new_full_id(l.next())?;
-        let kind = l.next().ok_or(Error::UnexpectedNewline)?;
+        let kind = l.next().ok_or(E::UnexpectedNewline)?;
         let kind = TermKind::parse_var(kind)?;
         // Return if there is unexpectedly more data
         Self::expect_completed(l)?;
@@ -422,7 +486,7 @@ impl Z3LogParser for Z3Parser {
 
     fn mk_app<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
         let full_id = self.parse_new_full_id(l.next())?;
-        let name = l.next().ok_or(Error::UnexpectedNewline)?;
+        let name = l.next().ok_or(E::UnexpectedNewline)?;
         let name = self.mk_string(name)?;
         let child_ids = self.gobble_term_children(l)?;
         let term = Term {
@@ -438,7 +502,7 @@ impl Z3LogParser for Z3Parser {
 
     fn mk_proof<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
         let full_id = self.parse_new_full_id(l.next())?;
-        let name = l.next().ok_or(Error::UnexpectedNewline)?;
+        let name = l.next().ok_or(E::UnexpectedNewline)?;
         let kind = match name.parse() {
             Ok(kind) => kind,
             Err(_) => {
@@ -446,22 +510,16 @@ impl Z3LogParser for Z3Parser {
                 ProofStepKind::OTHER(self.mk_string(name)?)
             }
         };
-        let mut next = l.next().ok_or(Error::UnexpectedNewline)?;
+        let mut next = l.next().ok_or(E::UnexpectedNewline)?;
         let mut prerequisites = Vec::new();
         for n in l {
             let curr = next;
             next = n;
 
-            let prereq = self
-                .terms
-                .proof_terms
-                .parse_existing_id(&mut self.strings, curr)?;
+            let prereq = self.parse_existing_proof(curr)?;
             prerequisites.push(prereq);
         }
-        let result = self
-            .terms
-            .app_terms
-            .parse_existing_id(&mut self.strings, next)?;
+        let result = self.parse_existing_app(next)?;
 
         let proof_step = ProofStep {
             id: full_id,
@@ -481,8 +539,8 @@ impl Z3LogParser for Z3Parser {
     }
 
     fn attach_meaning<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
-        let id = l.next().ok_or(Error::UnexpectedNewline)?;
-        let theory = l.next().ok_or(Error::UnexpectedNewline)?;
+        let id = l.next().ok_or(E::UnexpectedNewline)?;
+        let theory = l.next().ok_or(E::UnexpectedNewline)?;
         let value = l.collect::<Vec<_>>().join(" ");
         let meaning = match theory {
             "arith" => {
@@ -495,22 +553,16 @@ impl Z3LogParser for Z3Parser {
                 Meaning::Unknown { theory, value }
             }
         };
-        let idx = self
-            .terms
-            .app_terms
-            .parse_existing_id(&mut self.strings, id)?;
+        let idx = self.parse_existing_app(id)?;
         let meaning = self.terms.new_meaning(idx, meaning)?;
         self.events.new_meaning(idx, meaning, &self.strings)?;
         Ok(())
     }
 
     fn attach_var_names<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
-        let id = l.next().ok_or(Error::UnexpectedNewline)?;
+        let id = l.next().ok_or(E::UnexpectedNewline)?;
         let var_names = self.gobble_var_names_list(l)?;
-        let tidx = self
-            .terms
-            .app_terms
-            .parse_existing_id(&mut self.strings, id)?;
+        let tidx = self.parse_existing_app(id)?;
         let qidx = self.terms.quant(tidx)?;
         assert!(self.quantifiers[qidx].vars.is_none());
         assert!(!matches!(self.quantifiers[qidx].kind, QuantKind::Lambda(_)));
@@ -519,11 +571,8 @@ impl Z3LogParser for Z3Parser {
     }
 
     fn attach_enode<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
-        let id = l.next().ok_or(Error::UnexpectedNewline)?;
-        let idx = self
-            .terms
-            .app_terms
-            .parse_existing_id(&mut self.strings, id);
+        let id = l.next().ok_or(E::UnexpectedNewline)?;
+        let idx = self.parse_existing_app(id);
         let Ok(idx) = idx else {
             if self.version_info.is_version(4, 8, 7) {
                 // Z3 4.8.7 seems to have a bug where it can emit a non-existent term id here.
@@ -552,18 +601,17 @@ impl Z3LogParser for Z3Parser {
     }
 
     fn eq_expl<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
-        let from = self.parse_existing_enode(l.next().ok_or(Error::UnexpectedNewline)?)?;
-        let kind = l.next().ok_or(Error::UnexpectedNewline)?;
+        let from = self.parse_existing_enode(l.next().ok_or(E::UnexpectedNewline)?)?;
+        let kind = l.next().ok_or(E::UnexpectedNewline)?;
         let eq_expl = {
             let mut kind_dependent_info = Self::iter_until_eq(l.by_ref(), ";");
             match kind {
                 "root" => EqualityExpl::Root { id: from },
                 "lit" => {
-                    let eq = kind_dependent_info.next().ok_or(Error::UnexpectedEnd)?;
+                    let eq = kind_dependent_info.next().ok_or(E::UnexpectedEnd)?;
                     let eq = self.parse_existing_enode(eq)?;
                     Self::expect_completed(kind_dependent_info)?;
-                    let to =
-                        self.parse_existing_enode(l.next().ok_or(Error::UnexpectedNewline)?)?;
+                    let to = self.parse_existing_enode(l.next().ok_or(E::UnexpectedNewline)?)?;
 
                     // self.equalities.push(eq_expl.clone());
                     EqualityExpl::Literal { from, eq, to }
@@ -576,8 +624,7 @@ impl Z3LogParser for Z3Parser {
                         let to = self.parse_existing_enode(to)?;
                         arg_eqs.push((from, to));
                     }
-                    let to =
-                        self.parse_existing_enode(l.next().ok_or(Error::UnexpectedNewline)?)?;
+                    let to = self.parse_existing_enode(l.next().ok_or(E::UnexpectedNewline)?)?;
                     EqualityExpl::Congruence {
                         from,
                         arg_eqs: arg_eqs.into_boxed_slice(),
@@ -586,25 +633,22 @@ impl Z3LogParser for Z3Parser {
                     }
                 }
                 "th" => {
-                    let theory = kind_dependent_info.next().ok_or(Error::UnexpectedEnd)?;
+                    let theory = kind_dependent_info.next().ok_or(E::UnexpectedEnd)?;
                     let theory = self.mk_string(theory)?;
                     Self::expect_completed(kind_dependent_info)?;
-                    let to =
-                        self.parse_existing_enode(l.next().ok_or(Error::UnexpectedNewline)?)?;
+                    let to = self.parse_existing_enode(l.next().ok_or(E::UnexpectedNewline)?)?;
                     EqualityExpl::Theory { from, theory, to }
                 }
                 "ax" => {
                     Self::expect_completed(kind_dependent_info)?;
-                    let to =
-                        self.parse_existing_enode(l.next().ok_or(Error::UnexpectedNewline)?)?;
+                    let to = self.parse_existing_enode(l.next().ok_or(E::UnexpectedNewline)?)?;
                     EqualityExpl::Axiom { from, to }
                 }
                 kind => {
                     let args = kind_dependent_info
                         .map(|s| self.mk_string(s))
                         .collect::<Result<_>>()?;
-                    let to =
-                        self.parse_existing_enode(l.next().ok_or(Error::UnexpectedNewline)?)?;
+                    let to = self.parse_existing_enode(l.next().ok_or(E::UnexpectedNewline)?)?;
                     EqualityExpl::Unknown {
                         kind: self.mk_string(kind)?,
                         from,
@@ -622,30 +666,24 @@ impl Z3LogParser for Z3Parser {
     }
 
     fn new_match<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
-        let app_terms = &self.terms.app_terms;
-
-        let fingerprint = l.next().ok_or(Error::UnexpectedNewline)?;
+        let fingerprint = l.next().ok_or(E::UnexpectedNewline)?;
         let fingerprint = Fingerprint::parse(fingerprint)?;
-        let idx = l.next().ok_or(Error::UnexpectedNewline)?;
-        let idx = app_terms.parse_existing_id(&mut self.strings, idx)?;
+        let idx = l.next().ok_or(E::UnexpectedNewline)?;
+        let idx = self.parse_existing_app(idx)?;
         let quant = self.terms.quant(idx)?;
-        let pattern = l.next().ok_or(Error::UnexpectedNewline)?;
-        let pattern = app_terms.parse_existing_id(&mut self.strings, pattern)?;
+        let pattern = l.next().ok_or(E::UnexpectedNewline)?;
+        let pattern = self.parse_existing_app(pattern)?;
         let pattern = self
             .patterns(quant)
-            .ok_or(Error::NewMatchOnLambda(quant))?
+            .ok_or(E::NewMatchOnLambda(quant))?
             .position(|p| *p == pattern)
-            .ok_or(Error::UnknownPatternIdx(pattern))?;
+            .ok_or(E::UnknownPatternIdx(pattern))?;
         let bound_terms = Self::iter_until_eq(&mut l, ";");
         let is_axiom = fingerprint.is_zero();
 
         let kind = if is_axiom {
             let bound_terms = bound_terms
-                .map(|id| {
-                    self.terms
-                        .app_terms
-                        .parse_existing_id(&mut self.strings, id)
-                })
+                .map(|id| self.parse_existing_app(id))
                 .collect::<Result<_>>()?;
             MatchKind::Axiom {
                 axiom: quant,
@@ -694,8 +732,8 @@ impl Z3LogParser for Z3Parser {
     }
 
     fn inst_discovered<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
-        let method = l.next().ok_or(Error::UnexpectedNewline)?;
-        let fingerprint = Fingerprint::parse(l.next().ok_or(Error::UnexpectedNewline)?)?;
+        let method = l.next().ok_or(E::UnexpectedNewline)?;
+        let fingerprint = Fingerprint::parse(l.next().ok_or(E::UnexpectedNewline)?)?;
 
         let (kind, blamed) = match method {
             "theory-solving" => {
@@ -703,36 +741,29 @@ impl Z3LogParser for Z3Parser {
                     fingerprint.is_zero(),
                     "Theory solving should have zero fingerprint"
                 );
-                let axiom_id = l.next().ok_or(Error::UnexpectedNewline)?;
+                let axiom_id = l.next().ok_or(E::UnexpectedNewline)?;
                 let axiom_id = TermId::parse(&mut self.strings, axiom_id)?;
 
                 let bound_terms = Self::iter_until_eq(&mut l, ";")
-                    .map(|id| {
-                        self.terms
-                            .app_terms
-                            .parse_existing_id(&mut self.strings, id)
-                    })
+                    .map(|id| self.parse_existing_app(id))
                     .collect::<Result<_>>()?;
 
                 let mut blamed = Vec::new();
                 let mut rewrite_of = None;
                 for word in l.by_ref() {
-                    let term = self
-                        .terms
-                        .app_terms
-                        .parse_existing_id(&mut self.strings, word)?;
+                    let term = self.parse_existing_app(word)?;
                     if let Ok(enode) = self.egraph.get_enode(term, &self.stack) {
                         if let Some(rewrite_of) = rewrite_of {
-                            return Err(Error::NonRewriteAxiomInvalidEnode(rewrite_of));
+                            return Err(E::NonRewriteAxiomInvalidEnode(rewrite_of));
                         }
                         blamed.try_reserve(1)?;
                         blamed.push(BlameKind::Term { term: enode });
                     } else {
                         if let Some(rewrite_of) = rewrite_of {
-                            return Err(Error::RewriteAxiomMultipleTerms1(rewrite_of));
+                            return Err(E::RewriteAxiomMultipleTerms1(rewrite_of));
                         }
                         if !blamed.is_empty() {
-                            return Err(Error::RewriteAxiomMultipleTerms2(blamed));
+                            return Err(E::RewriteAxiomMultipleTerms2(blamed));
                         }
                         rewrite_of = Some(term);
                     }
@@ -746,10 +777,7 @@ impl Z3LogParser for Z3Parser {
                 (kind, blamed)
             }
             "MBQI" => {
-                let quant = self.terms.app_terms.parse_existing_id(
-                    &mut self.strings,
-                    l.next().ok_or(Error::UnexpectedNewline)?,
-                )?;
+                let quant = self.parse_existing_app(l.next().ok_or(E::UnexpectedNewline)?)?;
                 let quant = self.terms.quant(quant)?;
                 let bound_terms = l
                     .map(|id| self.parse_existing_enode(id))
@@ -757,7 +785,7 @@ impl Z3LogParser for Z3Parser {
                 let kind = MatchKind::MBQI { quant, bound_terms };
                 (kind, Vec::new())
             }
-            _ => return Err(Error::UnknownInstMethod(method.to_string())),
+            _ => return Err(E::UnknownInstMethod(method.to_string())),
         };
         let match_ = Match {
             kind,
@@ -768,7 +796,7 @@ impl Z3LogParser for Z3Parser {
     }
 
     fn instance<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
-        let fingerprint = l.next().ok_or(Error::UnexpectedNewline)?;
+        let fingerprint = l.next().ok_or(E::UnexpectedNewline)?;
         let fingerprint = Fingerprint::parse(fingerprint)?;
         let mut proof = Self::iter_until_eq(&mut l, ";");
         let proof_id = if let Some(proof) = proof.next() {
@@ -776,16 +804,10 @@ impl Z3LogParser for Z3Parser {
             // app term (usually an equality), while for "real" fingerprints it
             // points to a proof term.
             if fingerprint.is_zero() {
-                let axiom_body = self
-                    .terms
-                    .app_terms
-                    .parse_existing_id(&mut self.strings, proof)?;
+                let axiom_body = self.parse_existing_app(proof)?;
                 InstProofLink::IsAxiom(axiom_body)
             } else {
-                let proof = self
-                    .terms
-                    .proof_terms
-                    .parse_existing_id(&mut self.strings, proof)?;
+                let proof = self.parse_existing_proof(proof)?;
                 InstProofLink::HasProof(proof)
             }
         } else {
@@ -802,7 +824,7 @@ impl Z3LogParser for Z3Parser {
         let match_ = self
             .insts
             .get_match(fingerprint)
-            .ok_or(Error::UnknownFingerprint(fingerprint))?;
+            .ok_or(E::UnknownFingerprint(fingerprint))?;
         let inst = Instantiation {
             frame: self.stack.active_frame(),
             match_,
@@ -824,7 +846,7 @@ impl Z3LogParser for Z3Parser {
     }
 
     fn end_of_instance<'a>(&mut self, l: impl Iterator<Item = &'a str>) -> Result<()> {
-        let (iidx, yield_terms) = self.inst_stack.pop().ok_or(Error::UnmatchedEndOfInstance)?;
+        let (iidx, yield_terms) = self.inst_stack.pop().ok_or(E::UnmatchedEndOfInstance)?;
         self.insts[iidx].yields_terms = yield_terms.into();
         Self::expect_completed(l)
     }
@@ -834,19 +856,78 @@ impl Z3LogParser for Z3Parser {
         self.events.new_eof();
     }
 
+    fn assign<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
+        let assign = self.parse_literal(&mut l)?.ok_or(E::UnexpectedNewline)?;
+        let mut justification = l.next().ok_or(E::UnexpectedNewline)?;
+        if justification == "decision" {
+            self.cdcl.new_decision(assign, &self.stack)?;
+            justification = l.next().ok_or(E::UnexpectedNewline)?;
+            debug_assert_eq!(justification, "axiom");
+        }
+        // Now `l` contains
+        match justification {
+            // Either a "decision" or a non-interesting assignment by e.g.
+            // internal z3 axioms. NOT USED in the non-decision case.
+            "axiom" => Self::expect_completed(l),
+            // Not sure about this case, it contains one more single literal,
+            // but printed as a `BoolTermIdx` and not a `TermIdx` and z3 doesn't
+            // log `BoolTermIdx` so we cannot really understand it anyway.
+            "bin" => {
+                // NOT USED
+                self.parse_bool_literal(&mut l)?
+                    .ok_or(E::UnexpectedNewline)?;
+                Self::expect_completed(l)
+            }
+            // A propagated assignment: a clause only has one unassigned literal
+            // left. The offending clause is also printed but since it's in
+            // bool-var format we can't use it. Also <= v4.8.8 prints the text
+            // name of each clause on subsequent newlines, we'll ignore those.
+            // Later versions of z3 use `display_compact_j`.
+            "clause" => {
+                let (_lit, value) = self
+                    .parse_bool_literal(&mut l)?
+                    .ok_or(E::UnexpectedNewline)?;
+                debug_assert_eq!(assign.value, value);
+
+                self.cdcl.new_propagate(assign, &self.stack)?;
+                Ok(())
+            }
+            "justification" => {
+                // NOT USED
+                let theory_id = l.next().ok_or(E::UnexpectedNewline)?;
+                let _theory_id = theory_id
+                    .strip_suffix(':')
+                    .ok_or(E::MissingColonJustification)?;
+                while let Some((_lit, _value)) = self.parse_bool_literal(&mut l)? {}
+                Ok(())
+            }
+            _ => Err(E::UnknownJustification(justification.to_string())),
+        }
+    }
+
     fn decide_and_or<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Result<()> {
         self.comm.curr().last_line_kind = LineKind::DecideAndOr;
         Ok(())
     }
 
-    fn conflict<'a>(&mut self, _l: impl Iterator<Item = &'a str>) -> Result<()> {
+    fn conflict<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
         self.comm.curr().last_line_kind = LineKind::Conflict;
+
+        let mut cut = Vec::new();
+        while let Some(assignment) = self.parse_literal(&mut l)? {
+            cut.try_reserve(1)?;
+            cut.push(assignment);
+        }
+        let frame = self.stack.active_frame();
+        self.cdcl.new_conflict(cut.into_boxed_slice(), frame);
+        // Backtracking will happen with the pop in the next line. We'll push
+        // the new (opposite) decision there.
         Ok(())
     }
 
     fn push<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
-        let scope = l.next().ok_or(Error::UnexpectedNewline)?;
-        let scope = scope.parse::<usize>().map_err(Error::InvalidFrameInteger)?;
+        let scope = l.next().ok_or(E::UnexpectedNewline)?;
+        let scope = scope.parse::<usize>().map_err(E::InvalidFrameInteger)?;
         // Return if there is unexpectedly more data
         Self::expect_completed(l)?;
 
@@ -858,23 +939,28 @@ impl Z3LogParser for Z3Parser {
     }
 
     fn pop<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
-        let num = l.next().ok_or(Error::UnexpectedNewline)?;
+        let num = l.next().ok_or(E::UnexpectedNewline)?;
         let num = num
-            .parse::<core::num::NonZeroUsize>()
-            .map_err(Error::InvalidFrameInteger)?;
-        let scope = l.next().ok_or(Error::UnexpectedNewline)?;
-        let scope = scope.parse::<usize>().map_err(Error::InvalidFrameInteger)?;
+            .parse::<NonZeroUsize>()
+            .map_err(E::InvalidFrameInteger)?;
+        let scope = l.next().ok_or(E::UnexpectedNewline)?;
+        let scope = scope.parse::<usize>().map_err(E::InvalidFrameInteger)?;
         // Return if there is unexpectedly more data
         Self::expect_completed(l)?;
-        let from_cdcl = matches!(self.comm.prev().last_line_kind, LineKind::Conflict);
-        let from_cdcl = self.stack.pop_frames(num, scope, from_cdcl)?;
+
+        let conflict = matches!(self.comm.prev().last_line_kind, LineKind::Conflict);
+        debug_assert_eq!(conflict, self.cdcl.has_conflict());
+        let from_cdcl = self.stack.pop_frames(num, scope, conflict)?;
         self.events.new_pop(num, from_cdcl)?;
+        if conflict {
+            self.cdcl.backtrack(&self.stack)?;
+        }
         Ok(())
     }
 
     fn begin_check<'a>(&mut self, mut l: impl Iterator<Item = &'a str>) -> Result<()> {
-        let scope = l.next().ok_or(Error::UnexpectedNewline)?;
-        let scope = scope.parse::<usize>().map_err(Error::InvalidFrameInteger)?;
+        let scope = l.next().ok_or(E::UnexpectedNewline)?;
+        let scope = scope.parse::<usize>().map_err(E::InvalidFrameInteger)?;
         self.stack.ensure_height(scope)?;
         self.events.new_begin_check()?;
         Ok(())
@@ -908,6 +994,9 @@ impl Z3Parser {
     }
     pub fn proofs(&self) -> &TiSlice<ProofIdx, ProofStep> {
         self.terms.proof_terms.terms()
+    }
+    pub fn cdcls(&self) -> &TiSlice<CdclIdx, Cdcl> {
+        self.cdcl.cdcls()
     }
 
     pub fn patterns(&self, q: QuantIdx) -> Option<&TiSlice<PatternIdx, TermIdx>> {
@@ -1059,6 +1148,12 @@ impl Index<StackIdx> for Z3Parser {
     type Output = StackFrame;
     fn index(&self, idx: StackIdx) -> &Self::Output {
         &self.stack[idx]
+    }
+}
+impl Index<CdclIdx> for Z3Parser {
+    type Output = Cdcl;
+    fn index(&self, idx: CdclIdx) -> &Self::Output {
+        &self.cdcl[idx]
     }
 }
 impl Index<IString> for Z3Parser {

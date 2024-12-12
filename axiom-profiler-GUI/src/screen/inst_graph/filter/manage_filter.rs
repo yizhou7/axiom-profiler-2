@@ -1,6 +1,6 @@
 use gloo::timers::callback::Timeout;
 use material_yew::icon::MatIcon;
-use smt_log_parser::items::QuantIdx;
+use smt_log_parser::{analysis::RawNodeIndex, items::QuantIdx};
 use web_sys::{Element, HtmlElement, HtmlInputElement, KeyboardEvent};
 use yew::{
     function_component, html, Callback, Children, Component, Context, Html, NodeRef, Properties,
@@ -271,7 +271,7 @@ pub struct ExistingFilterProps {
 #[function_component]
 pub fn ExistingFilter(props: &ExistingFilterProps) -> Html {
     let graph = props.analysis.borrow();
-    let fc = |i| Some(*graph.graph.raw[i].kind());
+    let fc = |i: RawNodeIndex| Some(*graph.graph.raw[i].kind());
     let icon = props.filter.icon();
     let hover = props.filter.long_text(fc, true);
     let filter_text = props.filter.short_text(fc);
@@ -335,6 +335,8 @@ impl Filter {
                 | SelectNthMatchingLoop(..)
                 | LimitProofNodes(..)
                 | ShowNamedProof(..)
+                | LimitDeadCdcl(..)
+                | LimitCdclNodes(..)
         )
     }
     pub fn update(&self, new_data: Vec<usize>, new_strings: Vec<String>) -> Filter {
@@ -361,6 +363,8 @@ impl Filter {
             ShowAsserted => ShowAsserted,
             ShowFalse => ShowFalse,
             ShowNamedProof(_) => ShowNamedProof(new_strings[0].clone()),
+            LimitDeadCdcl(_) => LimitDeadCdcl(new_data[0]),
+            LimitCdclNodes(_) => LimitCdclNodes(new_data[0]),
         }
     }
 }

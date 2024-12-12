@@ -23,9 +23,10 @@ use super::{
     homepage::{FileInfo, ParseInfo, RcParser},
     inst_graph::{
         filter::{
-            DEFAULT_DISABLER_CHAIN, DEFAULT_FILTER_CHAIN, PROOF_DISABLER_CHAIN, PROOF_FILTER_CHAIN,
+            CDCL_DISABLER_CHAIN, CDCL_FILTER_CHAIN, DEFAULT_DISABLER_CHAIN, DEFAULT_FILTER_CHAIN,
+            PROOF_DISABLER_CHAIN, PROOF_FILTER_CHAIN,
         },
-        GraphProps,
+        GraphMode, GraphProps,
     },
     manager::{NestedScreen, NestedScreenM},
     maybe_rc::MaybeRc,
@@ -101,9 +102,10 @@ pub enum FileM {
 
 pub enum ViewChoice {
     Overview,
-    Graph,
+    Insts,
     MatchingLoop,
     Proofs,
+    Cdcl,
 }
 
 impl Screen for File {
@@ -175,7 +177,7 @@ impl Screen for File {
             FileM::ChangeView(view) => {
                 let view = match view {
                     ViewChoice::Overview => ViewProps::Overview,
-                    ViewChoice::Graph => {
+                    ViewChoice::Insts => {
                         let Some(analysis) = self.analysis_or_error(link, 12) else {
                             return false;
                         };
@@ -185,7 +187,7 @@ impl Screen for File {
                             default_filters: DEFAULT_FILTER_CHAIN.to_vec(),
                             default_disablers: DEFAULT_DISABLER_CHAIN.to_vec(),
                             extra: None,
-                            enable_proofs: false,
+                            mode: GraphMode::Inst,
                         })
                     }
                     ViewChoice::MatchingLoop => {
@@ -208,7 +210,20 @@ impl Screen for File {
                             default_filters: PROOF_FILTER_CHAIN.to_vec(),
                             default_disablers: PROOF_DISABLER_CHAIN.to_vec(),
                             extra: None,
-                            enable_proofs: true,
+                            mode: GraphMode::Proof,
+                        })
+                    }
+                    ViewChoice::Cdcl => {
+                        let Some(analysis) = self.analysis_or_error(link, 14) else {
+                            return false;
+                        };
+                        ViewProps::Graph(GraphProps {
+                            parser: props.parser.clone(),
+                            analysis: analysis.clone(),
+                            default_filters: CDCL_FILTER_CHAIN.to_vec(),
+                            default_disablers: CDCL_DISABLER_CHAIN.to_vec(),
+                            extra: None,
+                            mode: GraphMode::Cdcl,
                         })
                     }
                 };
@@ -343,7 +358,7 @@ impl File {
                     hover_text: Some("View with quantifier instantiation graph".to_string()),
                     disabled: true,
                     click: Action::MouseDown(
-                        link.callback(|()| FileM::ChangeView(ViewChoice::Graph)),
+                        link.callback(|()| FileM::ChangeView(ViewChoice::Insts)),
                     ),
                 }),
                 ElementKind::Simple(SimpleButton {
@@ -362,6 +377,15 @@ impl File {
                     disabled: props.parser.parser.borrow().proofs().is_empty(),
                     click: Action::MouseDown(
                         link.callback(|()| FileM::ChangeView(ViewChoice::Proofs)),
+                    ),
+                }),
+                ElementKind::Simple(SimpleButton {
+                    icon: "sports_kabaddi",
+                    text: "CDCL tree".to_string(),
+                    hover_text: Some("View with conflict driven clause learning tree".to_string()),
+                    disabled: props.parser.parser.borrow().proofs().is_empty(),
+                    click: Action::MouseDown(
+                        link.callback(|()| FileM::ChangeView(ViewChoice::Cdcl)),
                     ),
                 }),
             ],
