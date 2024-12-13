@@ -81,7 +81,7 @@ impl SuggestionResults {
                 .iter()
                 .take_while(|e| e.exact)
                 .enumerate()
-                .map(|(i, _e)| offset + i);
+                .map(|(i, _e)| c.offset + i);
             exact_matches.extend(ems);
         }
 

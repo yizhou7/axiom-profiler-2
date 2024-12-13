@@ -221,7 +221,7 @@ impl SearchMode {
                 true
             }
             BlurNone => {
-                self.move_to_empty_focus_search(commands);
+                self.move_to_focus_search(commands);
                 true
             }
             FocusSearch { .. } | FocusCommand { .. } => {
@@ -297,10 +297,13 @@ impl SearchMode {
         match key {
             "Backspace" if self.input.is_empty() && !search => {
                 assert!(matches!(self.kind, FocusCommand { .. }));
-                self.move_to_empty_focus_search(commands)
+                self.move_to_focus_search(commands)
             }
             "Escape" => match self.kind {
-                FocusCommand { .. } => self.move_to_empty_focus_search(commands),
+                FocusCommand { .. } => {
+                    self.input = String::new();
+                    self.move_to_focus_search(commands)
+                }
                 FocusSearch { .. } => link
                     .toggle_dropdown(Some(false))
                     .expect("Internal error E190: failed to disable dropdown"),
@@ -337,6 +340,7 @@ impl SearchMode {
                 };
                 let new = select.filter(|s| s.ridx == ridx).unwrap_or(default);
                 *select = Some(new);
+                commands.can_select(true);
 
                 let entry = new.index(results, omnibox);
                 self.input = entry.search_text.clone();
@@ -376,9 +380,7 @@ impl SearchMode {
 
     // Internal methods
 
-    fn move_to_empty_focus_search(&mut self, commands: &CommandsContext) {
-        assert!(self.input.is_empty());
-
+    fn move_to_focus_search(&mut self, commands: &CommandsContext) {
         let matches = self.search.get_fuzzy(&self.input);
         let results = SuggestionResults::new(self.input.clone(), matches);
 
