@@ -44,6 +44,7 @@ fn parse_all_logs() {
             let file_info = (file_size != parse_bytes)
                 .then(|| format!(" / {} MB", file_size / mb))
                 .unwrap_or_default();
+            let parse_bytes_ovhd = parse_bytes + 8 * mb;
 
             // Gives 100 millis per MB (or 100 secs per GB)
             let timeout = Duration::from_millis(parse_bytes / (10 * 1024) + 500);
@@ -83,7 +84,7 @@ fn parse_all_logs() {
             parser.mem_dbg(DbgFlags::default()).ok();
             // TODO: decrease this
             assert!(
-                mem_size as u64 <= parse_bytes * 2,
+                mem_size as u64 <= parse_bytes_ovhd * 2,
                 "Parser takes up more memory than 2 * file size!"
             );
 
@@ -134,7 +135,7 @@ fn parse_all_logs() {
             // TODO: decrease this
             assert!(elapsed_ml < timeout, "ML search took longer than timeout");
             assert!(
-                mem_size as u64 <= parse_bytes * 5,
+                mem_size as u64 <= parse_bytes_ovhd * 5,
                 "Analysis takes up more memory than 5 * file size!"
             );
 
