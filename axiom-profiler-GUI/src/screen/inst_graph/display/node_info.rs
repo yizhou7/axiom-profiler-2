@@ -22,6 +22,7 @@ use crate::{
         homepage::RcParser,
         inst_graph::RcVisibleGraph,
     },
+    utils::tab::Tab,
 };
 
 #[derive(Properties, PartialEq)]
@@ -382,14 +383,9 @@ pub fn SelectedNodesInfo(
                 </details>
             }
         });
-    html! {
-    <>
-        <h2>{"Selected Nodes"}</h2>
-        <div class="selected-info-box">
-            {for infos}
-        </div>
-    </>
-    }
+    html! {<Tab title="Selected Nodes">
+        {for infos}
+    </Tab>}
 }
 
 pub struct EdgeInfo<'a, 'b> {
@@ -532,12 +528,7 @@ pub fn SelectedEdgesInfo(
             </details>
         }
     });
-    html! {
-    <>
-        <h2>{"Selected Dependencies"}</h2>
-        <div class="selected-info-box">
-            {for infos}
-        </div>
-    </>
-    }
+    html! {<Tab title="Selected Dependencies">
+        {for infos}
+    </Tab>}
 }
