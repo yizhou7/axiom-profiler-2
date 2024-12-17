@@ -125,7 +125,7 @@ jobs:
         id: run_z3_and_upload
         run: |
           # Loop through all files and check that log exists
-          for file in smt-problems/**/*.smt2; do
+          for file in `find ./smt-problems -name "*.smt2" -type f`; do
               test -f "$file"
               # Skip if the file if the first line is a comment with 
               [ "$(sed -n '/^;[^\n]*${{ steps.configure-z3-id.outputs.z3_v_regex }}/p;q' $file)" ] && echo "Skipping $file since the first line contains \"${{ matrix.z3version }}\"" && continue || true
