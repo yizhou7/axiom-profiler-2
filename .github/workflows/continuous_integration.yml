@@ -103,9 +103,9 @@ jobs:
         id: configure-z3-id
         run: |
           # Generate filename comaptible version: 4.8.7 -> 4_8_7
-          echo "z3_v_clean=$(echo "${{ matrix.z3version }}" | sed 's/\./_/g')" >> $GITHUB_OUTPUT
+          echo "z3_v_clean=$(echo "${{ matrix.z3version.version }}" | sed 's/\./_/g')" >> $GITHUB_OUTPUT
           # Generate regex compatible version: 4.8.7 -> 4\.8\.7
-          echo "z3_v_regex=$(echo "${{ matrix.z3version }}" | sed 's/\./\\./g')" >> $GITHUB_OUTPUT
+          echo "z3_v_regex=$(echo "${{ matrix.z3version.version }}" | sed 's/\./\\./g')" >> $GITHUB_OUTPUT
 
       - name: Cache log files
         id: cache-log
@@ -128,7 +128,7 @@ jobs:
           for file in `find ./smt-problems -name "*.smt2" -type f`; do
               test -f "$file"
               # Skip if the file if the first line is a comment with 
-              [ "$(sed -n '/^;[^\n]*${{ steps.configure-z3-id.outputs.z3_v_regex }}/p;q' $file)" ] && echo "Skipping $file since the first line contains \"${{ matrix.z3version }}\"" && continue || true
+              [ "$(sed -n '/^;[^\n]*${{ steps.configure-z3-id.outputs.z3_v_regex }}/p;q' $file)" ] && echo "Skipping $file since the first line contains \"${{ matrix.z3version.version }}\"" && continue || true
               # Get the file hash
               file_hash=$(shasum -a 256 "$file" | cut -d' ' -f1)
               # Get the filename without extension
