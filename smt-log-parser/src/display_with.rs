@@ -234,6 +234,7 @@ mod private {
         quant: Vec<&'a Quantifier>,
         bind_power: BindPowerPair,
         ast_depth: u32,
+        newline_spaces: u32,
     }
     impl<'a> DisplayData<'a> {
         pub(super) fn new(term: SynthIdx) -> Self {
@@ -243,6 +244,7 @@ mod private {
                 quant: Vec::new(),
                 bind_power: BindPowerPair::symmetric(DEFAULT_BIND_POWER),
                 ast_depth: 0,
+                newline_spaces: 0,
             }
         }
         pub(super) fn with_children<T>(
@@ -327,6 +329,19 @@ mod private {
             let result = f(self);
             self.ast_depth -= 1;
             Some(result)
+        }
+
+        pub(super) fn with_indented<'b>(
+            &mut self,
+            spaces: u32,
+            f: &mut fmt::Formatter<'b>,
+            inner: impl FnOnce(&mut Self, &mut fmt::Formatter<'b>) -> fmt::Result,
+        ) -> fmt::Result {
+            self.newline_spaces += spaces;
+            write!(f, "\n{: <1$}", "", self.newline_spaces as usize)?;
+            let result = inner(self, f);
+            self.newline_spaces -= spaces;
+            result
         }
     }
 }
@@ -901,16 +916,15 @@ impl<'a> DisplayWithCtxt<DisplayCtxt<'a>, DisplayData<'a>> for &'a Quantifier {
                         }
                         write!(f, "({name} {})", ty.unwrap_or("?"))?;
                     }
-                    write!(f, ") (!\n  ")?;
-                    display_child(f, *body, ctxt, data)?;
+                    write!(f, ") (!")?;
+                    data.with_indented(2, f, |data, f| display_child(f, *body, ctxt, data))?;
                     for &pattern in patterns.iter() {
-                        write!(f, "\n  ")?;
-                        display_child(f, pattern, ctxt, data)?;
+                        data.with_indented(2, f, |data, f| display_child(f, pattern, ctxt, data))?;
                     }
                     if let Some(name) = self.kind.user_name() {
-                        write!(f, "\n  :qid {}", &ctxt.parser[name])?;
+                        data.with_indented(2, f, |_, f| write!(f, ":qid {}", &ctxt.parser[name]))?;
                     }
-                    write!(f, "\n))")?;
+                    data.with_indented(0, f, |_, f| write!(f, "))"))?;
                 } else {
                     let (start, sep) = match ctxt.config.replace_symbols {
                         SymbolReplacement::Math => ("∀", "."),
