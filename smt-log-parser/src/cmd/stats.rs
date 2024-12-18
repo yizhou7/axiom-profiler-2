@@ -12,10 +12,10 @@ pub fn run(logfile: PathBuf, top_k: Option<usize>) -> Result<(), String> {
             parser[quant]
                 .kind
                 .user_name()
-                .map(|name| (&parser[name], icount))
+                .map(|name| (quant, &parser[name], icount))
         })
         .collect();
-    instantiations_occurrances.sort_by_key(|a| Reverse(a.1));
+    instantiations_occurrances.sort_by_key(|a| Reverse(a.2));
 
     println!("no-enodes: {}", info.inst.enodes);
     println!("no-given-equalities: {}", info.inst.geqs);
@@ -34,8 +34,8 @@ pub fn run(logfile: PathBuf, top_k: Option<usize>) -> Result<(), String> {
     let iter = instantiations_occurrances
         .iter()
         .take(top_k.unwrap_or(usize::MAX));
-    for (count, inst) in iter {
-        println!("{} = {}", inst, count);
+    for (qidx, name, count) in iter {
+        println!("{} {} {}", name, qidx, count);
     }
 
     Ok(())

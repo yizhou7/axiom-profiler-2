@@ -18,47 +18,27 @@ pub fn run(logfile: PathBuf, depth: Option<u32>, pretty_print: bool) -> Result<(
 
     if depth.is_some_and(|depth| depth == 0) {
         // TODO: deduplicate
-        for (qidx, info) in qanalysis.iter_enumerated() {
-            let Some(name) = get_quant_name(&parser, qidx.quant) else {
+        for (qpat, info) in qanalysis.iter_enumerated() {
+            let Some(name) = get_quant_name(&parser, qpat.quant) else {
+                assert!(false);
                 continue;
             };
-            let percentage = (100.0 * info.costs) / total_costs as f64;
-            let total = info.values().sum::<u32>() as f64;
-            let named = || {
-                info.iter()
-                    .flat_map(|(ddep, count)| get_quant_name(&parser, ddep).zip(Some(count)))
-            };
-            if pretty_print {
-                let named_count = named().count();
-                if info.direct_deps.len() == named_count {
-                    println!("axiom {name} ({percentage:.1}%) depends on {named_count} axioms:");
+
+            let cur_cost = info.costs;
+            let total = info.values().sum::<u32>();
+            let mut deps = Vec::new();
+
+            for (ddep, count) in info.iter() {
+                if let Some(dep) = get_quant_name(&parser, ddep) {
+                    deps.push(format!("\t{dep} {} {count} {total}", ddep));
                 } else {
-                    println!(
-                        "axiom {name} ({percentage:.1}%) depends on {} axioms, of those {named_count} are named:",
-                        info.direct_deps.len(),
-                    );
+                    deps.push(format!("\tUNNAMED {} {count} {total}", ddep));
                 }
-                for (dep, count) in named() {
-                    let percentage = 100.0 * count as f64 / total;
-                    println!(" - {dep} ({percentage:.1}%)");
-                }
-            } else {
-                let deps: Vec<String> = named()
-                    .map(|(dep, count)| {
-                        let percentage = 100.0 * count as f64 / total;
-                        format!("{dep} ({percentage:.1}%)")
-                    })
-                    .collect();
-                let named_count = deps.len();
-                if info.direct_deps.len() == named_count {
-                    println!("{name} ({percentage:.1}%) -> {}", deps.join(", "));
-                } else {
-                    println!(
-                        "{name} ({percentage:.1}%), {named_count}/{} named -> {}",
-                        info.direct_deps.len(),
-                        deps.join(", ")
-                    );
-                }
+            }
+
+            println!("{name} {} {cur_cost}", qpat.quant);
+            if deps.len() > 0 {
+                println!("{}", deps.join("\n"));
             }
         }
         return Ok(());
