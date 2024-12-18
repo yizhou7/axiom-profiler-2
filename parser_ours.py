@@ -1,14 +1,20 @@
 import sys
-from typing import Dict
+from typing import Dict, Set
 import networkx as nx
 import numpy as np
 
 class OurParser:
     def __init__(self, graph_path):
-        self.iidx_to_qidx = dict()
-        self.qidx_to_name = dict()
+        self.qunat_iidxs: Dict[str: (str, str)] = dict()
+        self.theory_iidxs: Dict[str: str] = dict()
+
         self.graph = nx.DiGraph()
         self.__parse_into_graph(graph_path)
+    
+        assert set(self.qunat_iidxs.keys()).isdisjoint(
+            set(self.theory_iidxs.keys()))
+        assert set(self.graph.nodes()) == set(
+            self.qunat_iidxs.keys() | self.theory_iidxs.keys())
 
     def __parse_into_graph(self, graph_path):
         lines = open(graph_path, "r").read().split("\n")
@@ -20,13 +26,13 @@ class OurParser:
 
         cur = None
 
+        # parsing the inst graph
         while lines[line_num][0] != "#":
             line = lines[line_num]
             if line[0] == "\t":
                 items = line[1:].split(" ")
                 assert len(items) == 2
                 reason, count = items[0], int(items[1])
-                # assert reason[0] == "i" or reason[0] == "e"
                 if reason[0] == "i":
                     self.graph.add_edge(reason, cur, weight=count)
                 else:
@@ -37,9 +43,12 @@ class OurParser:
                 self.graph.add_node(cur)
             line_num += 1
         
+        # parsing the iidx to qidx mapping
         assert lines[line_num] == "# iidx_2_qidx"
         line_num += 1
         
+        qunat_iidxs = dict()
+
         while lines[line_num][0] != "#":
             line = lines[line_num]
             line = line.split(" -> ")
@@ -47,12 +56,15 @@ class OurParser:
             iidx, qidx = line[0], line[1]
             assert iidx[0] == "i"
             assert qidx[0] == "q"
-            assert iidx not in self.iidx_to_qidx
-            self.iidx_to_qidx[iidx] = qidx
+            assert iidx not in qunat_iidxs
+            qunat_iidxs[iidx] = qidx
             line_num += 1
 
         assert lines[line_num] == "# qidx_2_qid"
         line_num += 1
+
+        # parsing the qidx to name mapping
+        qidx_to_name = dict()
 
         while lines[line_num][0] != "#":
             line = lines[line_num]
@@ -60,42 +72,57 @@ class OurParser:
             assert len(line) == 2
             qidx, name = line[0], line[1]
             assert qidx[0] == "q"
-            assert qidx not in self.qidx_to_name
-            self.qidx_to_name[qidx] = name
+            assert qidx not in qidx_to_name
+            qidx_to_name[qidx] = name
             line_num += 1
-            
+
+        for iidx, qidx in qunat_iidxs.items():
+            assert iidx not in self.qunat_iidxs
+            self.qunat_iidxs[iidx] = (qidx, qidx_to_name[qidx])
+
         assert lines[line_num] == "# theory_iidxs"
         line_num += 1
+        
+        while line_num < len(lines):
+            line = lines[line_num]
+            line = line.split(" -> ")
+            assert len(line) == 2
+            iidx, theory = line[0], line[1]
+            assert iidx[0] == "i"
+            self.theory_iidxs[iidx] = theory
+            line_num += 1
 
 class ReportAnalysis:
     def __init__(self, parser: OurParser):
         self.inst_graph = parser.graph
-        self.iidx_to_qidx = parser.iidx_to_qidx
-        self.qidx_to_name = parser.qidx_to_name
+        self.qunat_iidxs: Dict[str: (str, str)] = parser.qunat_iidxs
+        self.theory_iidxs: Dict[str: str] = parser.theory_iidxs
 
-        self.name_to_qidxs = dict()
-        for qidx, name in self.qidx_to_name.items():
-            if name not in self.name_to_qidxs:
-                self.name_to_qidxs[name] = set()
-            self.name_to_qidxs[name].add(qidx)
+        self.iidxs_by_name: Dict[str: Set[str]] = dict()
 
-        self.name_to_iidxs = dict()
-        for iidx, qidx in self.iidx_to_qidx.items():
-            name = self.qidx_to_name[qidx]
-            if name not in self.name_to_iidxs:
-                self.name_to_iidxs[name] = set()
-            self.name_to_iidxs[name].add(iidx)
+        for iidx, (_, name) in self.qunat_iidxs.items():
+            if name not in self.iidxs_by_name:
+                self.iidxs_by_name[name] = set()
+            self.iidxs_by_name[name].add(iidx)
+
+        self.iidxs_by_theory: Dict[str: Set[str]] = dict()
+
+        for iidx, theory in self.theory_iidxs.items():
+            if theory not in self.iidxs_by_theory:
+                self.iidxs_by_theory[theory] = set()
+            self.iidxs_by_theory[theory].add(iidx)
 
     def get_direct_theory_impact(self, name: str):
-        iidxs = self.name_to_iidxs[name]
+        iidxs = self.iidxs_by_name[name]
         succ_iidxs = set()
 
         for iidx in iidxs:
-            succ_iidxs.update(a.inst_graph.successors(iidx))
-        
+            succ_iidxs.update(self.inst_graph.successors(iidx))
+
         theory_count = 0
+
         for iidx in succ_iidxs:
-            if iidx not in a.iidx_to_qidx:
+            if iidx not in self.iidx_to_qidx:
                 theory_count += 1
 
         return theory_count
@@ -103,32 +130,3 @@ class ReportAnalysis:
 if __name__ == "__main__":
     p = OurParser(sys.argv[1])
     a = ReportAnalysis(p)
-    # print(a.name_to_iidxs["prelude_eucmod"])
-    pred_iidxs = set()
-
-    # for iidx in a.name_to_iidxs["prelude_eucmod"]:
-    #     pred_iidxs.update(a.graph.predecessors(iidx))
-
-    for iidx in pred_iidxs:
-        print(a.qidx_to_name[a.iidx_to_qidx[iidx]])
-        # print(a.iidx_to_qidx[iidx])
-        # print(a.qidx_to_name[a.iidx_to_qidx[iidx]])
-        # print(a.graph[a.iidx_to_qidx[iidx]])
-
-    theory_counts = dict()
-
-    for name in a.name_to_iidxs:
-        count = a.get_direct_theory_impact(name)
-        theory_counts[name] = count
-
-    for k, v in sorted(theory_counts.items(), key=lambda x: x[1], reverse=True):
-        print(f"{k}: {v}")
-
-    # for iidx in a.name_to_iidxs["prelude_eucmod"]:
-    #     succ_iidxs.update(a.graph.successors(iidx))
-    
-    # for iidx in succ_iidxs:
-    #     if iidx not in a.iidx_to_qidx:
-    #         print("theory")
-    #         continue
-    #     print(a.qidx_to_name[a.iidx_to_qidx[iidx]])

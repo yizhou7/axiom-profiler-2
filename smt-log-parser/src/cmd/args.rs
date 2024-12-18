@@ -23,6 +23,10 @@ pub enum Commands {
         #[arg(short, long, default_value_t = false)]
         pretty_print: bool,
     },
+    Report {
+        /// The path to the smt log file
+        logfile: std::path::PathBuf,
+    },
     /// Print out statistics for the SMT solver
     Stats {
         /// The path to the smt log file

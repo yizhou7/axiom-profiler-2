@@ -1089,6 +1089,10 @@ impl Z3Parser {
                 .collect(),
         )
     }
+
+    pub fn get_quant_name(&self, qidx: QuantIdx) -> Option<&str> {
+        self[qidx].kind.user_name().map(|name: IString| &self[name])
+    }
 }
 
 impl Index<TermIdx> for Z3Parser {

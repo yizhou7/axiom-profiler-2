@@ -51,8 +51,6 @@ class TheirParser:
             else:
                 items = line.split(" ")
                 name, qidx, cost = items[0], int(items[1]), float(items[2])
-                if qidx == "1228":
-                    print(name, qidx, cost)
                 self.__register_name(qidx, name)
                 cur = InstBlame(qidx, cost)
                 blames.append(cur)
@@ -84,7 +82,7 @@ class TheirParser:
         self.blames = kept
         kept = set(kept.keys())
 
-        for qidx in list(self.qidx_to_name.keys()):
+        for qidx in set(self.qidx_to_name.keys()) - kept:
             del self.qidx_to_name[qidx]
 
     def __parse_stats(self, stats_path):
@@ -104,5 +102,44 @@ class TheirParser:
                 continue
             self.blames[qidx].stat_count = count
 
+class TheirAnalysis:
+    def __init__(self, parser: TheirParser):
+        self.qidx_to_name = parser.qidx_to_name
+        self.name_to_qidxs = dict()
+
+        for qidx, name in self.qidx_to_name.items():
+            if name not in self.name_to_qidxs:
+                self.name_to_qidxs[name] = set()
+            self.name_to_qidxs[name].add(qidx)
+
+        self.blames = parser.blames
+        self.graph = nx.DiGraph()
+
+        for qidx, blame in self.blames.items():
+            self.graph.add_node(qidx, name=self.qidx_to_name[qidx])
+
+            for reason_qidx, count in blame.reasons.items():
+                self.graph.add_edge(reason_qidx, qidx, weight=count)
+
+    def get_qidx_checked(self, name):
+        qidxs = self.name_to_qidxs[name]
+        assert len(qidxs) == 1
+        return list(qidxs)[0]
+    
+    def debug_name(self, name):
+        qidx = self.get_qidx_checked(name)
+        print(f"{name} [{qidx}]:")
+        print(f"cost: {self.blames[qidx].cost}")
+        print(f"stat_count: {self.blames[qidx].stat_count}")
+        print(f"blamed_count: {self.blames[qidx].blamed_count}")
+        print("predecessors:")
+        for reason_qidx, count in self.blames[qidx].reasons.items():
+            print(f"\t{self.qidx_to_name[reason_qidx]}: {count}")
+        print("successors:")
+        for child in self.graph.successors(qidx):
+            print(f"\t{self.qidx_to_name[child]}: {self.graph[qidx][child]['weight']}")
+
 if __name__ == "__main__":
     p = TheirParser(sys.argv[1])
+    a = TheirAnalysis(p)
+    a.debug_name("prelude_eucmod")
